@@ -1,6 +1,6 @@
 # 사용자 검증 체크리스트
 
-대상 버전: **v0.3.0**
+대상 버전: **v0.4.0**
 
 대상 기능: SillyTavern Chat Completion 연결 24개의 사용자 모델 등록·선택·복원, schema v1→v2 이관, API Connections 모델 관리 팝업
 
@@ -32,7 +32,7 @@
 
 ```text
 SillyTavern 버전:
-Custom Model Router 버전: v0.3.0
+Custom Model Router 버전: v0.4.0
 설치 방식: 신규 설치 / v0.1.x에서 업데이트
 브라우저와 버전:
 OS:
@@ -69,13 +69,13 @@ Connection Profile 사용 여부:
 - [ ] **[필수][MIG-01] 확장 업데이트 뒤 API Connections에 사용자 모델 관리 아이콘이 한 번만 표시된다.**
   - 기대 결과: 아이콘이 Connection Profile 도구행에 있고 다른 컨트롤을 가리지 않는다.
 
-- [ ] **[필수][MIG-02] 관리 팝업에 `v0.3.0` 배지와 제공업체 선택기가 표시된다.**
+- [ ] **[필수][MIG-02] 관리 팝업에 `v0.4.0` 배지와 제공업체 선택기가 표시된다.**
   - 기대 결과: Extensions 설정에 긴 인라인 패널이 생기지 않고 공식 팝업이 하나만 열린다.
 
 - [ ] **[조건부][MIG-03] v0.1.x에 등록했던 Vertex 모델이 업데이트 뒤 Google Vertex AI 목록에 남아 있다.**
   - 기대 결과: 기존 ID가 빠지거나 다른 제공업체로 이동하지 않는다.
 
-- [ ] **[조건부][MIG-04] v0.1.x에서 선택했던 Vertex 사용자 모델 상태가 v0.3.0에서 복원된다.**
+- [ ] **[조건부][MIG-04] v0.1.x에서 선택했던 Vertex 사용자 모델 상태가 v0.4.0에서 복원된다.**
   - 기대 결과: schema v1의 단일 선택값이 `vertexai` 선택 상태로 이관된다.
 
 - [ ] **[조건부][MIG-05] v0.1.x에 중복 또는 손상된 저장값이 있어도 팝업을 열 수 있다.**
@@ -275,7 +275,7 @@ Connection Profile 사용 여부:
 ## 9. 공개 Registry API
 
 - [ ] **[필수][API-01] 브라우저 Console에서 `CustomModelRouter.apiVersion`을 확인했다.**
-  - 기대 결과: `1.0.0`이며 `CustomModelRouter.isCompatible('1.0.0')`가 `true`다.
+  - 기대 결과: `1.1.0`이며 `CustomModelRouter.isCompatible('1.1.0')`가 `true`다.
 
 - [ ] **[필수][API-02] `CustomModelRouter.getSnapshot()`을 호출했다.**
   - 기대 결과: 등록 모델과 `selectedModels`가 보이고 API 키·endpoint·프로젝트·리전은 포함되지 않는다.
@@ -286,13 +286,39 @@ Connection Profile 사용 여부:
 - [ ] **[필수][API-04] 확장을 비활성화한 뒤 전역 API가 제거되는지 확인했다.**
   - 기대 결과: `globalThis.CustomModelRouter`가 제거되고 재활성화하면 새 API 인스턴스가 한 개만 설치된다.
 
+## 10. 용도별 보조 모델 라우팅
+
+- [ ] **[필수][ROUTE-01] 보조 기능별 모델 라우팅을 펼치고 번역 용도를 선택했다.**
+  - 기대 결과: 등록 모델과 같은 제공업체의 Connection Profile만 선택할 수 있다.
+
+- [ ] **[필수][ROUTE-02] 번역 용도에 모델과 프로필을 저장했다.**
+  - 기대 결과: 별칭이 생기지 않고 제공업체·실제 모델 ID·프로필 ID가 표시된다.
+
+- [ ] **[필수][ROUTE-03] 경로의 테스트 요청을 실행했다.**
+  - 기대 결과: 보조 응답이 표시되고 메인 Chat Completion source와 모델 선택은 전후 동일하다.
+
+- [ ] **[필수][ROUTE-04] 다른 제공업체의 프로필을 고를 수 없는지 확인했다.**
+  - 기대 결과: 목록에서 제외되며 API로 잘못된 조합을 넣어도 provider mismatch 오류가 난다.
+
+- [ ] **[필수][ROUTE-05] 경로에 사용한 모델 등록 또는 Connection Profile을 제거한 뒤 테스트했다.**
+  - 기대 결과: 삭제된 대상이 명시된 오류가 나고 메인 모델이나 다른 모델로 대체되지 않는다.
+
+- [ ] **[권장][ROUTE-06] 요약·검색 보조·이미지 설명 용도에 서로 다른 모델을 저장했다.**
+  - 기대 결과: 각 용도가 `(provider, model ID)` 복합키로 독립 저장된다.
+
+- [ ] **[필수][ROUTE-07] Console에서 `CustomModelRouter.routing.isCompatible('1.0.0')`을 확인했다.**
+  - 기대 결과: `true`이며 `capabilities.silentFallback`과 `routerMutatesMainChatModel`이 모두 `false`다.
+
+- [ ] **[필수][ROUTE-08] 번역 경로를 해제했다.**
+  - 기대 결과: 등록 모델과 Connection Profile 자체는 삭제되지 않고 해당 용도 매핑만 사라진다.
+
 ## 결과 제출 양식
 
 ```text
-제목: [v0.3.0][제공업체][항목 ID] 짧은 증상
+제목: [v0.4.0][제공업체][항목 ID] 짧은 증상
 
 SillyTavern 버전:
-Custom Model Router 버전: v0.3.0
+Custom Model Router 버전: v0.4.0
 OS / 브라우저:
 설치 방식: 신규 / v0.1.x에서 업데이트
 제공업체:

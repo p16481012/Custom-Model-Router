@@ -1,11 +1,11 @@
 {
     "name": "custom-model-router",
-    "version": "0.3.0",
+    "version": "0.4.0",
     "private": true,
     "type": "module",
     "scripts": {
         "test": "node --test",
-        "check": "node --check index.js && node --check src/registry.js && node --check src/providers.js && node --check src/model-select.js && node --check src/vertex-select.js && node --check src/registry-api.js && node --test"
+        "check": "node --check index.js && node --check src/registry.js && node --check src/providers.js && node --check src/model-select.js && node --check src/vertex-select.js && node --check src/registry-api.js && node --check src/purpose-router.js && node --check src/connection-profile-adapter.js && node --test"
     },
     "engines": {
         "node": ">=20"

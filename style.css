@@ -85,6 +85,43 @@
     line-height: 1.45;
 }
 
+#cmr_settings .cmr-tool-section {
+    border-block-start: 1px solid var(--SmartThemeBorderColor, currentColor);
+    padding-block-start: 0.55rem;
+}
+
+#cmr_settings .cmr-tool-section > summary {
+    cursor: pointer;
+    font-weight: 600;
+}
+
+#cmr_settings .cmr-tool-description {
+    font-size: 0.84rem;
+    line-height: 1.45;
+    margin-block: 0.55rem;
+    opacity: 0.8;
+}
+
+#cmr_settings .cmr-route-form {
+    display: grid;
+    gap: 0.3rem;
+}
+
+#cmr_settings .cmr-route-form select {
+    min-width: 0;
+}
+
+#cmr_settings .cmr-route-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-block-start: 0.35rem;
+}
+
+#cmr_settings .cmr-route-actions .menu_button {
+    flex: 1 1 7rem;
+}
+
 #cmr_settings .cmr-provider-field,
 #cmr_settings .cmr-add-form {
     display: grid;

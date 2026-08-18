@@ -1,6 +1,7 @@
 import {
     ModelRegistryError,
     addModel,
+    createModelKey,
     getEnabledModels,
     getSelectedModel,
     hasEnabledModel,
@@ -30,13 +31,32 @@ import {
     createRegistryApi,
     installRegistryApi,
 } from './src/registry-api.js';
+import {
+    BUILTIN_PURPOSES,
+    PurposeRouter,
+    PurposeRouterError,
+    createPurposeRoutingApi,
+    normalizePurposeRoutes,
+} from './src/purpose-router.js';
+import {
+    SILLYTAVERN_CONNECTION_PROFILE_ADAPTER_ID,
+    createSillyTavernConnectionProfileAdapter,
+} from './src/connection-profile-adapter.js';
 
-const EXTENSION_VERSION = '0.3.0';
+const EXTENSION_VERSION = '0.4.0';
 const SETTINGS_KEY = 'customModelRouter';
+const ROUTES_SETTINGS_KEY = 'customModelRouterRouting';
 const OBSERVER_ROOT_SELECTOR = '#rm_api_block';
 const CONNECTION_PROFILE_SELECTOR = '#connection_profiles';
 const API_TITLE_SELECTOR = '#title_api';
 const LAUNCHER_SELECTOR = '#cmr_open_manager';
+const PURPOSE_LABELS = Object.freeze({
+    translation: '번역',
+    summary: '요약',
+    search: '검색 보조',
+    captioning: '이미지 설명',
+    custom: '기타 보조 작업',
+});
 
 const PROVIDER_GROUPS = [
     {
@@ -75,6 +95,9 @@ let activePopup = null;
 let activeProviderId = null;
 let registryApiController = null;
 let uninstallRegistryApi = null;
+let routingSettings = null;
+let purposeRouter = null;
+let unregisterConnectionProfileAdapter = null;
 const boundControls = new Map();
 const pendingRestores = new Set();
 const pendingNativeChecks = new Map();
@@ -150,6 +173,13 @@ function writeRegistryApiSettings(nextSettings) {
     context.extensionSettings[SETTINGS_KEY] = settings;
     context.saveSettingsDebounced();
     scheduleSync();
+}
+
+function persistRoutingSettings(nextRoutes) {
+    routingSettings = normalizePurposeRoutes(nextRoutes);
+    context.extensionSettings[ROUTES_SETTINGS_KEY] = routingSettings;
+    context.saveSettingsDebounced();
+    renderRoutingFields();
 }
 
 function updateSelectedModel(providerId, modelId, save = true) {
@@ -445,11 +475,155 @@ function renderModelList() {
     }
 }
 
+function announceRoute(message, state = 'ok') {
+    const status = settingsRoot?.querySelector('#cmr_route_status');
+    if (!status) {
+        return;
+    }
+    status.dataset.state = state;
+    status.textContent = message;
+}
+
+function parseRouteModelKey(value) {
+    try {
+        const parsed = JSON.parse(String(value ?? ''));
+        if (!Array.isArray(parsed) || parsed.length !== 2) {
+            return null;
+        }
+        const [provider, modelId] = parsed.map(item => String(item ?? ''));
+        return hasEnabledModel(settings, provider, modelId) ? { provider, modelId } : null;
+    } catch {
+        return null;
+    }
+}
+
+function getConnectionProfiles(providerId) {
+    const profiles = context?.extensionSettings?.connectionManager?.profiles;
+    if (!Array.isArray(profiles)) {
+        return [];
+    }
+    return profiles.filter(profile => {
+        const apiMap = context?.CONNECT_API_MAP?.[profile?.api];
+        return apiMap?.selected === 'openai' && apiMap?.source === providerId;
+    });
+}
+
+function populatePurposeSelect(select) {
+    const previous = select.value;
+    const options = BUILTIN_PURPOSES.map(purpose => {
+        const option = document.createElement('option');
+        option.value = purpose;
+        option.textContent = PURPOSE_LABELS[purpose] ?? purpose;
+        return option;
+    });
+    select.replaceChildren(...options);
+    select.value = options.some(option => option.value === previous) ? previous : BUILTIN_PURPOSES[0];
+}
+
+function populateRouteModelSelect(select, preferredKey = null) {
+    const groups = [];
+    for (const provider of getProviders()) {
+        const models = getEnabledModels(settings, provider.id);
+        if (!models.length) {
+            continue;
+        }
+        const group = document.createElement('optgroup');
+        group.label = provider.label;
+        for (const model of models) {
+            const option = document.createElement('option');
+            option.value = createModelKey(provider.id, model.id);
+            option.textContent = model.id;
+            group.append(option);
+        }
+        groups.push(group);
+    }
+    if (!groups.length) {
+        const option = document.createElement('option');
+        option.value = '';
+        option.textContent = '먼저 사용자 모델을 등록하세요.';
+        select.replaceChildren(option);
+        select.disabled = true;
+        return;
+    }
+    select.replaceChildren(...groups);
+    select.disabled = false;
+    if (preferredKey && select.options.some(option => option.value === preferredKey)) {
+        select.value = preferredKey;
+    } else {
+        select.value = select.options[0]?.value ?? '';
+    }
+}
+
+function populateRouteProfileSelect(select, providerId, preferredId = null) {
+    const profiles = getConnectionProfiles(providerId);
+    if (!profiles.length) {
+        const option = document.createElement('option');
+        option.value = '';
+        option.textContent = '같은 제공업체의 Connection Profile 없음';
+        select.replaceChildren(option);
+        select.disabled = true;
+        return;
+    }
+    const options = profiles.map(profile => {
+        const option = document.createElement('option');
+        option.value = String(profile.id);
+        option.textContent = String(profile.name || profile.id);
+        return option;
+    });
+    select.replaceChildren(...options);
+    select.disabled = false;
+    if (preferredId && options.some(option => option.value === preferredId)) {
+        select.value = preferredId;
+    } else {
+        select.value = options[0]?.value ?? '';
+    }
+}
+
+function renderRoutingFields() {
+    const purposeSelect = settingsRoot?.querySelector('#cmr_route_purpose');
+    const modelSelect = settingsRoot?.querySelector('#cmr_route_model');
+    const profileSelect = settingsRoot?.querySelector('#cmr_route_profile');
+    if (!purposeSelect || !modelSelect || !profileSelect || !purposeRouter) {
+        return;
+    }
+    const previousPurpose = purposeSelect.value;
+    populatePurposeSelect(purposeSelect);
+    if (previousPurpose && BUILTIN_PURPOSES.includes(previousPurpose)) {
+        purposeSelect.value = previousPurpose;
+    }
+    const purpose = purposeSelect.value;
+    const route = purposeRouter.getRoute(purpose);
+    const routeKey = route ? createModelKey(route.provider, route.modelId) : null;
+    const previousModelKey = modelSelect.value;
+    populateRouteModelSelect(modelSelect, routeKey ?? previousModelKey);
+    const model = parseRouteModelKey(modelSelect.value);
+    populateRouteProfileSelect(
+        profileSelect,
+        model?.provider,
+        route && route.provider === model?.provider ? route.connectionProfileId : null,
+    );
+    const clearButton = settingsRoot.querySelector('#cmr_route_clear');
+    const testButton = settingsRoot.querySelector('#cmr_route_test');
+    if (clearButton) {
+        clearButton.disabled = !route;
+    }
+    if (testButton) {
+        testButton.disabled = !route;
+    }
+    if (route) {
+        const provider = getProvider(route.provider);
+        announceRoute(`${PURPOSE_LABELS[purpose] ?? purpose}: ${provider?.label ?? route.provider} / ${route.modelId}`);
+    } else {
+        announceRoute(`${PURPOSE_LABELS[purpose] ?? purpose} 용도에 저장된 경로가 없습니다.`, 'error');
+    }
+}
+
 function renderUi() {
     renderLauncher();
     renderProviderFields();
     renderCompatibilityStatus();
     renderModelList();
+    renderRoutingFields();
 }
 
 function isWithin(node, ancestor) {
@@ -691,6 +865,10 @@ function onSettingsUpdated() {
         context.extensionSettings[SETTINGS_KEY] = settings;
         registryApiController?.synchronize('external-settings');
     }
+    const storedRoutes = context.extensionSettings[ROUTES_SETTINGS_KEY];
+    if (storedRoutes !== routingSettings && purposeRouter) {
+        purposeRouter.replaceRoutes(normalizePurposeRoutes(storedRoutes));
+    }
     scheduleSync();
 }
 
@@ -780,6 +958,85 @@ function onProviderChange(event) {
     renderUi();
 }
 
+function onRoutePurposeChange() {
+    announceRoute('');
+    renderRoutingFields();
+}
+
+function onRouteModelChange(event) {
+    const model = parseRouteModelKey(event.currentTarget?.value);
+    const profileSelect = settingsRoot?.querySelector('#cmr_route_profile');
+    if (profileSelect) {
+        populateRouteProfileSelect(profileSelect, model?.provider);
+    }
+    announceRoute(model
+        ? `${getProvider(model.provider)?.label ?? model.provider} / ${model.modelId} 경로를 저장할 수 있습니다.`
+        : '등록 모델을 선택해 주세요.', model ? 'ok' : 'error');
+}
+
+function onRouteSubmit(event) {
+    event.preventDefault();
+    const purpose = settingsRoot?.querySelector('#cmr_route_purpose')?.value;
+    const model = parseRouteModelKey(settingsRoot?.querySelector('#cmr_route_model')?.value);
+    const connectionProfileId = settingsRoot?.querySelector('#cmr_route_profile')?.value;
+    try {
+        if (!model) {
+            throw new PurposeRouterError('model_not_selected', '등록 모델을 선택해 주세요.');
+        }
+        if (!connectionProfileId) {
+            throw new PurposeRouterError('connection_profile_not_selected', '같은 제공업체의 Connection Profile을 선택해 주세요.');
+        }
+        purposeRouter.setRoute(purpose, {
+            provider: model.provider,
+            modelId: model.modelId,
+            adapterId: SILLYTAVERN_CONNECTION_PROFILE_ADAPTER_ID,
+            connectionProfileId,
+        });
+        renderRoutingFields();
+        announceRoute(`${PURPOSE_LABELS[purpose] ?? purpose} 경로를 저장했습니다.`);
+    } catch (error) {
+        announceRoute(error instanceof PurposeRouterError ? error.message : '경로를 저장하지 못했습니다.', 'error');
+    }
+}
+
+function onRouteClear() {
+    const purpose = settingsRoot?.querySelector('#cmr_route_purpose')?.value;
+    if (!purposeRouter?.removeRoute(purpose)) {
+        announceRoute('해제할 경로가 없습니다.', 'error');
+        return;
+    }
+    renderRoutingFields();
+    announceRoute(`${PURPOSE_LABELS[purpose] ?? purpose} 경로를 해제했습니다.`);
+}
+
+async function onRouteTest(event) {
+    const button = event.currentTarget;
+    const purpose = settingsRoot?.querySelector('#cmr_route_purpose')?.value;
+    if (!purposeRouter || !purpose) {
+        return;
+    }
+    button.disabled = true;
+    announceRoute('보조 요청을 전송하고 있습니다.');
+    try {
+        const result = await purposeRouter.execute(purpose, {
+            prompt: 'Reply with exactly CMR_OK.',
+            maxTokens: 24,
+            stream: false,
+        });
+        const content = String(result?.content ?? '').trim();
+        announceRoute(content
+            ? `테스트 응답: ${content.slice(0, 160)}`
+            : '테스트 요청은 완료됐지만 텍스트 응답이 비어 있습니다.', content ? 'ok' : 'error');
+    } catch (error) {
+        const message = error instanceof PurposeRouterError
+            ? `${error.code}: ${error.message}`
+            : '보조 요청 테스트에 실패했습니다.';
+        announceRoute(message, 'error');
+    } finally {
+        button.disabled = !purposeRouter.getRoute(purpose);
+    }
+}
+
 function createSettingsPanel() {
     if (!settingsTemplateHtml) {
         throw new Error('설정 UI가 아직 준비되지 않았습니다.');
@@ -795,6 +1052,11 @@ function createSettingsPanel() {
     settingsRoot.querySelector('#cmr_provider')?.addEventListener('change', onProviderChange);
     settingsRoot.querySelector('#cmr_add_form')?.addEventListener('submit', onAddModel);
     settingsRoot.querySelector('#cmr_model_list')?.addEventListener('click', onModelListClick);
+    settingsRoot.querySelector('#cmr_route_purpose')?.addEventListener('change', onRoutePurposeChange);
+    settingsRoot.querySelector('#cmr_route_model')?.addEventListener('change', onRouteModelChange);
+    settingsRoot.querySelector('#cmr_route_form')?.addEventListener('submit', onRouteSubmit);
+    settingsRoot.querySelector('#cmr_route_clear')?.addEventListener('click', onRouteClear);
+    settingsRoot.querySelector('#cmr_route_test')?.addEventListener('click', onRouteTest);
     settingsRoot.addEventListener('keydown', onPanelKeyDown);
     return root;
 }
@@ -1008,6 +1270,11 @@ function teardownRuntime({ applyNativeFallback = false } = {}) {
     uninstallRegistryApi = null;
     registryApiController?.destroy();
     registryApiController = null;
+    unregisterConnectionProfileAdapter?.();
+    unregisterConnectionProfileAdapter = null;
+    purposeRouter?.destroy();
+    purposeRouter = null;
+    routingSettings = null;
     context = null;
     settings = null;
     syncScheduled = false;
@@ -1020,10 +1287,23 @@ async function initialize(generation) {
     settings = normalizeSettings(storedSettings);
     const settingsChanged = JSON.stringify(storedSettings) !== JSON.stringify(settings);
     context.extensionSettings[SETTINGS_KEY] = settings;
+    const storedRoutes = context.extensionSettings[ROUTES_SETTINGS_KEY];
+    routingSettings = normalizePurposeRoutes(storedRoutes);
+    const routesChanged = JSON.stringify(storedRoutes) !== JSON.stringify(routingSettings);
+    context.extensionSettings[ROUTES_SETTINGS_KEY] = routingSettings;
+    purposeRouter = new PurposeRouter({
+        routes: routingSettings,
+        getRegistrySettings: () => settings,
+        onRoutesChanged: persistRoutingSettings,
+    });
+    unregisterConnectionProfileAdapter = purposeRouter.registerAdapter(
+        createSillyTavernConnectionProfileAdapter(() => getLiveContext()),
+    );
     registryApiController = createRegistryApi({
         extensionVersion: EXTENSION_VERSION,
         readSettings: () => settings,
         writeSettings: writeRegistryApiSettings,
+        routingApi: createPurposeRoutingApi(purposeRouter),
         onSubscriberError: error => {
             console.error('[Custom Model Router] Registry API 구독자 처리 실패', error);
         },
@@ -1038,8 +1318,9 @@ async function initialize(generation) {
         return;
     }
     renderUi();
-    if (settingsChanged) {
+    if (settingsChanged || routesChanged) {
         persistSettings('migration');
+        context.extensionSettings[ROUTES_SETTINGS_KEY] = routingSettings;
     }
     initialized = true;
     console.info(`[Custom Model Router] v${EXTENSION_VERSION} 초기화 완료`);

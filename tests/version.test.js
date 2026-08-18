@@ -39,6 +39,8 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
     assert.match(packageJson.scripts.check, /src\/providers\.js/);
     assert.match(packageJson.scripts.check, /src\/model-select\.js/);
     assert.match(packageJson.scripts.check, /src\/registry-api\.js/);
+    assert.match(packageJson.scripts.check, /src\/purpose-router\.js/);
+    assert.match(packageJson.scripts.check, /src\/connection-profile-adapter\.js/);
     assert.match(settingsHtml, new RegExp(`cmr-version[^>]*>v${version}<`));
     assert.match(readme, new RegExp(`현재 버전은 \\*\\*v${version.replaceAll('.', '\\.')}`));
     assert.match(entrypoint, new RegExp(`EXTENSION_VERSION = '${version.replaceAll('.', '\\.')}'`));
@@ -48,6 +50,7 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
     assert.match(readme, /\.\/USER_CHECKLIST\.md/);
     assert.match(readme, /\.\/ROADMAP\.md/);
     assert.match(readme, /\.\/API\.md/);
+    assert.match(readme, /\.\/examples\/routing-integration\.js/);
     assert.match(readme, /API Connections/);
     for (const document of [readme, roadmap]) {
         assert.doesNotMatch(document, /모델 별칭|`MAIN`|`AUX`|`FAST`/);
@@ -61,6 +64,8 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
     assert.doesNotMatch(entrypoint, /#extensions_settings2|#extensions_settings/);
     assert.doesNotMatch(settingsHtml, /inline-drawer/);
     assert.match(entrypoint, /installRegistryApi\(globalThis/);
+    assert.match(entrypoint, /createPurposeRoutingApi/);
+    assert.match(entrypoint, /createSillyTavernConnectionProfileAdapter/);
     assert.equal(
         rootEntries.some(name => /^licen[cs]e(?:\.|$)/i.test(name)),
         false,

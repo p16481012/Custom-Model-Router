@@ -4,7 +4,7 @@
             <h2 id="cmr_panel_title">사용자 모델 관리</h2>
             <span class="cmr-product-name">Custom Model Router</span>
         </div>
-        <span class="cmr-version">v0.3.0</span>
+        <span class="cmr-version">v0.4.0</span>
     </header>
 
     <p class="cmr-description">
@@ -53,8 +53,33 @@
         <ul id="cmr_model_list" class="cmr-model-list"></ul>
     </section>
 
+    <details class="cmr-tool-section" id="cmr_routing_section">
+        <summary>보조 기능별 모델 라우팅</summary>
+        <p class="cmr-tool-description">
+            별칭 없이 등록 모델과 Connection Profile을 직접 연결합니다. 보조 요청은 메인 채팅 모델을 바꾸지 않습니다.
+        </p>
+        <form id="cmr_route_form" class="cmr-route-form">
+            <label for="cmr_route_purpose">용도</label>
+            <select id="cmr_route_purpose" class="text_pole wide100p"></select>
+
+            <label for="cmr_route_model">등록 모델</label>
+            <select id="cmr_route_model" class="text_pole wide100p" aria-describedby="cmr_route_help"></select>
+
+            <label for="cmr_route_profile">SillyTavern Connection Profile</label>
+            <select id="cmr_route_profile" class="text_pole wide100p" aria-describedby="cmr_route_help"></select>
+
+            <small id="cmr_route_help">선택한 모델과 같은 제공업체의 Chat Completion 프로필만 사용할 수 있습니다.</small>
+            <div class="cmr-route-actions">
+                <button type="submit" class="menu_button">경로 저장</button>
+                <button id="cmr_route_clear" type="button" class="menu_button">경로 해제</button>
+                <button id="cmr_route_test" type="button" class="menu_button">테스트 요청</button>
+            </div>
+        </form>
+        <div id="cmr_route_status" class="cmr-feedback" role="status" aria-live="polite" aria-atomic="true"></div>
+    </details>
+
     <details class="cmr-scope-note">
         <summary>지원 범위 및 개인정보</summary>
-        <p>v0.2는 SillyTavern의 기존 Chat Completion 연결과 요청 규격을 그대로 사용하는 모델 ID를 지원합니다. API 키, Service Account, 프로젝트 ID, 리전, 엔드포인트 URL은 읽거나 저장하지 않습니다.</p>
+        <p>v0.4는 SillyTavern의 기존 Chat Completion 연결과 요청 규격을 그대로 사용하는 모델 ID를 지원합니다. 라우팅에는 모델 참조와 Connection Profile ID만 저장하며 API 키, Service Account, 프로젝트 ID, 리전, 엔드포인트 URL은 읽거나 저장하지 않습니다.</p>
     </details>
 </section>

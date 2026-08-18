@@ -1,13 +1,13 @@
 # 공개 Registry API
 
-Custom Model Router v0.3.0은 다른 SillyTavern 확장이 내부 파일 경로에 의존하지 않고 등록 모델을 사용할 수 있도록 `globalThis.CustomModelRouter`를 제공합니다. API 계약 버전은 `1.0.0`입니다.
+Custom Model Router v0.4.0은 다른 SillyTavern 확장이 내부 파일 경로에 의존하지 않고 등록 모델과 용도별 라우팅을 사용할 수 있도록 `globalThis.CustomModelRouter`를 제공합니다. Registry API 계약 버전은 `1.1.0`, Routing API 계약 버전은 `1.0.0`입니다.
 
 ## 호환성 확인
 
 ```js
 const registry = globalThis.CustomModelRouter;
-if (!registry?.isCompatible('1.0.0')) {
-    throw new Error('Custom Model Router Registry API 1.0.0 이상이 필요합니다.');
+if (!registry?.isCompatible('1.1.0')) {
+    throw new Error('Custom Model Router Registry API 1.1.0 이상이 필요합니다.');
 }
 ```
 
@@ -48,4 +48,16 @@ if (!registry?.isCompatible('1.0.0')) {
 
 확장이 비활성화되면 전역 API가 제거되고 기존 참조는 `destroyed` 오류를 냅니다. 소비 확장은 API 참조를 영구 캐시하지 말고, 자신의 활성화 시점에 존재 여부와 호환성을 다시 확인해야 합니다.
 
-v0.4.0에서 추가될 용도별 라우팅은 이 Registry 선택 상태와 별개로 `(provider, model ID)`를 직접 참조합니다. 모델 별칭은 계약에 포함하지 않습니다.
+## 용도별 Routing API
+
+`CustomModelRouter.routing`은 모델 별칭 없이 `{ provider, modelId, adapterId, connectionProfileId }`를 저장합니다.
+
+- `getRoutes()`, `getRoute(purpose)`
+- `setRoute(purpose, route)`, `removeRoute(purpose)`
+- `listAdapters()`, `registerAdapter(adapter)`, `unregisterAdapter(id)`
+- `execute(purpose, request, { signal? })`
+- `subscribe(listener)`
+
+기본 용도는 `translation`, `summary`, `search`, `captioning`, `custom`입니다. 다른 확장은 고유한 소문자 네임스페이스 용도를 사용할 수 있습니다. 경로·모델·어댑터가 없거나 profile 제공업체가 다르면 명시적인 오류를 내며 현재 모델로 대체하지 않습니다.
+
+내장 `sillytavern.connection-profile` 어댑터는 SillyTavern 1.18.0의 공개 `ConnectionManagerRequestService`를 사용합니다. 메인 `chatCompletionSettings`를 수정하지 않으며 Connection Profile의 인증과 endpoint를 재사용하고 `model`만 경로 값으로 지정합니다.

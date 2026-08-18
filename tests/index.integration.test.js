@@ -292,6 +292,22 @@ class FakeDocument {
         const modelList = this.createElement('ul');
         modelList.id = 'cmr_model_list';
 
+        const routeForm = this.createElement('form');
+        routeForm.id = 'cmr_route_form';
+        const routePurpose = this.createElement('select');
+        routePurpose.id = 'cmr_route_purpose';
+        const routeModel = this.createElement('select');
+        routeModel.id = 'cmr_route_model';
+        const routeProfile = this.createElement('select');
+        routeProfile.id = 'cmr_route_profile';
+        const routeClear = this.createElement('button');
+        routeClear.id = 'cmr_route_clear';
+        const routeTest = this.createElement('button');
+        routeTest.id = 'cmr_route_test';
+        routeForm.append(routePurpose, routeModel, routeProfile, routeClear, routeTest);
+        const routeStatus = this.createElement('div');
+        routeStatus.id = 'cmr_route_status';
+
         root.append(
             provider,
             providerHelp,
@@ -301,6 +317,8 @@ class FakeDocument {
             listTitle,
             count,
             modelList,
+            routeForm,
+            routeStatus,
         );
         return root;
     }
@@ -426,6 +444,11 @@ function createHarness({
     const eventSource = new FakeEventSource();
     const extensionSettings = {
         customModelRouter: storedSettings ?? { schemaVersion: 2, models, selectedModels },
+        customModelRouterRouting: { schemaVersion: 1, routes: {} },
+        disabledExtensions: [],
+        connectionManager: {
+            profiles: [{ id: 'profile-vertex', name: 'Vertex 보조', api: 'vertexai', model: 'native' }],
+        },
     };
     let saveCallCount = 0;
     const eventTypes = {
@@ -438,6 +461,7 @@ function createHarness({
         CONNECTION_PROFILE_LOADED: 'profile_loaded',
     };
     const popupInstances = [];
+    const routingCalls = [];
 
     class FakePopup {
         constructor(content, popupType, message, options = {}) {
@@ -495,6 +519,25 @@ function createHarness({
         chatCompletionSettings,
         Popup: FakePopup,
         POPUP_TYPE: { DISPLAY: 'display' },
+        CONNECT_API_MAP: {
+            vertexai: { selected: 'openai', source: 'vertexai' },
+        },
+        ConnectionManagerRequestService: {
+            getProfile(profileId) {
+                const profile = extensionSettings.connectionManager.profiles.find(item => item.id === profileId);
+                if (!profile) {
+                    throw new Error('profile not found');
+                }
+                return profile;
+            },
+            validateProfile(profile) {
+                return context.CONNECT_API_MAP[profile.api];
+            },
+            async sendRequest(...args) {
+                routingCalls.push(args);
+                return { content: 'CMR_OK' };
+            },
+        },
     };
 
     const observers = [];
@@ -574,6 +617,7 @@ function createHarness({
         MutationObserver: FakeMutationObserver,
         observers,
         popupInstances,
+        routingCalls,
         profileTools,
         observerRoot: apiConnections,
         setActiveSource(source) {
@@ -671,8 +715,9 @@ test('init은 24개 제공업체를 연결하고 API Connections Popup을 한 �
         assert.equal(harness.eventSource.listenerCount, 7);
         assert.equal(harness.observers.length, 1);
         assert.equal(harness.observers[0].target, harness.observerRoot);
-        assert.equal(globalThis.CustomModelRouter.apiVersion, '1.0.0');
-        assert.equal(globalThis.CustomModelRouter.extensionVersion, '0.3.0');
+        assert.equal(globalThis.CustomModelRouter.apiVersion, '1.1.0');
+        assert.equal(globalThis.CustomModelRouter.extensionVersion, '0.4.0');
+        assert.equal(globalThis.CustomModelRouter.routing.apiVersion, '1.0.0');
         assert.equal(globalThis.CustomModelRouter.getSnapshot().models.length, 1);
 
         const panel = openPanel(harness);
@@ -768,6 +813,48 @@ test('런처 숫자 변경은 MutationObserver 자기 반복 없이 한 번만 �
         assert.equal(count.textContent, '1');
         assert.equal(harness.mutationCallbackCount, 1);
         assert.equal(harness.observers[0].target, harness.observerRoot);
+    } finally {
+        await destroy();
+        restoreGlobals();
+    }
+});
+
+test('용도별 경로는 등록 모델과 같은 제공업체 프로필로 요청하고 메인 모델을 바꾸지 않는다', async () => {
+    const harness = createHarness();
+    const restoreGlobals = installBrowserGlobals(harness);
+    try {
+        await init();
+        const panel = openPanel(harness);
+        const purpose = panel.querySelector('#cmr_route_purpose');
+        const model = panel.querySelector('#cmr_route_model');
+        const profile = panel.querySelector('#cmr_route_profile');
+        const mainSettingsBefore = structuredClone(harness.context.chatCompletionSettings);
+
+        purpose.value = 'translation';
+        purpose.dispatchEvent(new FakeEvent('change'));
+        model.value = JSON.stringify(['vertexai', VERTEX_MODEL_ID]);
+        model.dispatchEvent(new FakeEvent('change'));
+        profile.value = 'profile-vertex';
+        panel.querySelector('#cmr_route_form').dispatchEvent(new FakeEvent('submit'));
+
+        assert.deepEqual(globalThis.CustomModelRouter.routing.getRoute('translation'), {
+            provider: 'vertexai',
+            modelId: VERTEX_MODEL_ID,
+            adapterId: 'sillytavern.connection-profile',
+            connectionProfileId: 'profile-vertex',
+        });
+        assert.equal(harness.context.extensionSettings.customModelRouterRouting.routes.translation.modelId, VERTEX_MODEL_ID);
+
+        panel.querySelector('#cmr_route_test').dispatchEvent(new FakeEvent('click'));
+        await flushMicrotasks(8);
+        assert.equal(harness.routingCalls.length, 1);
+        assert.equal(harness.routingCalls[0][0], 'profile-vertex');
+        assert.deepEqual(harness.routingCalls[0][4], { model: VERTEX_MODEL_ID });
+        assert.deepEqual(harness.context.chatCompletionSettings, mainSettingsBefore);
+        assert.match(panel.querySelector('#cmr_route_status').textContent, /CMR_OK/);
+
+        panel.querySelector('#cmr_route_clear').dispatchEvent(new FakeEvent('click'));
+        assert.equal(globalThis.CustomModelRouter.routing.getRoute('translation'), null);
     } finally {
         await destroy();
         restoreGlobals();

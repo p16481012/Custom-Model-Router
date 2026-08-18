@@ -49,6 +49,8 @@ test('공개 계약 버전과 기능 메타데이터를 불변 객체로 제공�
     assert.equal(api.capabilities.compoundModelKeys, true);
     assert.equal(api.capabilities.providerSelections, true);
     assert.equal(api.capabilities.selectionScope, 'registry');
+    assert.equal(api.capabilities.purposeRouting, false);
+    assert.equal(api.routing, null);
     assert.equal(api.capabilities.immutableSnapshots, true);
     assert.deepEqual(api.capabilities.mutations, ['registerModel', 'unregisterModel', 'selectModel']);
     assert.deepEqual(api.capabilities.events, Object.values(REGISTRY_EVENT_TYPES));
@@ -61,7 +63,8 @@ test('공개 계약 버전과 기능 메타데이터를 불변 객체로 제공�
 
 test('같은 major의 최소 API 버전만 호환된다고 판정한다', () => {
     assert.equal(isRegistryApiCompatible('1.0.0'), true);
-    assert.equal(isRegistryApiCompatible('1.0.1'), false);
+    assert.equal(isRegistryApiCompatible('1.0.1'), true);
+    assert.equal(isRegistryApiCompatible('1.1.1'), false);
     assert.equal(isRegistryApiCompatible('0.9.9'), false);
     assert.equal(isRegistryApiCompatible('2.0.0'), false);
     assert.equal(isRegistryApiCompatible('1'), false);

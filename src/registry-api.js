@@ -15,7 +15,7 @@ import {
 } from './providers.js';
 
 export const REGISTRY_API_GLOBAL_NAME = 'CustomModelRouter';
-export const REGISTRY_API_VERSION = '1.0.0';
+export const REGISTRY_API_VERSION = '1.1.0';
 
 export const REGISTRY_EVENT_TYPES = Object.freeze({
     MODEL_REGISTERED: 'model:registered',
@@ -440,6 +440,7 @@ export function createRegistryApi(options) {
         compoundModelKeys: true,
         providerSelections: true,
         selectionScope: 'registry',
+        purposeRouting: Boolean(options.routingApi),
         immutableSnapshots: true,
         mutations: Object.freeze(['registerModel', 'unregisterModel', 'selectModel']),
         events: Object.freeze(Object.values(REGISTRY_EVENT_TYPES)),
@@ -477,6 +478,7 @@ export function createRegistryApi(options) {
         unregisterModel,
         selectModel,
         subscribe,
+        routing: options.routingApi ?? null,
     });
     API_INSTANCES.add(api);
 
