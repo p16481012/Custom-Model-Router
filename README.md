@@ -1,65 +1,62 @@
 # Custom Model Router
 
-SillyTavern 코어 파일을 수정하지 않고 Google Vertex AI에 사용자 지정 Gemini 모델 ID를 추가하는 UI 확장입니다.
+SillyTavern 코어 파일을 수정하지 않고 Chat Completion 연결에 사용자 모델 ID를 추가하는 UI 확장입니다. 기존 API 키·엔드포인트·프로젝트·리전 설정은 그대로 두고 모델 값만 등록하고 적용합니다.
 
-현재 버전은 **v0.1.2**이며, 이전 설계의 **v0.1 Proof of Concept** 범위에 API Connections 중심의 모델 관리 UI를 적용합니다.
+현재 버전은 **v0.2.0**이며, SillyTavern 1.18.0의 Chat Completion 연결 24개를 지원합니다. Z.AI의 GLM, DeepSeek, Moonshot AI의 Kimi, MiniMax, SiliconFlow 모델도 각각의 전용 연결에서 등록할 수 있습니다.
 
 ## 현재 진행 상태
 
 | 항목 | 상태 |
 |---|---|
-| 현재 릴리스 | `v0.1.2` |
-| 핵심 구현과 자동 검사 | ✅ 완료 · 20개 검사 통과 |
-| 사용자 확인 | ✅ 기본 동작 정상 확인 · 인증 방식/스트리밍/Profile별 세부 결과는 미확인 |
-| 현재 단계 | 🧪 v0.1.2 UI/UX와 실제 환경 세부 재검증 |
-| 사용자가 할 일 | [사용자 검증 체크리스트](./USER_CHECKLIST.md)의 UI/UX 및 실제 요청 항목 재검증 |
-| 다음 단계 | v0.1.x 실제 환경 안정화 후 `v0.2.0` 설계 |
+| 현재 릴리스 | `v0.2.0` |
+| 다중 제공업체 구현과 자동 검사 | ✅ 완료 · 38개 검사 통과 |
+| v0.1 설정 이관 | ✅ schema v1의 Vertex 등록값을 v2로 자동 이관 |
+| 실제 제공업체 계정 검증 | 🧪 사용자 계정별 결과 보고 대기 |
+| 사용자가 할 일 | [사용자 검증 체크리스트](./USER_CHECKLIST.md)의 공통 항목과 사용하는 제공업체 행 확인 |
+| 다음 단계 | 실제 요청 결과에 따른 `v0.2.1+` 호환성 보완 |
 
-전체 진행 위치와 마일스톤 완료 조건은 [개발 로드맵](./ROADMAP.md)에서 계속 갱신합니다.
+전체 진행 위치와 버전별 완료 조건은 [개발 로드맵](./ROADMAP.md)에서 계속 갱신합니다.
 
-## v0.1에서 할 수 있는 일
+## v0.2.0에서 할 수 있는 일
 
-- Vertex Gemini 모델 ID를 직접 등록하고 삭제할 수 있습니다.
-- API Connections의 Connection Profile 도구행에서 모델 관리 아이콘을 눌러 공식 SillyTavern 팝업으로 관리할 수 있습니다.
-- 등록 모델은 높이가 제한된 압축 목록에 표시되어 모델이 늘어나도 API Connections 화면을 길게 밀어내지 않습니다.
-- 등록 모델을 SillyTavern의 기본 Google Vertex AI 모델 선택기에 표시합니다.
-- 모델을 선택하면 SillyTavern의 기본 `vertexai_model` 설정과 `change` 흐름을 그대로 사용합니다.
-- 새로고침, 설정 갱신, Connection Profile 전환 뒤에도 사용자 옵션과 선택 상태를 복원합니다.
-- SillyTavern 기본 목록에 같은 모델이 추가되면 중복 옵션을 만들지 않습니다.
-- API 키, Service Account JSON, 프로젝트 ID, 리전, 프록시 설정을 읽거나 별도로 저장하지 않습니다.
+- 한 관리 팝업에서 제공업체를 바꾸며 사용자 모델을 등록·선택·삭제할 수 있습니다.
+- 등록 모델을 각 SillyTavern 기본 모델 선택기의 `사용자 지정 모델 · Custom Model Router` 그룹에 표시합니다.
+- 같은 모델 ID도 제공업체가 다르면 별도로 등록할 수 있습니다.
+- 새로고침, API source 변경, 원격 모델 목록 재생성, Connection Profile 전환 뒤 사용자 옵션과 선택 상태를 복원합니다.
+- v0.1의 Vertex 모델과 선택 상태를 제공업체별 schema v2로 자동 이관합니다.
+- API 키, Service Account, 프로젝트 ID, Account ID, 리전, 엔드포인트 URL, 필터 설정을 읽거나 저장하지 않습니다.
+- 확장을 비활성화할 때 확장이 추가한 옵션만 제거하고, 필요한 경우 사용 가능한 기본 모델로 전환합니다.
 
 동작 경로는 다음과 같습니다.
 
 ```text
-사용자 모델 등록
+기존 Chat Completion 연결 설정
     ↓
-Vertex AI 기본 모델 선택기에 옵션 추가
+사용자 모델 관리에서 제공업체와 모델 ID 등록
     ↓
-SillyTavern의 vertexai_model 변경
+해당 제공업체의 기본 모델 컨트롤에 옵션 주입·적용
     ↓
-기존 인증 · 프로젝트 · 리전 설정 유지
+SillyTavern의 기존 change/input 흐름
     ↓
-사용자 모델 ID로 Vertex Gemini 요청
+기존 인증·엔드포인트·리전 유지 + 사용자 model 값으로 요청
 ```
 
-## 지원 범위
+## 지원 연결 24개
 
-- SillyTavern `1.18.0` 이상
-- Google Vertex AI Express Mode
-- Google Vertex AI Full Mode(Service Account)
-- 현재 SillyTavern의 Gemini `generateContent` 요청·응답 규격과 호환되는 모델
-- 일반 및 스트리밍 텍스트 생성 경로
+| 구분 | 연결 |
+|---|---|
+| 모델 개발사 API 14개 | OpenAI, Anthropic, AI21, Cohere, DeepSeek, Google AI Studio, Google Vertex AI, Groq, Mistral AI, MiniMax, Moonshot AI (Kimi), Perplexity, xAI, Z.AI (GLM) |
+| 라우터·호스팅 9개 | AI/ML API, Chutes, Cloudflare Workers AI, ElectronHub, Fireworks AI, NanoGPT, OpenRouter, Pollinations, SiliconFlow |
+| 사용자 지정 연결 1개 | Custom OpenAI-compatible |
 
-v0.1은 모델 ID를 기존 Vertex Gemini 경로로 전달하는 버전입니다. 새 모델이 별도의 요청 필드, 응답 처리, thinking 규칙, 이미지 생성 규칙 또는 assistant prefill 제한을 요구한다면 모델 ID 추가만으로 정상 동작하지 않을 수 있습니다. 이 경우 SillyTavern 코어 업데이트나 이후 버전의 호환 어댑터가 필요합니다.
+여기서 Z.AI (GLM), DeepSeek, Moonshot AI (Kimi), MiniMax, SiliconFlow는 각각 독립된 지원 연결입니다. 사용자가 말하는 “로컬 모델”이 GLM·Kimi처럼 특정 지역이나 업체에서 주로 제공되는 모델이라는 뜻이라면 해당 전용 연결을 선택하면 됩니다. PC에서 직접 실행하는 서버나 별도 업체의 OpenAI-compatible API는 SillyTavern의 `Custom` 연결을 먼저 설정한 뒤 `Custom OpenAI-compatible`에서 모델 ID를 등록할 수 있습니다.
 
-다음 항목은 아직 지원하지 않습니다.
+다음 두 Chat Completion source는 구조상 등록 대상에서 제외합니다.
 
-- Google AI Studio와 다른 API 제공업체
-- Vertex의 Claude, Llama 등 Partner Model
-- 다른 확장이 자체적으로 보관하는 모델 목록 자동 변경
-- MAIN, AUX 같은 모델 별칭과 용도별 라우팅
-- 모델 자동 검색
-- 모델별 capability metadata
+- **Azure OpenAI**: 실제 요청 대상은 모델 값이 아니라 deployment name으로 결정되므로 모델 ID만 바꾸는 이 확장의 계약과 맞지 않습니다.
+- **CometAPI**: SillyTavern 1.18.0 코어에서 해당 provider 요청이 비활성화되어 있습니다.
+
+Text Completion의 Generic/Ooba 연결과 다른 확장이 자체 보관하는 모델 목록은 v0.2.0 범위가 아닙니다.
 
 ## 설치
 
@@ -73,65 +70,69 @@ https://github.com/p16481012/Custom-Model-Router
 
 4. 설치가 끝나면 SillyTavern 페이지를 새로고침합니다.
 
+v0.1.x에서 업데이트하면 기존 Vertex 모델 등록값은 자동으로 보존·이관됩니다. 중요한 설정은 업데이트 전에 별도로 백업하는 것을 권장합니다.
+
 ## 사용 방법
 
-1. SillyTavern의 **API Connections**에서 `Google Vertex AI` 연결을 먼저 설정합니다.
-2. 인증 방식, 프로젝트 ID, 리전 등 기존 Vertex 설정을 완료합니다.
-3. API Connections 상단의 **Connection Profile 도구행**에서 `사용자 모델 관리` 아이콘을 누릅니다.
-4. 열린 SillyTavern 공식 팝업에 Google이 공개한 정확한 모델 ID를 입력하고 **추가**를 누릅니다.
-5. 팝업의 압축 목록에서 선택 아이콘을 누르거나 API Connections의 Vertex 모델 선택기에서 `사용자 지정 모델 · Custom Model Router` 그룹을 선택합니다.
-6. 팝업은 닫기 버튼이나 `Escape` 키로 닫을 수 있습니다. 닫은 뒤 초점은 모델 관리 아이콘으로 돌아갑니다.
-7. 테스트 메시지를 보내 모델과 리전의 실제 사용 가능 여부를 확인합니다.
+1. SillyTavern의 **API Connections**에서 사용할 Chat Completion 제공업체를 선택하고 인증·엔드포인트·리전 설정을 먼저 완료합니다.
+2. Connection Profile 도구행의 `사용자 모델 관리` 아이콘을 누릅니다.
+3. 팝업에서 모델을 등록할 제공업체 또는 연결 방식을 선택합니다.
+4. 해당 업체가 공개한 정확한 모델 ID를 입력하고 **추가**를 누릅니다.
+5. 목록의 선택 아이콘을 누르거나 기본 모델 선택기의 사용자 지정 그룹에서 모델을 선택합니다.
+6. 테스트 메시지를 보내 현재 계정·리전·요청 규격에서 실제로 사용할 수 있는지 확인합니다.
 
-확장은 Extensions 설정에 긴 설정 블록을 추가하지 않습니다. 모델 관리 아이콘은 API Connections의 Connection Profile 도구행에 표시되며, 해당 도구가 비활성화된 환경에서는 API 제목 옆에 표시됩니다.
+등록은 연결이 현재 활성 상태가 아니어도 가능합니다. 모델 적용은 해당 제공업체를 현재 Chat Completion source로 선택한 상태에서만 가능합니다. 팝업은 닫기 버튼 또는 `Escape` 키로 닫을 수 있고, 닫은 뒤 초점은 관리 아이콘으로 돌아갑니다.
 
-모델 ID 예시는 형식을 설명하기 위한 것이며 실제 제공 여부를 보장하지 않습니다.
+### GLM 모델 등록 예
 
-```text
-gemini-x.y-pro-preview
-```
+1. API Connections에서 `Z.AI`를 선택합니다.
+2. Z.AI의 Common 또는 Coding 엔드포인트와 API 키를 기존 SillyTavern UI에서 설정합니다.
+3. 사용자 모델 관리에서 `Z.AI (GLM)`을 선택합니다.
+4. Z.AI가 공개한 정확한 `glm-...` 모델 ID를 등록하고 적용합니다.
+5. 일반·스트리밍 요청을 각각 확인합니다.
 
-## 입력 검증
+이 확장은 Z.AI 엔드포인트 종류나 API 키를 바꾸지 않습니다.
 
-v0.1은 Vertex 요청 URL의 모델 경로를 안전하게 유지하기 위해 모델 ID를 엄격하게 검사합니다.
+## 모델 ID 입력 규칙
 
-- `gemini-`로 시작해야 합니다.
-- 영문 소문자, 숫자, 마침표(`.`), 밑줄(`_`), 하이픈(`-`)만 허용합니다.
-- 최대 128자입니다.
-- `/`, `\`, `:`, `?`, `#`, `%`, 공백과 HTML은 허용하지 않습니다.
-- 중복 등록은 허용하지 않습니다.
+모델 ID만 입력하며 URL은 입력하지 않습니다. 제공업체에 따라 다음 규칙을 적용합니다.
+
+- Google AI Studio와 Vertex AI: URL 경로 한 구간으로 안전한 영문자, 숫자, `.`, `_`, `-`를 허용하며 최대 128자입니다.
+- OpenAI, Anthropic, xAI, Z.AI, DeepSeek, Moonshot AI, MiniMax 등 단일 ID형 연결: 영문자, 숫자, `.`, `_`, `:`, `-`를 허용하며 최대 128자입니다.
+- OpenRouter, SiliconFlow, Workers AI, Fireworks 등 카탈로그형 연결과 Custom: 계층형 ID에 `/`, `:`, `+`, `@`를 추가로 허용하며 최대 256자입니다.
+- 모든 연결에서 URL, 공백, `?`, `#`, `%`, HTML과 중복 등록은 허용하지 않습니다.
+
+모델 ID 형식이 유효하다는 것은 해당 모델이 실제로 존재하거나 현재 계정에서 이용 가능하다는 뜻이 아닙니다.
+
+## 중요한 호환성 제한
+
+v0.2.0은 **모델 ID만 기존 제공업체 요청 경로로 전달**합니다. 따라서 등록 모델은 SillyTavern 1.18.0이 해당 source에 사용하는 현재 요청·응답 규격과 호환되어야 합니다.
+
+- 새 인증 방식, 별도 API 버전, 다른 endpoint 또는 deployment name이 필요한 모델은 ID 등록만으로 지원되지 않습니다.
+- 새 요청 필드, 응답 형식, thinking 규칙, tool 호출 규칙, 이미지 생성 규칙이 필요한 모델은 추가 어댑터가 필요할 수 있습니다.
+- 원격 카탈로그에 없는 모델은 context 크기, 가격, 멀티모달 같은 metadata가 없으므로 관련 자동 판단이 부정확할 수 있습니다.
+- SillyTavern 코어가 모델 이름으로 특정 파라미터를 조정하는 제공업체는 신모델에서 실제 요청 검증이 필요합니다.
+- 확장은 존재하지 않거나 권한이 없는 모델을 다른 모델로 자동 대체하지 않습니다.
 
 ## 문제 해결
 
-### Vertex 모델 선택기를 찾지 못했다는 메시지가 표시됨
+### 제공업체 모델 컨트롤을 찾지 못했다는 메시지가 표시됨
 
-SillyTavern 버전을 확인하고 Google Vertex AI 연결 화면을 연 뒤 페이지를 새로고침해 주세요. 이 버전은 SillyTavern 1.18.0의 `#model_vertexai_select`와 Connection Profile 도구행 구조를 기준으로 검증합니다.
+API Connections에서 해당 Chat Completion source를 한 번 열고 연결 상태를 확인한 뒤 팝업을 다시 열어 주세요. 등록은 가능하지만 컨트롤이 없거나 다른 source가 활성 상태이면 즉시 적용할 수 없습니다.
 
-### 모델 관리 아이콘이 보이지 않음
+### 원격 모델 목록을 불러온 뒤 사용자 모델이 사라짐
 
-아이콘은 Extensions 설정이 아니라 API Connections의 Connection Profile 도구행에 표시됩니다. Connection Profile 도구가 비활성화된 환경에서는 API 제목 옆을 확인해 주세요. 계속 보이지 않으면 확장이 활성화되어 있는지 확인하고 페이지를 새로고침해 주세요.
+일부 제공업체는 연결할 때 모델 선택기를 다시 만듭니다. 확장은 이를 감지해 옵션과 저장 선택을 복원합니다. 연결 완료 후에도 복원되지 않으면 페이지를 새로고침하고 체크리스트의 환경 정보와 함께 문제를 보고해 주세요.
 
 ### API 요청 오류가 발생함
 
-다음을 확인해 주세요.
-
-- 모델 ID 오타
-- 해당 프로젝트에서 모델을 사용할 권한이 있는지
-- 선택한 리전에서 해당 모델이 제공되는지
-- Express Mode 또는 Full Mode 인증이 정상인지
-- 모델이 현재 SillyTavern의 Gemini 요청 규격과 호환되는지
-
-확장은 존재하지 않는 모델을 다른 모델로 자동 대체하지 않습니다.
+모델 ID 오타, 계정 권한, 지역별 제공 여부, endpoint 종류, 현재 source의 요청 규격 호환성을 확인해 주세요. Google Vertex AI는 프로젝트·리전, Workers AI는 Account ID, Z.AI·MiniMax·SiliconFlow는 선택한 지역 endpoint도 함께 확인해야 합니다.
 
 ### 등록 모델을 삭제할 수 없음
 
-현재 선택 중인 사용자 모델은 실수로 설정을 잃지 않도록 삭제를 막습니다. API Connections에서 다른 Vertex 모델을 먼저 선택한 뒤 삭제해 주세요.
+선택형 연결에서 현재 사용 중인 사용자 모델은 다른 기본 모델을 먼저 선택한 뒤 삭제할 수 있습니다. 이는 선택기가 존재하지 않는 값에 남는 상황을 막기 위한 동작입니다.
 
-## 업데이트와 문의
-
-SillyTavern 확장 관리자의 업데이트 기능은 이 저장소의 `main` 브랜치를 기준으로 새 커밋을 가져옵니다. 업데이트 전에 중요한 설정을 백업하고, 문제가 있으면 [GitHub Issues](https://github.com/p16481012/Custom-Model-Router/issues)에 SillyTavern 버전과 오류 메시지를 함께 남겨 주세요.
-
-확장을 제거해도 SillyTavern 설정에 저장된 `customModelRouter` 데이터는 자동으로 삭제되지 않을 수 있습니다. 다시 설치할 계획이 없다면 제거 전에 등록 모델을 모두 삭제하는 것을 권장합니다.
+`Custom OpenAI-compatible`은 자유 입력형이므로 Registry 등록을 삭제해도 SillyTavern의 현재 `custom_model` 입력값은 지우지 않습니다. 실제 사용 모델도 바꾸려면 API Connections의 Custom 모델 입력값을 변경하세요.
 
 ## 개발 및 검사
 
@@ -142,27 +143,28 @@ npm test
 npm run check
 ```
 
-현재 자동 검사 20개는 모델 ID 검증, 저장 설정 복구, 중복 처리, 선택 상태 관리, Vertex 옵션의 멱등 주입, 모델 관리 아이콘과 팝업 수명주기·실패 복구, Connection Profile 지연 삽입, MutationObserver 자기 반복 방지, 100개 모델 압축 목록, 지연 UI 로딩과 버전 표기 일치를 확인합니다. 실제 계정과 화면 조작이 필요한 항목은 [사용자 검증 체크리스트](./USER_CHECKLIST.md)에서 별도로 확인합니다.
+현재 자동 검사 38개는 24개 provider descriptor 회계, Azure OpenAI·CometAPI 구조적 제외, 제공업체별 모델 ID 검증, schema v1→v2 이관, 제공업체별 등록·선택 격리, 옵션 재주입·복원, 모델 변경 거절 시 상태 롤백, 관리 팝업 수명주기, Connection Profile 지연 삽입, MutationObserver 자기 반복 방지, 100개 모델 압축 목록, 버전·문서 일치를 확인합니다. 실제 API 계정과 화면 조작이 필요한 결과는 [사용자 검증 체크리스트](./USER_CHECKLIST.md)에서 별도로 관리합니다.
 
 ## 버전 정책
 
-- 최초 v0.1 범위: `v0.1.0`
-- v0.1 사용자 검증 문서화: `v0.1.1`
-- API Connections 모델 관리 패널과 압축 목록: `v0.1.2`
-- v0.1의 버그 수정과 세부 호환성 개선: `v0.1.3`, `v0.1.4`, ...
-- 여러 제공업체 지원처럼 범위가 확장되는 다음 단계: `v0.2.0`
+- Vertex Gemini 최초 범위: `v0.1.0`
+- v0.1의 UI/UX와 세부 수정: `v0.1.1`, `v0.1.2`, `v0.1.3`, ...
+- 여러 Chat Completion 제공업체로 범위를 확장한 버전: `v0.2.0`
+- v0.2의 버그 수정과 세부 호환성 개선: `v0.2.1`, `v0.2.2`, ...
+- 모델 별칭처럼 범위가 새로 확장될 때만 다음 기능 버전으로 이동
 
-작은 수정 때문에 바로 다음 기능 버전으로 올리지 않습니다. 버전을 변경할 때는 `manifest.json`, `package.json`, `settings.html`의 버전 배지, README의 현재 버전, `index.js`의 초기화 로그, 체크리스트와 로드맵의 대상 버전을 함께 갱신합니다.
+작은 수정 때문에 바로 다음 기능 버전으로 올리지 않습니다. 버전을 바꿀 때는 manifest, package, UI 배지, 초기화 로그, README, 체크리스트와 로드맵을 함께 맞춥니다.
 
 ## 로드맵 요약
 
 | 버전 | 목표 | 상태 |
 |---|---|---|
-| `v0.1.x` | Vertex Gemini 실제 환경 검증과 안정화 | 🧪 v0.1.2 재검증 중 |
-| `v0.2.0` | OpenAI, Anthropic, Google AI Studio, Vertex Gemini, xAI 지원 | 📝 예정 |
+| `v0.1.x` | Vertex Gemini 기반 확립 | ✅ 완료 |
+| `v0.2.0` | 24개 Chat Completion 연결의 사용자 모델 등록 | 🧪 구현·자동 검사 완료, 실제 계정 검증 대기 |
+| `v0.2.1+` | 실제 검증에서 발견된 제공업체별 호환성 보완 | 📝 결과 대기 |
 | `v0.3.0` | MAIN, AUX, FAST 등 모델 별칭 | 📝 예정 |
 | `v0.4.0` | 다른 확장이 사용할 수 있는 공개 Registry API | 📝 예정 |
 | `v0.5.0` | 주요 확장별 어댑터와 용도별 모델 라우팅 | 📝 예정 |
 | `v0.6.0` | 호환성과 운영 안정화 | 📝 예정 |
 
-세부 범위, 완료 조건, 현재 게이트와 진행 기록은 [ROADMAP.md](./ROADMAP.md)를 기준으로 관리합니다.
+업데이트 전 중요한 설정을 백업하고, 문제가 있으면 [GitHub Issues](https://github.com/p16481012/Custom-Model-Router/issues)에 SillyTavern 버전, 제공업체, 실패 항목 ID와 민감정보를 제거한 오류 메시지를 남겨 주세요.

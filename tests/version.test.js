@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile, readdir } from 'node:fs/promises';
 
+import { MODEL_PROVIDERS, STRUCTURAL_EXCLUSIONS } from '../src/providers.js';
+
 const ROOT_URL = new URL('../', import.meta.url);
 
 async function readText(path) {
@@ -34,6 +36,8 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
 
     assert.match(version, /^0\.\d+\.\d+$/);
     assert.equal(packageJson.version, version);
+    assert.match(packageJson.scripts.check, /src\/providers\.js/);
+    assert.match(packageJson.scripts.check, /src\/model-select\.js/);
     assert.match(settingsHtml, new RegExp(`cmr-version[^>]*>v${version}<`));
     assert.match(readme, new RegExp(`현재 버전은 \\*\\*v${version.replaceAll('.', '\\.')}`));
     assert.match(entrypoint, new RegExp(`v${version.replaceAll('.', '\\.')} 초기화 완료`));
@@ -51,6 +55,30 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
         false,
         '사용자 요청에 따라 라이선스 파일을 추가하면 안 된다',
     );
+
+    assert.equal(MODEL_PROVIDERS.length, 24, '등록 가능한 Chat Completion 연결은 24개여야 한다');
+    assert.equal(new Set(MODEL_PROVIDERS.map(provider => provider.id)).size, 24);
+    for (const providerId of ['zai', 'deepseek', 'moonshot', 'minimax', 'siliconflow', 'custom']) {
+        assert.ok(
+            MODEL_PROVIDERS.some(provider => provider.id === providerId),
+            `${providerId} 제공업체가 등록 대상에 포함되어야 한다`,
+        );
+    }
+    assert.deepEqual(
+        STRUCTURAL_EXCLUSIONS,
+        {
+            azure_openai: 'deployment-name-controls-target',
+            cometapi: 'core-disabled',
+        },
+    );
+    for (const document of [readme, checklist, roadmap]) {
+        assert.match(document, /24개/);
+        assert.match(document, /Azure OpenAI/);
+        assert.match(document, /CometAPI/);
+    }
+    assert.match(readme, /Z\.AI \(GLM\)/);
+    assert.match(checklist, /Z\.AI \(GLM\)/);
+    assert.match(roadmap, /Z\.AI \(GLM\)/);
 
     const testDirectory = new URL('../tests/', import.meta.url);
     const testFiles = (await readdir(testDirectory)).filter(name => name.endsWith('.test.js'));
