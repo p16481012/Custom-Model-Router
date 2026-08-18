@@ -8,13 +8,23 @@ async function readText(path) {
     return readFile(new URL(path, ROOT_URL), 'utf8');
 }
 
-test('배포 파일의 버전 표기가 모두 일치한다', async () => {
-    const [manifestText, packageText, settingsHtml, readme, entrypoint] = await Promise.all([
+test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', async () => {
+    const [
+        manifestText,
+        packageText,
+        settingsHtml,
+        readme,
+        entrypoint,
+        checklist,
+        roadmap,
+    ] = await Promise.all([
         readText('manifest.json'),
         readText('package.json'),
         readText('settings.html'),
         readText('README.md'),
         readText('index.js'),
+        readText('USER_CHECKLIST.md'),
+        readText('ROADMAP.md'),
     ]);
     const manifest = JSON.parse(manifestText);
     const packageJson = JSON.parse(packageText);
@@ -25,4 +35,15 @@ test('배포 파일의 버전 표기가 모두 일치한다', async () => {
     assert.match(settingsHtml, new RegExp(`cmr-version[^>]*>v${version}<`));
     assert.match(readme, new RegExp(`현재 버전은 \\*\\*v${version.replaceAll('.', '\\.')}`));
     assert.match(entrypoint, new RegExp(`v${version.replaceAll('.', '\\.')} 초기화 완료`));
+    assert.match(checklist, new RegExp(`대상 버전: \\*\\*v${version.replaceAll('.', '\\.')}\\*\\*`));
+    assert.match(roadmap, new RegExp(`현재 릴리스: \\*\\*v${version.replaceAll('.', '\\.')}\\*\\*`));
+    assert.match(readme, /\.\/USER_CHECKLIST\.md/);
+    assert.match(readme, /\.\/ROADMAP\.md/);
+
+    const checklistIds = Array.from(
+        checklist.matchAll(/\*\*\[(?:필수|조건부|권장|선택)\]\[([A-Z0-9-]+)\]/g),
+        match => match[1],
+    );
+    assert.ok(checklistIds.length >= 30, '사용자 검증 항목이 충분히 제공되어야 한다');
+    assert.equal(new Set(checklistIds).size, checklistIds.length, '체크리스트 항목 ID는 중복되면 안 된다');
 });

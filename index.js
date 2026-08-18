@@ -514,7 +514,7 @@ async function initialize(generation) {
     }
 
     initialized = true;
-    console.info('[Custom Model Router] v0.1.0 초기화 완료');
+    console.info('[Custom Model Router] v0.1.1 초기화 완료');
 }
 
 export function init() {
