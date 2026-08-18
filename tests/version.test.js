@@ -19,6 +19,8 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
         entrypoint,
         checklist,
         roadmap,
+        apiDocument,
+        portableSettings,
         rootEntries,
     ] = await Promise.all([
         readText('manifest.json'),
@@ -28,6 +30,8 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
         readText('index.js'),
         readText('USER_CHECKLIST.md'),
         readText('ROADMAP.md'),
+        readText('API.md'),
+        readText('src/portable-settings.js'),
         readdir(ROOT_URL),
     ]);
     const manifest = JSON.parse(manifestText);
@@ -43,6 +47,8 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
     assert.match(packageJson.scripts.check, /src\/connection-profile-adapter\.js/);
     assert.match(packageJson.scripts.check, /src\/compatibility\.js/);
     assert.match(packageJson.scripts.check, /src\/portable-settings\.js/);
+    assert.match(packageJson.scripts.check, /src\/external-integrations\.js/);
+    assert.match(packageJson.scripts.check, /src\/external-settings\.js/);
     assert.match(settingsHtml, new RegExp(`cmr-version[^>]*>v${version}<`));
     assert.match(readme, new RegExp(`현재 버전은 \\*\\*v${version.replaceAll('.', '\\.')}`));
     assert.match(entrypoint, new RegExp(`EXTENSION_VERSION = '${version.replaceAll('.', '\\.')}'`));
@@ -60,7 +66,7 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
     assert.match(roadmap, /## v0\.3\.0 — 공개 Registry API/);
     assert.match(roadmap, /## v0\.4\.0 — 확장 어댑터와 용도별 라우팅/);
     assert.match(roadmap, /## v0\.5\.0 — 호환성과 운영 안정화/);
-    assert.doesNotMatch(roadmap, /v0\.6\.0/);
+    assert.match(roadmap, /## v0\.6\.0 — 범용 외부 확장 모델 브리지/);
     assert.match(entrypoint, /new context\.Popup/);
     assert.match(entrypoint, /#cmr_open_manager/);
     assert.doesNotMatch(entrypoint, /#extensions_settings2|#extensions_settings/);
@@ -70,8 +76,25 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
     assert.match(entrypoint, /createSillyTavernConnectionProfileAdapter/);
     assert.match(entrypoint, /diagnoseCompatibility/);
     assert.match(entrypoint, /stringifyPortableSettings/);
+    assert.match(entrypoint, /createExternalIntegrationController/);
+    assert.match(entrypoint, /normalizeExternalSettings/);
     assert.match(settingsHtml, /cmr_run_diagnostics/);
     assert.match(settingsHtml, /cmr_export_backup/);
+    assert.match(settingsHtml, /cmr_external_section/);
+    assert.match(settingsHtml, /cmr_external_list/);
+    assert.match(portableSettings, /PORTABLE_SETTINGS_SCHEMA_VERSION = 2/);
+    assert.match(portableSettings, /externalIntegrations/);
+    assert.match(apiDocument, /v0\.6 범용 DOM 모델 브리지/);
+    assert.match(apiDocument, /Portable backup schema v2/);
+    assert.match(readme, /select\/input\/datalist/);
+    assert.match(roadmap, /fetch.*XMLHttpRequest.*monkey patch/);
+    for (const document of [readme, roadmap, checklist, apiDocument]) {
+        assert.match(document, /Vectors|embedding/);
+        assert.match(document, /TTS/);
+        assert.match(document, /Stable Diffusion/);
+        assert.match(document, /iframe/);
+        assert.match(document, /Shadow DOM/);
+    }
     assert.doesNotMatch(entrypoint, /\.options\.some\(/, '실제 select.options는 Array가 아닌 HTMLCollection이다');
     assert.equal(
         rootEntries.some(name => /^licen[cs]e(?:\.|$)/i.test(name)),

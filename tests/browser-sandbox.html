@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="ko">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Custom Model Router 범용 연결 샌드박스</title>
+    <style>
+        body { font-family: sans-serif; margin: 2rem; }
+        main { display: grid; gap: 1rem; max-width: 48rem; }
+        section { border: 1px solid #888; border-radius: 0.5rem; display: grid; gap: 0.4rem; padding: 1rem; }
+        select, input { max-width: 30rem; padding: 0.4rem; }
+        pre { background: #171717; color: #eee; overflow: auto; padding: 1rem; white-space: pre-wrap; }
+    </style>
+</head>
+<body>
+    <h1>범용 외부 확장 모델 연결 샌드박스</h1>
+    <p>
+        이 샌드박스는 표준 DOM 컨트롤의 탐지, option 주입과 기존 <code>input</code>/<code>change</code>
+        이벤트 전달만 확인합니다. 실제 Caption <code>/caption-image</code> 요청이나 Network payload의
+        <code>model</code> 반영을 검증하지 않습니다.
+    </p>
+    <main id="external_extensions">
+        <section id="caption_container" data-extension-name="caption">
+            <h2>Caption 형태</h2>
+            <label for="caption_multimodal_api">Caption API provider</label>
+            <select id="caption_multimodal_api">
+                <option value="openai" selected>OpenAI</option>
+                <option value="anthropic">Anthropic</option>
+                <option value="google">Google</option>
+            </select>
+            <label for="caption_multimodal_model">Caption multimodal model</label>
+            <select id="caption_multimodal_model">
+                <option value="gpt-4o-mini" data-type="openai" selected>gpt-4o-mini</option>
+                <option value="claude-sonnet-4" data-type="anthropic">claude-sonnet-4</option>
+                <option value="gemini-2.5-flash" data-type="google">gemini-2.5-flash</option>
+            </select>
+        </section>
+
+        <section id="vendor_panel" data-extension-name="vendor chat">
+            <h2>일반 입력 형태</h2>
+            <label for="vendor_model_id">Z.AI chat model ID</label>
+            <input id="vendor_model_id" type="text" data-model-provider="zai">
+        </section>
+
+        <section id="vectors_panel" data-extension-name="vectors">
+            <h2>제외 대상: Vectors</h2>
+            <label for="vectors_openai_model">Embedding model</label>
+            <select id="vectors_openai_model">
+                <option value="text-embedding-3-small">text-embedding-3-small</option>
+            </select>
+        </section>
+
+        <section id="tts_panel" data-extension-name="tts">
+            <h2>제외 대상: TTS</h2>
+            <label for="tts_openai_model">Text to speech model</label>
+            <select id="tts_openai_model">
+                <option value="gpt-4o-mini-tts">gpt-4o-mini-tts</option>
+            </select>
+        </section>
+
+        <section id="image_generation_panel" data-extension-name="stable diffusion">
+            <h2>제외 대상: 이미지 생성</h2>
+            <label for="sd_image_model">Stable Diffusion image generation model</label>
+            <select id="sd_image_model">
+                <option value="sdxl-base">sdxl-base</option>
+            </select>
+        </section>
+
+        <section id="unknown_panel" data-extension-name="unknown helper">
+            <h2>수동 연결 대상</h2>
+            <label for="helper_model">Model</label>
+            <select id="helper_model">
+                <option value="native-default">native-default</option>
+            </select>
+        </section>
+    </main>
+
+    <h2>검증 결과</h2>
+    <p data-cmr-owned="true">
+        <button id="bind_unknown" type="button">모호한 대상 OpenAI 연결</button>
+        <button id="disable_unknown" type="button">모호한 대상 사용 안 함</button>
+        <button id="reset_unknown" type="button">모호한 대상 자동으로 복귀</button>
+        <button id="recreate_caption" type="button">Caption 선택기 재생성</button>
+        <button id="stop_bridge" type="button">브리지 정리</button>
+        <button id="start_bridge" type="button">브리지 다시 시작</button>
+    </p>
+    <pre id="sandbox_result" data-cmr-owned="true" aria-live="polite">초기화 중</pre>
+
+    <script type="module">
+        import {
+            createExternalIntegrationController,
+        } from '../src/external-integrations.js?browser-sandbox=0.6.0';
+
+        const models = {
+            openai: [{ provider: 'openai', id: 'gpt-5.9-preview', enabled: true }],
+            claude: [{ provider: 'claude', id: 'claude-opus-9-preview', enabled: true }],
+            makersuite: [{ provider: 'makersuite', id: 'gemini-9.0-preview', enabled: true }],
+            zai: [{ provider: 'zai', id: 'glm-9.0', enabled: true }],
+        };
+        const selectedModels = new Map();
+        const changes = [];
+        const externalState = {
+            captionModel: document.querySelector('#caption_multimodal_model').value,
+            captionChangeCount: 0,
+        };
+        const result = document.querySelector('#sandbox_result');
+        const captionListenerControls = new WeakSet();
+
+        const summarizeTarget = target => ({
+            id: target.control.id,
+            provider: target.resolution?.providerId ?? null,
+            source: target.resolution?.source ?? null,
+            risk: target.risk?.excludedReason ?? null,
+        });
+
+        const collect = () => {
+            const captionOptions = [...document.querySelectorAll('#caption_multimodal_model [data-cmr-external-model="true"]')];
+            const captionControl = document.querySelector('#caption_multimodal_model');
+            const input = document.querySelector('#vendor_model_id');
+            const unknownTarget = controller.getTargets().find(item => item.control.id === 'helper_model');
+            const mappings = controller.getMappings();
+            const metrics = controller.getMetrics();
+            const snapshot = {
+                targets: controller.getTargets().map(summarizeTarget),
+                metrics,
+                bridgeActive: metrics.observerCount === 1,
+                captionOptions: captionOptions.map(option => ({
+                    value: option.value,
+                    type: option.dataset.type,
+                    provider: option.dataset.cmrProvider,
+                })),
+                captionControlValue: captionControl?.value ?? null,
+                inputList: input?.getAttribute('list') ?? null,
+                inputOptions: [...document.querySelectorAll('datalist [data-cmr-external-model="true"]')]
+                    .map(option => option.value),
+                vectorInjected: document.querySelectorAll('#vectors_openai_model [data-cmr-external-model="true"]').length,
+                ttsInjected: document.querySelectorAll('#tts_openai_model [data-cmr-external-model="true"]').length,
+                imageGenerationInjected: document.querySelectorAll('#sd_image_model [data-cmr-external-model="true"]').length,
+                ambiguousInjected: document.querySelectorAll('#helper_model [data-cmr-external-model="true"]').length,
+                unknownMapping: unknownTarget ? (mappings[unknownTarget.targetId] ?? 'auto') : null,
+                unknownResolution: unknownTarget?.resolution?.source ?? null,
+                changes: [...changes],
+                externalState: { ...externalState },
+                scope: 'DOM option/event only; actual /caption-image Network payload is not verified here',
+            };
+            result.textContent = JSON.stringify(snapshot, null, 2);
+            window.cmrSandboxSnapshot = snapshot;
+            document.querySelector('#bind_unknown').disabled = !snapshot.bridgeActive;
+            document.querySelector('#disable_unknown').disabled = !snapshot.bridgeActive;
+            document.querySelector('#reset_unknown').disabled = !snapshot.bridgeActive;
+            document.querySelector('#recreate_caption').disabled = !snapshot.bridgeActive;
+            document.querySelector('#stop_bridge').disabled = !snapshot.bridgeActive;
+            document.querySelector('#start_bridge').disabled = snapshot.bridgeActive;
+            return snapshot;
+        };
+
+        const attachCaptionExternalListener = control => {
+            if (!control || captionListenerControls.has(control)) {
+                return;
+            }
+            captionListenerControls.add(control);
+            control.addEventListener('change', event => {
+                externalState.captionModel = event.currentTarget.value;
+                externalState.captionChangeCount += 1;
+                collect();
+            });
+        };
+
+        const controller = createExternalIntegrationController({
+            root: document,
+            documentRef: document,
+            getModels: providerId => models[providerId] ?? [],
+            getPreferredModel: (targetId, providerId) => selectedModels.get(`${targetId}:${providerId}`) ?? null,
+            onSelectionChanged: payload => {
+                changes.push(payload);
+                const key = `${payload.targetId}:${payload.providerId}`;
+                if (payload.modelId) {
+                    selectedModels.set(key, payload.modelId);
+                } else {
+                    selectedModels.delete(key);
+                }
+                collect();
+            },
+            onTargetsChanged: () => queueMicrotask(collect),
+        });
+
+        attachCaptionExternalListener(document.querySelector('#caption_multimodal_model'));
+        controller.start();
+
+        const updateUnknownMapping = mapping => {
+            const target = controller.getTargets().find(item => item.control.id === 'helper_model');
+            if (!target) {
+                return collect();
+            }
+            const mappings = controller.getMappings();
+            if (mapping === null) {
+                delete mappings[target.targetId];
+            } else {
+                mappings[target.targetId] = mapping;
+            }
+            controller.setMappings(mappings);
+            return collect();
+        };
+
+        window.cmrSandbox = {
+            controller,
+            collect,
+            changes,
+            models,
+            selectedModels,
+            bindUnknown(providerId = 'openai') {
+                return updateUnknownMapping(providerId);
+            },
+            disableUnknown() {
+                return updateUnknownMapping('disabled');
+            },
+            resetUnknown() {
+                return updateUnknownMapping(null);
+            },
+            recreateCaptionModel() {
+                const previous = document.querySelector('#caption_multimodal_model');
+                const replacement = previous.cloneNode(true);
+                replacement.querySelectorAll('[data-cmr-external-model="true"], [data-cmr-external-group="true"]')
+                    .forEach(node => node.remove());
+                replacement.value = '';
+                attachCaptionExternalListener(replacement);
+                previous.replaceWith(replacement);
+            },
+            stop() {
+                controller.stop();
+                return collect();
+            },
+            start() {
+                controller.start();
+                return collect();
+            },
+        };
+        document.querySelector('#bind_unknown').addEventListener('click', () => window.cmrSandbox.bindUnknown());
+        document.querySelector('#disable_unknown').addEventListener('click', () => window.cmrSandbox.disableUnknown());
+        document.querySelector('#reset_unknown').addEventListener('click', () => window.cmrSandbox.resetUnknown());
+        document.querySelector('#recreate_caption').addEventListener('click', () => window.cmrSandbox.recreateCaptionModel());
+        document.querySelector('#stop_bridge').addEventListener('click', () => window.cmrSandbox.stop());
+        document.querySelector('#start_bridge').addEventListener('click', () => window.cmrSandbox.start());
+        collect();
+    </script>
+</body>
+</html>

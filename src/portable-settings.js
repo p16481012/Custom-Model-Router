@@ -15,18 +15,23 @@ import {
     validatePurposeId,
     validatePurposeRoute,
 } from './purpose-router.js';
+import {
+    EXTERNAL_SETTINGS_SCHEMA_VERSION,
+    normalizeExternalSettings,
+} from './external-settings.js';
 
 export const PORTABLE_SETTINGS_FORMAT = 'custom-model-router-portable-settings';
-export const PORTABLE_SETTINGS_SCHEMA_VERSION = 1;
+export const PORTABLE_SETTINGS_SCHEMA_VERSION = 2;
 export const PORTABLE_SETTINGS_MAX_LENGTH = 1_000_000;
 export const PORTABLE_SETTINGS_MAX_MODELS = 5_000;
 export const PORTABLE_SETTINGS_MAX_ROUTES = 256;
 
-const ROOT_KEYS = Object.freeze(['format', 'schemaVersion', 'createdAt', 'registry', 'purposeRoutes']);
+const ROOT_KEYS = Object.freeze(['format', 'schemaVersion', 'createdAt', 'registry', 'purposeRoutes', 'externalIntegrations']);
 const REGISTRY_KEYS = Object.freeze(['schemaVersion', 'models', 'selectedModels']);
 const MODEL_KEYS = Object.freeze(['id', 'provider', 'protocol', 'enabled']);
 const PURPOSE_ROUTES_KEYS = Object.freeze(['schemaVersion', 'routes']);
 const ROUTE_KEYS = Object.freeze(['provider', 'modelId', 'adapterId', 'connectionProfileId']);
+const EXTERNAL_INTEGRATION_KEYS = Object.freeze(['schemaVersion', 'mappings', 'selectedModels']);
 
 export class PortableSettingsError extends Error {
     constructor(code, message, issues = []) {
@@ -73,6 +78,20 @@ function clonePurposeRoutes(value) {
     };
 }
 
+function cloneExternalSettings(value) {
+    const normalized = normalizeExternalSettings(value);
+    return {
+        schemaVersion: EXTERNAL_SETTINGS_SCHEMA_VERSION,
+        mappings: { ...normalized.mappings },
+        selectedModels: Object.fromEntries(
+            Object.entries(normalized.selectedModels).map(([targetId, selections]) => [
+                targetId,
+                { ...selections },
+            ]),
+        ),
+    };
+}
+
 function normalizeCreatedAt(value) {
     const date = value instanceof Date ? value : new Date(value ?? Date.now());
     if (Number.isNaN(date.getTime())) {
@@ -104,12 +123,21 @@ export function createPortableSettings(options = {}) {
             `용도별 경로 스키마 v${options.purposeRoutes.schemaVersion}은 현재 확장에서 내보낼 수 없습니다.`,
         );
     }
+    try {
+        normalizeExternalSettings(options.externalSettings);
+    } catch (error) {
+        throw new PortableSettingsError(
+            'future_external_schema',
+            error?.message ?? '외부 확장 연결 설정을 내보낼 수 없습니다.',
+        );
+    }
     return {
         format: PORTABLE_SETTINGS_FORMAT,
         schemaVersion: PORTABLE_SETTINGS_SCHEMA_VERSION,
         createdAt: normalizeCreatedAt(options.createdAt ?? options.now),
         registry: cloneRegistrySettings(options.registrySettings),
         purposeRoutes: clonePurposeRoutes(options.purposeRoutes),
+        externalIntegrations: cloneExternalSettings(options.externalSettings),
     };
 }
 
@@ -206,6 +234,41 @@ function validateSchemaVersion(issues, actual, expected, path, label) {
             `${label} 스키마 v${actual}은 이 백업 형식에서 지원하지 않습니다.`,
         ));
         return false;
+    }
+    return true;
+}
+
+function validatePortableSchemaVersion(issues, actual) {
+    const path = '$.schemaVersion';
+    if (!Number.isInteger(actual)) {
+        issues.push(createIssue('error', 'schema_version_invalid', path, '백업 스키마 버전이 올바르지 않습니다.'));
+        return false;
+    }
+    if (actual > PORTABLE_SETTINGS_SCHEMA_VERSION) {
+        issues.push(createIssue(
+            'error',
+            'future_schema_unsupported',
+            path,
+            `백업 스키마 v${actual}은 이 확장에서 지원하지 않습니다. 확장을 먼저 업데이트해 주세요.`,
+        ));
+        return false;
+    }
+    if (![1, PORTABLE_SETTINGS_SCHEMA_VERSION].includes(actual)) {
+        issues.push(createIssue(
+            'error',
+            'schema_version_unsupported',
+            path,
+            `백업 스키마 v${actual}은 지원하지 않습니다.`,
+        ));
+        return false;
+    }
+    if (actual === 1) {
+        issues.push(createIssue(
+            'warning',
+            'backup_schema_migrated',
+            path,
+            'v0.5 백업을 v0.6 형식으로 가져오며 외부 확장 연결은 빈 상태로 시작합니다.',
+        ));
     }
     return true;
 }
@@ -412,6 +475,55 @@ function validateRoutes(value, registrySettings, issues) {
     return { schemaVersion: PURPOSE_ROUTES_SCHEMA_VERSION, routes };
 }
 
+function validateExternalIntegrations(value, issues) {
+    const path = '$.externalIntegrations';
+    if (!isRecord(value)) {
+        issues.push(createIssue('error', 'external_integrations_invalid', path, '외부 확장 연결 백업은 객체여야 합니다.'));
+        return null;
+    }
+    addUnknownKeyIssues(issues, value, EXTERNAL_INTEGRATION_KEYS, path);
+    validateSchemaVersion(
+        issues,
+        value.schemaVersion,
+        EXTERNAL_SETTINGS_SCHEMA_VERSION,
+        `${path}.schemaVersion`,
+        '외부 확장 연결',
+    );
+    let normalized;
+    try {
+        normalized = cloneExternalSettings(value);
+    } catch {
+        issues.push(createIssue(
+            'error',
+            'external_integrations_invalid',
+            path,
+            '외부 확장 연결 설정을 정규화할 수 없습니다.',
+        ));
+        return null;
+    }
+    const mappingsCanonical = isRecord(value.mappings)
+        && Object.keys(value.mappings).length === Object.keys(normalized.mappings).length
+        && Object.entries(normalized.mappings).every(([targetId, providerId]) => value.mappings[targetId] === providerId);
+    const selectedCanonical = isRecord(value.selectedModels)
+        && Object.keys(value.selectedModels).length === Object.keys(normalized.selectedModels).length
+        && Object.entries(normalized.selectedModels).every(([targetId, selections]) => (
+            isRecord(value.selectedModels[targetId])
+            && Object.keys(value.selectedModels[targetId]).length === Object.keys(selections).length
+            && Object.entries(selections).every(([providerId, modelId]) => (
+                value.selectedModels[targetId][providerId] === modelId
+            ))
+        ));
+    if (!mappingsCanonical || !selectedCanonical) {
+        issues.push(createIssue(
+            'error',
+            'external_integrations_not_canonical',
+            path,
+            '외부 확장 연결의 target ID·제공업체·모델 ID가 정규 형식이 아니거나 허용되지 않은 필드가 있습니다.',
+        ));
+    }
+    return normalized;
+}
+
 function summarizeInspection(issues) {
     const errors = issues.filter(issue => issue.severity === 'error');
     const warnings = issues.filter(issue => issue.severity === 'warning');
@@ -433,6 +545,7 @@ export function inspectPortableSettings(input) {
     const source = parseInput(input, issues);
     let registry = null;
     let purposeRoutes = null;
+    let externalIntegrations = null;
 
     if (source) {
         if (!isRecord(source)) {
@@ -447,13 +560,7 @@ export function inspectPortableSettings(input) {
                     'Custom Model Router 백업 파일이 아닙니다.',
                 ));
             }
-            validateSchemaVersion(
-                issues,
-                source.schemaVersion,
-                PORTABLE_SETTINGS_SCHEMA_VERSION,
-                '$.schemaVersion',
-                '백업',
-            );
+            const portableVersionValid = validatePortableSchemaVersion(issues, source.schemaVersion);
             if (typeof source.createdAt !== 'string' || Number.isNaN(Date.parse(source.createdAt))) {
                 issues.push(createIssue(
                     'error',
@@ -464,6 +571,9 @@ export function inspectPortableSettings(input) {
             }
             registry = validateRegistry(source.registry, issues);
             purposeRoutes = validateRoutes(source.purposeRoutes, registry, issues);
+            externalIntegrations = portableVersionValid && source.schemaVersion === 1
+                ? cloneExternalSettings()
+                : validateExternalIntegrations(source.externalIntegrations, issues);
         }
     }
 
@@ -479,6 +589,7 @@ export function inspectPortableSettings(input) {
         result.value = {
             registry,
             purposeRoutes,
+            externalIntegrations,
         };
     }
     return result;
@@ -494,6 +605,7 @@ export function parsePortableSettings(input) {
     return {
         registrySettings: cloneRegistrySettings(report.value.registry),
         purposeRoutes: clonePurposeRoutes(report.value.purposeRoutes),
+        externalSettings: cloneExternalSettings(report.value.externalIntegrations),
         report: {
             status: report.status,
             summary: report.summary,

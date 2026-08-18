@@ -53,10 +53,23 @@ import {
     repairSettingsBundle,
     stringifyPortableSettings,
 } from './src/portable-settings.js';
+import {
+    EXTERNAL_MAPPING_DISABLED,
+    createExternalIntegrationController,
+} from './src/external-integrations.js';
+import {
+    ExternalSettingsError,
+    getExternalSelectedModel,
+    normalizeExternalSettings,
+    removeExternalMapping,
+    setExternalMapping,
+    setExternalSelectedModel,
+} from './src/external-settings.js';
 
-const EXTENSION_VERSION = '0.5.0';
+const EXTENSION_VERSION = '0.6.0';
 const SETTINGS_KEY = 'customModelRouter';
 const ROUTES_SETTINGS_KEY = 'customModelRouterRouting';
+const EXTERNAL_SETTINGS_KEY = 'customModelRouterExternalIntegrations';
 const OBSERVER_ROOT_SELECTOR = '#rm_api_block';
 const CONNECTION_PROFILE_SELECTOR = '#connection_profiles';
 const API_TITLE_SELECTOR = '#title_api';
@@ -107,6 +120,8 @@ let activeProviderId = null;
 let registryApiController = null;
 let uninstallRegistryApi = null;
 let routingSettings = null;
+let externalSettings = null;
+let externalIntegrationController = null;
 let purposeRouter = null;
 let unregisterConnectionProfileAdapter = null;
 let stabilityMonitor = null;
@@ -114,6 +129,7 @@ let lastDiagnosticReport = null;
 let lastRepairReport = null;
 let acceptedSettingsSnapshot = null;
 let acceptedRoutingSnapshot = null;
+let acceptedExternalSnapshot = null;
 const boundControls = new Map();
 const pendingRestores = new Set();
 const pendingNativeChecks = new Map();
@@ -181,6 +197,7 @@ function findInitialProviderId() {
 function rememberAcceptedSettings() {
     acceptedSettingsSnapshot = normalizeSettings(settings);
     acceptedRoutingSnapshot = normalizePurposeRoutes(routingSettings);
+    acceptedExternalSnapshot = normalizeExternalSettings(externalSettings);
 }
 
 function persistSettings(source = 'runtime') {
@@ -206,7 +223,18 @@ function persistRoutingSettings(nextRoutes) {
     renderRoutingFields();
 }
 
+function persistExternalSettings(source = 'external-integrations') {
+    externalSettings = normalizeExternalSettings(externalSettings);
+    context.extensionSettings[EXTERNAL_SETTINGS_KEY] = externalSettings;
+    acceptedExternalSnapshot = normalizeExternalSettings(externalSettings);
+    context.saveSettingsDebounced();
+    externalIntegrationController?.setMappings(externalSettings.mappings);
+    renderExternalIntegrations();
+    registryApiController?.synchronize(source);
+}
+
 function getRuntimeMetrics(phase = 'active') {
+    const externalMetrics = externalIntegrationController?.getMetrics?.() ?? {};
     return {
         phase,
         launcherCount: launcherButton?.parentElement ? 1 : 0,
@@ -214,6 +242,11 @@ function getRuntimeMetrics(phase = 'active') {
         observerCount: observer && observedContainer ? 1 : 0,
         listenerCount: subscribedEvents.length,
         boundControlCount: boundControls.size,
+        externalObserverCount: externalMetrics.observerCount ?? 0,
+        externalListenerCount: externalMetrics.listenerCount ?? 0,
+        externalTargetCount: externalMetrics.targetCount ?? 0,
+        externalAutoCount: externalMetrics.autoCount ?? 0,
+        externalManualCount: externalMetrics.manualCount ?? 0,
         pendingTaskCount: pendingRestores.size + pendingNativeChecks.size + (syncScheduled ? 1 : 0),
     };
 }
@@ -658,11 +691,134 @@ function renderRoutingFields() {
     }
 }
 
+function announceExternal(message, state = 'ok') {
+    const status = settingsRoot?.querySelector('#cmr_external_status');
+    if (!status) {
+        return;
+    }
+    status.dataset.state = state;
+    status.textContent = message;
+}
+
+function populateExternalProviderSelect(select, selectedProviderId = '') {
+    const placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = '제공업체 선택';
+    const options = getProviders().map(provider => createOption(provider));
+    select.replaceChildren(placeholder, ...options);
+    select.value = options.some(option => option.value === selectedProviderId)
+        ? selectedProviderId
+        : '';
+}
+
+function getExternalTargetHint(target) {
+    const controlId = String(target?.control?.id ?? '').trim();
+    const controlName = String(target?.control?.name ?? target?.control?.getAttribute?.('name') ?? '').trim();
+    return controlId ? `#${controlId}` : (controlName ? `[name="${controlName}"]` : target.targetId);
+}
+
+function renderExternalIntegrations() {
+    const list = settingsRoot?.querySelector('#cmr_external_list');
+    const count = settingsRoot?.querySelector('#cmr_external_count');
+    if (!list || !count) {
+        return;
+    }
+
+    const targets = externalIntegrationController?.getTargets?.() ?? [];
+    const actionable = targets.filter(target => target.resolution?.source !== 'risk-blocked');
+    const excludedCount = targets.length - actionable.length;
+    const connectedCount = actionable.filter(target => Boolean(target.resolution?.providerId)).length;
+    const unresolvedCount = actionable.filter(target => !target.resolution?.providerId
+        && target.resolution?.source !== 'manual-disabled').length;
+    count.textContent = `감지 ${actionable.length}개 · 연결 ${connectedCount}개`;
+    count.title = excludedCount ? `Chat Completion 이외 모델 컨트롤 ${excludedCount}개 자동 제외` : '';
+    list.replaceChildren();
+
+    if (!actionable.length) {
+        const empty = document.createElement('li');
+        empty.className = 'cmr-empty';
+        empty.textContent = excludedCount
+            ? `연결 가능한 Chat Completion 모델 컨트롤이 없습니다. 비대상 ${excludedCount}개는 자동 제외했습니다.`
+            : '다른 확장의 모델 선택기나 입력란을 찾지 못했습니다.';
+        list.append(empty);
+    }
+
+    for (const target of actionable) {
+        const row = document.createElement('li');
+        row.className = 'cmr-external-row';
+        row.dataset.targetId = target.targetId;
+
+        const heading = document.createElement('div');
+        heading.className = 'cmr-external-heading';
+        const name = document.createElement('span');
+        name.className = 'cmr-external-name';
+        name.textContent = target.label;
+        name.title = target.label;
+        const badgeKind = target.resolution?.source === 'manual'
+            ? 'saved'
+            : (target.resolution?.source?.startsWith('auto:') ? 'selected' : '');
+        const badgeText = target.resolution?.source === 'manual'
+            ? '수동 연결'
+            : (target.resolution?.source?.startsWith('auto:')
+                ? '자동 연결'
+                : (target.resolution?.source === 'manual-disabled' ? '사용 안 함' : '확인 필요'));
+        const badge = createBadge(badgeText, badgeKind);
+        const hint = document.createElement('code');
+        hint.className = 'cmr-external-hint';
+        hint.textContent = getExternalTargetHint(target);
+        heading.append(name, badge, hint);
+
+        const actions = document.createElement('div');
+        actions.className = 'cmr-external-actions';
+        const providerSelect = document.createElement('select');
+        providerSelect.className = 'text_pole';
+        providerSelect.dataset.cmrExternalProvider = 'true';
+        providerSelect.setAttribute('aria-label', `${target.label}에 연결할 제공업체`);
+        const suggestedProvider = target.resolution?.providerId ?? target.inference?.providerId ?? '';
+        populateExternalProviderSelect(providerSelect, suggestedProvider);
+
+        const bindButton = document.createElement('button');
+        bindButton.type = 'button';
+        bindButton.className = 'menu_button';
+        bindButton.dataset.cmrExternalAction = 'bind';
+        bindButton.textContent = '연결';
+        bindButton.setAttribute('aria-label', `${target.label} 제공업체 연결 저장`);
+
+        const autoButton = document.createElement('button');
+        autoButton.type = 'button';
+        autoButton.className = 'menu_button';
+        autoButton.dataset.cmrExternalAction = 'auto';
+        autoButton.textContent = '자동';
+        autoButton.disabled = !Object.hasOwn(externalSettings?.mappings ?? {}, target.targetId);
+        autoButton.setAttribute('aria-label', `${target.label} 자동 판별 사용`);
+
+        const disableButton = document.createElement('button');
+        disableButton.type = 'button';
+        disableButton.className = 'menu_button';
+        disableButton.dataset.cmrExternalAction = 'disable';
+        disableButton.textContent = '제외';
+        disableButton.disabled = target.resolution?.source === 'manual-disabled';
+        disableButton.setAttribute('aria-label', `${target.label} 범용 연결에서 제외`);
+
+        actions.append(providerSelect, bindButton, autoButton, disableButton);
+        row.append(heading, actions);
+        list.append(row);
+    }
+
+    if (!settingsRoot?.querySelector('#cmr_external_status')?.textContent) {
+        announceExternal(
+            `자동·수동 연결 ${connectedCount}개 · 확인 필요 ${unresolvedCount}개${excludedCount ? ` · 비대상 ${excludedCount}개 제외` : ''}`,
+            unresolvedCount ? 'warning' : 'ok',
+        );
+    }
+}
+
 function renderUi() {
     renderLauncher();
     renderProviderFields();
     renderCompatibilityStatus();
     renderModelList();
+    renderExternalIntegrations();
     renderRoutingFields();
     renderDiagnosticReport();
 }
@@ -868,6 +1024,7 @@ function synchronize() {
     for (const provider of getProviders()) {
         synchronizeProvider(provider);
     }
+    externalIntegrationController?.sync?.();
     renderUi();
     connectObserver();
 }
@@ -902,6 +1059,23 @@ function onSettingsUpdated() {
     }
     const storedSettings = context.extensionSettings[SETTINGS_KEY];
     const storedRoutes = context.extensionSettings[ROUTES_SETTINGS_KEY];
+    const storedExternal = context.extensionSettings[EXTERNAL_SETTINGS_KEY];
+    let nextExternal;
+    try {
+        nextExternal = normalizeExternalSettings(storedExternal);
+    } catch (error) {
+        settings = normalizeSettings(acceptedSettingsSnapshot ?? settings);
+        routingSettings = normalizePurposeRoutes(acceptedRoutingSnapshot ?? routingSettings);
+        externalSettings = normalizeExternalSettings(acceptedExternalSnapshot ?? externalSettings);
+        externalIntegrationController?.setMappings(externalSettings.mappings);
+        const message = error instanceof ExternalSettingsError
+            ? `${error.code}: ${error.message}`
+            : '외부 확장 연결 설정을 읽지 못했습니다.';
+        console.error(`[Custom Model Router] 외부 설정을 적용하지 않았습니다. ${message}`);
+        announce(message, 'error');
+        scheduleSync();
+        return;
+    }
     const repairReport = repairSettingsBundle({
         registrySettings: storedSettings,
         purposeRoutes: storedRoutes,
@@ -911,6 +1085,8 @@ function onSettingsUpdated() {
     if (!repairReport.ok) {
         settings = normalizeSettings(acceptedSettingsSnapshot ?? settings);
         routingSettings = normalizePurposeRoutes(acceptedRoutingSnapshot ?? routingSettings);
+        externalSettings = normalizeExternalSettings(acceptedExternalSnapshot ?? externalSettings);
+        externalIntegrationController?.setMappings(externalSettings.mappings);
         registryApiController?.synchronize('external-settings-rejected');
         const issue = repairReport.errors[0];
         const message = issue
@@ -926,8 +1102,10 @@ function onSettingsUpdated() {
     const nextRoutes = normalizePurposeRoutes(repairReport.purposeRoutes);
     const settingsChanged = JSON.stringify(settings) !== JSON.stringify(nextSettings);
     const routesChanged = JSON.stringify(routingSettings) !== JSON.stringify(nextRoutes);
+    const externalChanged = JSON.stringify(externalSettings) !== JSON.stringify(nextExternal);
     const storedSettingsRepaired = JSON.stringify(storedSettings) !== JSON.stringify(nextSettings);
     const storedRoutesRepaired = JSON.stringify(storedRoutes) !== JSON.stringify(nextRoutes);
+    const storedExternalRepaired = JSON.stringify(storedExternal) !== JSON.stringify(nextExternal);
 
     settings = nextSettings;
     if (routesChanged && purposeRouter) {
@@ -935,15 +1113,21 @@ function onSettingsUpdated() {
     } else {
         routingSettings = nextRoutes;
     }
+    externalSettings = nextExternal;
+    externalIntegrationController?.setMappings(externalSettings.mappings);
     context.extensionSettings[SETTINGS_KEY] = settings;
     context.extensionSettings[ROUTES_SETTINGS_KEY] = routingSettings;
+    context.extensionSettings[EXTERNAL_SETTINGS_KEY] = externalSettings;
     rememberAcceptedSettings();
 
     if (settingsChanged) {
         registryApiController?.synchronize('external-settings');
     }
-    if ((storedSettingsRepaired || storedRoutesRepaired) && !routesChanged) {
+    if ((storedSettingsRepaired || storedRoutesRepaired || storedExternalRepaired) && !routesChanged) {
         context.saveSettingsDebounced();
+    }
+    if (externalChanged) {
+        renderExternalIntegrations();
     }
     scheduleSync();
 }
@@ -1124,6 +1308,72 @@ async function onRouteTest(event) {
     }
 }
 
+function onExternalSelectionChanged({ targetId, providerId, modelId }) {
+    if (!context || !externalSettings) {
+        return;
+    }
+    try {
+        const previous = getExternalSelectedModel(externalSettings, targetId, providerId);
+        if (previous === (modelId || null)) {
+            return;
+        }
+        externalSettings = setExternalSelectedModel(externalSettings, targetId, providerId, modelId);
+        context.extensionSettings[EXTERNAL_SETTINGS_KEY] = externalSettings;
+        acceptedExternalSnapshot = normalizeExternalSettings(externalSettings);
+        context.saveSettingsDebounced();
+        renderExternalIntegrations();
+    } catch (error) {
+        console.error('[Custom Model Router] 외부 확장 모델 선택을 저장하지 못했습니다.', error);
+    }
+}
+
+function onExternalRefresh() {
+    const targets = externalIntegrationController?.rescan?.() ?? [];
+    renderExternalIntegrations();
+    const connected = targets.filter(target => Boolean(target.resolution?.providerId)).length;
+    announceExternal(`외부 모델 컨트롤 ${targets.length}개를 다시 탐지했고 ${connected}개를 연결했습니다.`);
+}
+
+function onExternalListClick(event) {
+    const button = event.target?.closest?.('[data-cmr-external-action]');
+    if (!button || !settingsRoot?.contains(button) || !externalSettings) {
+        return;
+    }
+    const row = button.closest?.('[data-target-id]');
+    const targetId = row?.dataset.targetId;
+    const action = button.dataset.cmrExternalAction;
+    if (!targetId) {
+        return;
+    }
+
+    try {
+        if (action === 'bind') {
+            const providerId = row.querySelector?.('[data-cmr-external-provider]')?.value;
+            const provider = getProvider(providerId);
+            if (!provider) {
+                throw new ExternalSettingsError('mapping_provider_missing', '연결할 제공업체를 선택해 주세요.');
+            }
+            externalSettings = setExternalMapping(externalSettings, targetId, provider.id);
+            persistExternalSettings();
+            announceExternal(`${provider.label}로 수동 연결했습니다.`);
+            return;
+        }
+        if (action === 'auto') {
+            externalSettings = removeExternalMapping(externalSettings, targetId);
+            persistExternalSettings();
+            announceExternal('수동 연결을 해제하고 자동 판별을 사용합니다.');
+            return;
+        }
+        if (action === 'disable') {
+            externalSettings = setExternalMapping(externalSettings, targetId, EXTERNAL_MAPPING_DISABLED);
+            persistExternalSettings();
+            announceExternal('이 모델 컨트롤을 범용 연결에서 제외했습니다.', 'warning');
+        }
+    } catch (error) {
+        announceExternal(error instanceof ExternalSettingsError ? error.message : '외부 확장 연결을 저장하지 못했습니다.', 'error');
+    }
+}
+
 function createDiagnosticReport() {
     const compatibility = diagnoseCompatibility({
         context,
@@ -1134,20 +1384,54 @@ function createDiagnosticReport() {
             controlBindings: [...boundControls.keys()].map(providerId => ({ providerId })),
         },
     });
+    const externalMetrics = externalIntegrationController?.getMetrics?.() ?? {
+        observerCount: 0,
+        targetCount: 0,
+        boundCount: 0,
+        autoCount: 0,
+        manualCount: 0,
+        listenerCount: 0,
+    };
+    const externalTargets = externalIntegrationController?.getTargets?.() ?? [];
+    const externalUnresolvedCount = externalTargets.filter(target => (
+        target.resolution?.source === 'unresolved'
+    )).length;
+    const externalExcludedCount = externalTargets.filter(target => (
+        target.resolution?.source === 'risk-blocked'
+        || target.resolution?.source === 'manual-disabled'
+    )).length;
+    const externalStatus = externalUnresolvedCount ? 'warning' : 'passed';
+    const externalCheck = {
+        id: 'external-model-controls',
+        status: externalStatus,
+        message: `외부 모델 컨트롤 ${externalMetrics.targetCount}개 감지 · ${externalMetrics.boundCount}개 연결 · ${externalUnresolvedCount}개 확인 필요 · ${externalExcludedCount}개 제외`,
+        details: {
+            ...externalMetrics,
+            unresolvedCount: externalUnresolvedCount,
+            excludedCount: externalExcludedCount,
+        },
+    };
     const stability = stabilityMonitor?.analyze() ?? null;
     const status = compatibility.status === 'error' || stability?.status === 'error'
         ? 'error'
-        : (compatibility.status === 'warning' || stability?.status === 'warning' ? 'warning' : 'ok');
-    const summary = stability?.status === 'error'
+        : (compatibility.status === 'warning' || stability?.status === 'warning' || externalStatus === 'warning'
+            ? 'warning'
+            : 'ok');
+    const compatibilitySummary = stability?.status === 'error'
         ? `${compatibility.summary} 장시간 계측에서 자원 증가를 발견했습니다.`
         : (stability?.status === 'warning' && compatibility.status === 'ok'
             ? `${compatibility.summary} ${stability.summary}`
             : compatibility.summary);
+    const summary = externalUnresolvedCount
+        ? `${compatibilitySummary} 외부 모델 컨트롤 ${externalUnresolvedCount}개는 제공업체 확인이 필요합니다.`
+        : compatibilitySummary;
     return {
         ...compatibility,
+        checks: [...compatibility.checks, externalCheck],
         status,
         summary,
         extensionVersion: EXTENSION_VERSION,
+        externalIntegrations: externalCheck.details,
         stability,
         repair: lastRepairReport ? {
             status: lastRepairReport.status,
@@ -1214,6 +1498,7 @@ function onExportBackup() {
         const content = stringifyPortableSettings({
             registrySettings: settings,
             purposeRoutes: routingSettings,
+            externalSettings,
         });
         const BlobClass = globalThis.Blob;
         const URLApi = globalThis.URL;
@@ -1229,7 +1514,7 @@ function onExportBackup() {
         anchor.click();
         anchor.remove();
         URLApi.revokeObjectURL(url);
-        announce('Registry와 용도별 경로 백업을 내보냈습니다.');
+        announce('Registry, 용도별 경로와 외부 확장 연결 백업을 내보냈습니다.');
     } catch {
         announce('이 브라우저에서는 백업 파일을 내보내지 못했습니다.', 'error');
     }
@@ -1273,7 +1558,7 @@ async function onImportBackup(event) {
             return;
         }
         const confirmation = globalThis.confirm?.(
-            '현재 Custom Model Router 모델 Registry와 용도별 경로를 이 백업으로 교체할까요?',
+            '현재 Custom Model Router 모델 Registry, 용도별 경로와 외부 확장 연결을 이 백업으로 교체할까요?',
         );
         if (!isCurrentImportOperation(operation)) {
             return;
@@ -1283,13 +1568,17 @@ async function onImportBackup(event) {
             return;
         }
         settings = normalizeSettings(parsed.registrySettings);
+        externalSettings = normalizeExternalSettings(parsed.externalSettings);
         operation.context.extensionSettings[SETTINGS_KEY] = settings;
+        operation.context.extensionSettings[EXTERNAL_SETTINGS_KEY] = externalSettings;
         operation.purposeRouter.replaceRoutes(parsed.purposeRoutes);
+        externalIntegrationController?.setMappings(externalSettings.mappings);
+        acceptedExternalSnapshot = normalizeExternalSettings(externalSettings);
         persistSettings('backup-import');
         synchronize();
         announce(parsed.report.status === 'warning'
             ? `백업을 가져왔습니다. ${parsed.report.summary}`
-            : '백업에서 Registry와 용도별 경로를 복구했습니다.');
+            : '백업에서 Registry, 용도별 경로와 외부 확장 연결을 복구했습니다.');
     } catch (error) {
         if (isCurrentImportOperation(operation)) {
             const message = error instanceof PortableSettingsError
@@ -1317,6 +1606,8 @@ function createSettingsPanel() {
     settingsRoot.querySelector('#cmr_provider')?.addEventListener('change', onProviderChange);
     settingsRoot.querySelector('#cmr_add_form')?.addEventListener('submit', onAddModel);
     settingsRoot.querySelector('#cmr_model_list')?.addEventListener('click', onModelListClick);
+    settingsRoot.querySelector('#cmr_external_refresh')?.addEventListener('click', onExternalRefresh);
+    settingsRoot.querySelector('#cmr_external_list')?.addEventListener('click', onExternalListClick);
     settingsRoot.querySelector('#cmr_route_purpose')?.addEventListener('change', onRoutePurposeChange);
     settingsRoot.querySelector('#cmr_route_model')?.addEventListener('change', onRouteModelChange);
     settingsRoot.querySelector('#cmr_route_form')?.addEventListener('submit', onRouteSubmit);
@@ -1486,6 +1777,8 @@ function teardownRuntime({ applyNativeFallback = false } = {}) {
     observer?.disconnect();
     observer = null;
     observedContainer = null;
+    externalIntegrationController?.destroy?.();
+    externalIntegrationController = null;
 
     let selectionChanged = false;
     for (const provider of getProviders()) {
@@ -1544,12 +1837,14 @@ function teardownRuntime({ applyNativeFallback = false } = {}) {
     purposeRouter?.destroy();
     purposeRouter = null;
     routingSettings = null;
+    externalSettings = null;
     stabilityMonitor?.record('확장 비활성화', getRuntimeMetrics('destroyed'));
     stabilityMonitor = null;
     lastDiagnosticReport = null;
     lastRepairReport = null;
     acceptedSettingsSnapshot = null;
     acceptedRoutingSnapshot = null;
+    acceptedExternalSnapshot = null;
     context = null;
     settings = null;
     syncScheduled = false;
@@ -1560,6 +1855,7 @@ async function initialize(generation) {
     context = getSillyTavernContext();
     const storedSettings = context.extensionSettings[SETTINGS_KEY];
     const storedRoutes = context.extensionSettings[ROUTES_SETTINGS_KEY];
+    const storedExternal = context.extensionSettings[EXTERNAL_SETTINGS_KEY];
     lastRepairReport = repairSettingsBundle({
         registrySettings: storedSettings,
         purposeRoutes: storedRoutes,
@@ -1574,11 +1870,14 @@ async function initialize(generation) {
     }
     settings = normalizeSettings(lastRepairReport.registrySettings);
     routingSettings = normalizePurposeRoutes(lastRepairReport.purposeRoutes);
+    externalSettings = normalizeExternalSettings(storedExternal);
     rememberAcceptedSettings();
     const settingsChanged = JSON.stringify(storedSettings) !== JSON.stringify(settings);
     const routesChanged = JSON.stringify(storedRoutes) !== JSON.stringify(routingSettings);
+    const externalChanged = JSON.stringify(storedExternal) !== JSON.stringify(externalSettings);
     context.extensionSettings[SETTINGS_KEY] = settings;
     context.extensionSettings[ROUTES_SETTINGS_KEY] = routingSettings;
+    context.extensionSettings[EXTERNAL_SETTINGS_KEY] = externalSettings;
     stabilityMonitor = createStabilityMonitor({ sampleLimit: 512 });
     lastDiagnosticReport = null;
     purposeRouter = new PurposeRouter({
@@ -1599,6 +1898,26 @@ async function initialize(generation) {
         },
     });
     uninstallRegistryApi = installRegistryApi(globalThis, registryApiController.api);
+    externalIntegrationController = createExternalIntegrationController({
+        root: document,
+        documentRef: document,
+        mappings: externalSettings.mappings,
+        exclude: control => {
+            for (let current = control; current; current = current.parentElement) {
+                if (current.id === OBSERVER_ROOT_SELECTOR.slice(1) || current.id === 'cmr_settings') {
+                    return true;
+                }
+            }
+            return false;
+        },
+        getModels: providerId => getEnabledModels(settings, providerId),
+        getPreferredModel: (targetId, providerId) => (
+            getExternalSelectedModel(externalSettings, targetId, providerId)
+        ),
+        onSelectionChanged: onExternalSelectionChanged,
+        onTargetsChanged: () => renderExternalIntegrations(),
+    });
+    externalIntegrationController.start();
     activeProviderId = findInitialProviderId();
     subscribeToSillyTavernEvents();
     synchronize();
@@ -1608,9 +1927,10 @@ async function initialize(generation) {
         return;
     }
     renderUi();
-    if (settingsChanged || routesChanged) {
+    if (settingsChanged || routesChanged || externalChanged) {
         persistSettings('migration');
         context.extensionSettings[ROUTES_SETTINGS_KEY] = routingSettings;
+        context.extensionSettings[EXTERNAL_SETTINGS_KEY] = externalSettings;
     }
     initialized = true;
     console.info(`[Custom Model Router] v${EXTENSION_VERSION} 초기화 완료`);

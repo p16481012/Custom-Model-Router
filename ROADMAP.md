@@ -1,10 +1,10 @@
 # 개발 로드맵과 현재 진행 상태
 
-마지막 업데이트: **2026-08-18**
+마지막 업데이트: **2026-08-19**
 
-현재 릴리스: **v0.5.0**
+현재 릴리스: **v0.6.0**
 
-현재 단계: **v0.3~v0.5 구현·자동 검사·DOM/공개 API 샌드박스 완료, 사용자 실제 계정 통합 확인 대기**
+현재 단계: **v0.6 범용 DOM 모델 브리지 구현·자동 검사 완료, 사용자 환경에서 외부 확장 실제 요청 확인 대기**
 
 ## 상태 범례
 
@@ -27,10 +27,11 @@
 | 공개 Registry API | ✅ 완료 | API `1.1.0`, 불변 스냅샷·mutation·이벤트·수명주기 |
 | 용도별 라우팅 | ✅ 완료 | Routing API `1.0.0`, Connection Profile 어댑터, 메인 모델 비변경 |
 | 호환성 진단 | ✅ 완료 | ST 버전, context·이벤트·provider 컨트롤과 런타임 자원 진단 |
-| 설정 백업·복구 | ✅ 완료 | Registry와 route만 휴대 가능한 JSON으로 처리, 미래 schema 거부 |
+| 범용 외부 확장 브리지 | ✅ 완료 | 표준 select/input/datalist 자동 탐지, 수동 provider 연결, 재렌더 옵션 복원과 빈 컨트롤의 선택 복원 |
+| 설정 백업·복구 | ✅ 완료 | Registry·route·외부 연결을 portable schema v2로 처리, v1 이관·미래 schema 거부 |
 | 안정성 계측 | ✅ 완료 | source·profile 전환 표본의 observer·listener·group 누적 판정 |
-| 자동 검사 | ✅ 완료 | 단위·통합·수명주기·보안 경계·버전 일치 검사 89개 통과 |
-| DOM·공개 API 샌드박스 | ✅ 완료 | 24개 컨트롤, GLM 등록·적용, route, 60회 전환, 375px, disable/re-enable, 오류 로그 0건 |
+| 자동 검사 | ✅ 완료 | 단위·통합·수명주기·보안 경계·버전 일치 검사 127개 통과 |
+| DOM·공개 API 샌드박스 | ✅ 완료 | 기본 24개, 외부 select/input/datalist, GLM, route, 재렌더와 disable/re-enable 확인 |
 | 사용자 실제 계정 검증 | 🧪 대기 | [통합 체크리스트](./USER_CHECKLIST.md)를 사용하는 연결에서 한 번 수행 |
 
 ## 지원 기준
@@ -139,6 +140,53 @@ Z.AI (GLM), DeepSeek, Moonshot AI (Kimi), MiniMax와 SiliconFlow도 전용 연�
 - [ ] 사용자가 통합 체크리스트를 한 번 수행
 - [ ] 사용 중인 provider의 일반·스트리밍·복원 결과 기록
 
+### 범위 정정
+
+v0.5.0의 공개 Registry API와 Routing API는 다른 확장이 API를 직접 호출하는 opt-in 계약이었습니다. CMR에 등록한 모델을 기존 다른 확장의 모델 선택기에 자동 표시하거나 그 확장의 요청에 자동 적용하는 기능은 v0.5.0에 없었습니다. 당시 로드맵의 "확장 어댑터"와 "사용자 실제 계정 통합" 표현이 이 차이를 충분히 분명하게 설명하지 못했습니다.
+
+이 누락은 v0.6.0의 범용 DOM 모델 브리지에서 처음 구현합니다. v0.5.0을 기존 외부 확장 자동 연동 완료 버전으로 간주하지 않습니다.
+
+## v0.6.0 — 범용 외부 확장 모델 브리지
+
+상태: **✅ 구현·자동 검사 완료, 실제 외부 확장 요청 검증 대기**
+
+### 목표
+
+- 다른 확장이 표준 DOM Chat Completion 모델 컨트롤을 제공하면 CMR 등록 모델을 표시합니다.
+- 제공업체를 자동 추론하되 모호하거나 위험한 대상은 사용자가 결정하기 전까지 변경하지 않습니다.
+- 외부 확장의 저장 이벤트와 요청 경로를 그대로 사용하고 전역 네트워크 API를 가로채지 않습니다.
+
+### 구현 결과
+
+- [x] `select`, 텍스트 `input`, `datalist` 기반 모델 컨트롤 자동 탐지
+- [x] control ID·name·label, provider/source select, option `data-type`과 provider alias를 조합한 추론
+- [x] 자동 추론보다 우선하는 수동 provider mapping과 대상별 자동 연결 해제
+- [x] 제공업체별 CMR option 주입, native option·현재 값·외부 data attribute 보존
+- [x] 늦은 로드와 외부 확장 재렌더 뒤 옵션 복원, 동일 target의 새 컨트롤이 빈 값일 때만 provider별 마지막 CMR 선택 복원
+- [x] 외부 target·observer·listener·자동/수동/제외/확인 필요 개수 진단
+- [x] 비활성화 시 외부 CMR option·observer·listener 제거, 예약 작업 재생성 차단
+- [x] 외부 연결 설정 schema v1과 최대 512 target, 손상·미래 schema·prototype pollution 방어
+- [x] portable backup schema v2에 외부 mapping·선택 추가 및 v1 백업 안전 이관
+- [x] Registry 및 route와 마찬가지로 API 키·endpoint·외부 요청 본문 비저장
+
+### 의도적 제외와 한계
+
+- Vectors·embedding·rerank, TTS·음성, Stable Diffusion·이미지 생성 모델 컨트롤은 Chat Completion 모델과 종류가 달라 자동 연결하지 않습니다.
+- Caption처럼 표준 provider/model control과 `data-type`을 사용하는 확장은 best-effort로 지원하지만, 모델의 실제 멀티모달 능력과 계정 권한은 판별하지 않습니다.
+- React 등 자체 위젯만 제공하는 확장, iframe 내부, 닫힌 Shadow DOM, 모델 컨트롤 없이 직접 요청하는 확장은 자동 탐지할 수 없습니다.
+- 전역 `fetch`·`XMLHttpRequest` monkey patch를 사용하지 않습니다. 모델 값이 실제 request body에 들어가는지는 외부 확장의 기존 `input`/`change` 저장 구현에 달려 있습니다.
+- 자동 탐지가 불가능한 확장은 공개 Registry/Routing API를 직접 사용하는 전용 opt-in 연동이 필요합니다.
+- 외부 확장이 둔 유효한 현재 모델 값은 덮어쓰지 않습니다. control의 ID·name·label 또는 상위 확장 구조가 바뀌어 target ID가 달라지면 수동 provider 연결을 다시 지정해야 할 수 있습니다.
+- 비대상 판별도 DOM 표식 기반 best-effort입니다. 용도를 드러내지 않는 일반적인 모델 컨트롤이 잘못 감지되면 사용자가 대상별 **사용 안 함**을 지정합니다.
+
+### 완료 조건
+
+- [x] 자동 탐지·수동 mapping·빈 컨트롤 선택 복원·재렌더·정리 단위/통합 검사
+- [x] 비대상 제외, 모호한 provider, 오염 설정과 portable v1→v2 검사
+- [ ] 사용자 환경에서 Caption 또는 사용 중인 외부 확장 모델 목록에 CMR 모델 표시
+- [ ] 실제 기능 실행 Network payload에서 정확한 `model` 확인
+- [ ] 새로고침·재렌더·비활성화/재활성화 결과 기록
+
 ## 실제 사용자 검증 게이트
 
 다음 조건은 자동 검사만으로 완료 처리하지 않습니다.
@@ -149,9 +197,11 @@ Z.AI (GLM), DeepSeek, Moonshot AI (Kimi), MiniMax와 SiliconFlow도 전용 연�
 4. 새로고침, source 전환, 원격 목록 갱신과 profile 왕복 뒤 선택이 정확합니다.
 5. 보조 route 실행 전후 메인 source·모델이 같습니다.
 6. 20회 이상 source·profile 전환 뒤 진단에서 자원 증가가 없습니다.
-7. 백업 round trip 뒤 Registry와 route만 복원되고 연결 비밀은 바뀌지 않습니다.
+7. 백업 round trip 뒤 Registry·route·외부 mapping/선택만 복원되고 연결 비밀은 바뀌지 않습니다.
+8. 외부 확장 모델 컨트롤에서는 등록 ID가 표시될 뿐 아니라 실제 요청의 `model`에 전달됩니다.
+9. 비대상 모델 컨트롤과 모호한 대상은 자동으로 잘못 연결되지 않습니다.
 
-실제 검증에서 발견되는 v0.5 범위의 결함은 `v0.5.1`, `v0.5.2`, ... 패치 버전으로 수정합니다.
+실제 검증에서 발견되는 v0.6 범위의 결함은 `v0.6.1`, `v0.6.2`, ... 패치 버전으로 수정합니다.
 
 ## 업데이트 규칙
 
@@ -171,4 +221,5 @@ Z.AI (GLM), DeepSeek, Moonshot AI (Kimi), MiniMax와 SiliconFlow도 전용 연�
 | v0.2.1 | ✅ 게시 | 이후 기능 단계를 직접 모델 ID 계약으로 단순화 |
 | v0.3.0 | ✅ 구현 완료 | 공개 Registry API `1.1.0` |
 | v0.4.0 | ✅ 구현 완료 | Connection Profile 어댑터와 용도별 라우팅 |
-| v0.5.0 | ✅ 현재 | 진단·설정 복구·백업·장시간 안정성 검증 |
+| v0.5.0 | ✅ 완료·범위 정정 | 진단·설정 복구·백업·안정성 검증; 기존 외부 확장 자동 연동은 포함하지 않았음 |
+| v0.6.0 | ✅ 현재 구현 완료·🧪 사용자 검증 대기 | 범용 DOM 모델 브리지, 수동 mapping, 외부 연결 portable schema v2 |

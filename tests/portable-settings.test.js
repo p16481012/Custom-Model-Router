@@ -13,6 +13,7 @@ import {
 } from '../src/portable-settings.js';
 import { addModel, setSelectedModel } from '../src/registry.js';
 import { setPurposeRoute } from '../src/purpose-router.js';
+import { setExternalMapping, setExternalSelectedModel } from '../src/external-settings.js';
 
 function createSettings() {
     let registrySettings = addModel(undefined, 'openai', 'gpt-future');
@@ -24,11 +25,18 @@ function createSettings() {
         adapterId: 'sillytavern.connection-profile',
         connectionProfileId: 'profile-summary',
     }, { registrySettings });
-    return { registrySettings, purposeRoutes };
+    let externalSettings = setExternalMapping(undefined, 'cmr-ext-1234abcd', 'openai');
+    externalSettings = setExternalSelectedModel(
+        externalSettings,
+        'cmr-ext-1234abcd',
+        'openai',
+        'gpt-future',
+    );
+    return { registrySettings, purposeRoutes, externalSettings };
 }
 
-test('Registry와 용도별 경로만 결정적 백업으로 만들고 연결 비밀정보를 제외한다', () => {
-    const { registrySettings, purposeRoutes } = createSettings();
+test('Registry·용도별 경로·외부 연결만 결정적 백업으로 만들고 연결 비밀정보를 제외한다', () => {
+    const { registrySettings, purposeRoutes, externalSettings } = createSettings();
     registrySettings.apiKey = 'REGISTRY_SECRET';
     registrySettings.endpoint = 'https://secret.invalid';
     purposeRoutes.serviceAccount = 'ROUTES_SECRET';
@@ -37,6 +45,7 @@ test('Registry와 용도별 경로만 결정적 백업으로 만들고 연결 �
     const backup = createPortableSettings({
         registrySettings,
         purposeRoutes,
+        externalSettings,
         createdAt: new Date('2026-08-18T00:00:00.000Z'),
         connectionProfiles: [{ apiKey: 'PROFILE_SECRET' }],
     });
@@ -46,7 +55,7 @@ test('Registry와 용도별 경로만 결정적 백업으로 만들고 연결 �
     assert.equal(backup.schemaVersion, PORTABLE_SETTINGS_SCHEMA_VERSION);
     assert.equal(backup.createdAt, '2026-08-18T00:00:00.000Z');
     assert.deepEqual(Object.keys(backup), [
-        'format', 'schemaVersion', 'createdAt', 'registry', 'purposeRoutes',
+        'format', 'schemaVersion', 'createdAt', 'registry', 'purposeRoutes', 'externalIntegrations',
     ]);
     assert.deepEqual(backup.purposeRoutes.routes.summary, {
         provider: 'openai',
@@ -54,6 +63,7 @@ test('Registry와 용도별 경로만 결정적 백업으로 만들고 연결 �
         adapterId: 'sillytavern.connection-profile',
         connectionProfileId: 'profile-summary',
     });
+    assert.equal(backup.externalIntegrations.mappings['cmr-ext-1234abcd'], 'openai');
     assert.doesNotMatch(
         serialized,
         /REGISTRY_SECRET|ROUTES_SECRET|ROUTE_SECRET|PROFILE_SECRET|secret\.invalid/,
@@ -90,6 +100,7 @@ test('정상 백업을 검사하고 원본 설정을 변경하지 않는 값으�
     const parsed = parsePortableSettings(backup);
     assert.equal(parsed.registrySettings.selectedModels.openai, 'gpt-future');
     assert.equal(parsed.purposeRoutes.routes.summary.modelId, 'gpt-future');
+    assert.equal(parsed.externalSettings.selectedModels['cmr-ext-1234abcd'].openai, 'gpt-future');
     parsed.registrySettings.models[0].id = 'changed';
     assert.equal(source.registrySettings.models[0].id, 'gpt-future');
 });
@@ -124,9 +135,10 @@ test('미래 백업·Registry·용도별 경로 스키마를 명확히 거부한
         now: '2026-08-18T00:00:00.000Z',
     });
     for (const mutate of [
-        value => { value.schemaVersion = 2; },
+        value => { value.schemaVersion = PORTABLE_SETTINGS_SCHEMA_VERSION + 1; },
         value => { value.registry.schemaVersion = 999; },
         value => { value.purposeRoutes.schemaVersion = 999; },
+        value => { value.externalIntegrations.schemaVersion = 999; },
     ]) {
         const candidate = structuredClone(base);
         mutate(candidate);
@@ -143,6 +155,23 @@ test('미래 백업·Registry·용도별 경로 스키마를 명확히 거부한
         () => createPortableSettings({ purposeRoutes: { schemaVersion: 999 } }),
         error => error instanceof PortableSettingsError && error.code === 'future_routes_schema',
     );
+    assert.throws(
+        () => createPortableSettings({ externalSettings: { schemaVersion: 999 } }),
+        error => error instanceof PortableSettingsError && error.code === 'future_external_schema',
+    );
+});
+
+test('v0.5 schema v1 백업은 외부 연결 빈 설정으로 안전하게 이관한다', () => {
+    const backup = createPortableSettings({
+        ...createSettings(),
+        now: '2026-08-18T00:00:00.000Z',
+    });
+    backup.schemaVersion = 1;
+    delete backup.externalIntegrations;
+
+    const parsed = parsePortableSettings(backup);
+    assert.equal(parsed.report.status, 'warning');
+    assert.deepEqual(parsed.externalSettings, { schemaVersion: 1, mappings: {}, selectedModels: {} });
 });
 
 test('Registry에서 사라진 용도별 모델은 경로를 보존하면서 주의로 보고한다', () => {

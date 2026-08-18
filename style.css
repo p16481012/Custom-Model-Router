@@ -118,6 +118,87 @@
     margin-block-start: 0.35rem;
 }
 
+#cmr_settings .cmr-external-toolbar,
+#cmr_settings .cmr-external-row,
+#cmr_settings .cmr-external-heading,
+#cmr_settings .cmr-external-actions {
+    align-items: center;
+    display: flex;
+}
+
+#cmr_settings .cmr-external-toolbar {
+    gap: 0.55rem;
+    margin-block-end: 0.4rem;
+}
+
+#cmr_settings .cmr-external-toolbar .cmr-feedback {
+    flex: 1 1 auto;
+}
+
+#cmr_settings .cmr-external-list {
+    border: 1px solid var(--SmartThemeBorderColor, currentColor);
+    border-radius: 0.4rem;
+    list-style: none;
+    margin: 0;
+    max-block-size: min(34dvh, 18rem);
+    min-block-size: 2.8rem;
+    overflow-y: auto;
+    padding: 0;
+}
+
+#cmr_settings .cmr-external-row {
+    align-items: stretch;
+    border-block-end: 1px solid var(--SmartThemeBorderColor, currentColor);
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    justify-content: space-between;
+    padding: 0.5rem 0.6rem;
+}
+
+#cmr_settings .cmr-external-row:last-child {
+    border-block-end: 0;
+}
+
+#cmr_settings .cmr-external-heading {
+    flex: 1 1 13rem;
+    gap: 0.35rem;
+    min-width: 0;
+}
+
+#cmr_settings .cmr-external-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#cmr_settings .cmr-external-hint {
+    direction: ltr;
+    font-size: 0.72rem;
+    opacity: 0.68;
+}
+
+#cmr_settings .cmr-external-actions {
+    flex: 1 1 18rem;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    justify-content: flex-end;
+}
+
+#cmr_settings .cmr-external-actions select {
+    flex: 1 1 10rem;
+    min-width: 0;
+}
+
+#cmr_settings .cmr-external-actions .menu_button {
+    flex: 0 0 auto;
+    margin: 0;
+}
+
+#cmr_settings .cmr-external-list .cmr-empty {
+    min-block-size: 2.8rem;
+}
+
 #cmr_settings .cmr-route-actions .menu_button {
     flex: 1 1 7rem;
 }
@@ -380,6 +461,15 @@
 
     #cmr_settings .cmr-input-row {
         align-items: stretch;
+    }
+
+    #cmr_settings .cmr-external-actions {
+        justify-content: stretch;
+    }
+
+    #cmr_settings .cmr-external-actions select,
+    #cmr_settings .cmr-external-actions .menu_button {
+        flex: 1 1 100%;
     }
 
     #cmr_settings .cmr-icon-button {
