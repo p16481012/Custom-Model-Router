@@ -2,23 +2,26 @@
 
 SillyTavern 코어 파일을 수정하지 않고 Google Vertex AI에 사용자 지정 Gemini 모델 ID를 추가하는 UI 확장입니다.
 
-현재 버전은 **v0.1.1**이며, 이전 설계의 **v0.1 Proof of Concept** 범위와 사용자 검증 안내를 구현합니다.
+현재 버전은 **v0.1.2**이며, 이전 설계의 **v0.1 Proof of Concept** 범위에 API Connections 중심의 모델 관리 UI를 적용합니다.
 
 ## 현재 진행 상태
 
 | 항목 | 상태 |
 |---|---|
-| 현재 릴리스 | `v0.1.1` |
-| 핵심 구현과 자동 검사 | ✅ 완료 · 15개 검사 통과 |
-| 현재 단계 | 🧪 실제 SillyTavern·Vertex AI 사용자 검증 대기 |
-| 사용자가 할 일 | [사용자 검증 체크리스트](./USER_CHECKLIST.md)의 필수 항목 실행 |
-| 다음 단계 | 결과에 따라 `v0.1.2+` 안정화 또는 `v0.2.0` 설계 |
+| 현재 릴리스 | `v0.1.2` |
+| 핵심 구현과 자동 검사 | ✅ 완료 · 20개 검사 통과 |
+| 사용자 확인 | ✅ 기본 동작 정상 확인 · 인증 방식/스트리밍/Profile별 세부 결과는 미확인 |
+| 현재 단계 | 🧪 v0.1.2 UI/UX와 실제 환경 세부 재검증 |
+| 사용자가 할 일 | [사용자 검증 체크리스트](./USER_CHECKLIST.md)의 UI/UX 및 실제 요청 항목 재검증 |
+| 다음 단계 | v0.1.x 실제 환경 안정화 후 `v0.2.0` 설계 |
 
 전체 진행 위치와 마일스톤 완료 조건은 [개발 로드맵](./ROADMAP.md)에서 계속 갱신합니다.
 
 ## v0.1에서 할 수 있는 일
 
 - Vertex Gemini 모델 ID를 직접 등록하고 삭제할 수 있습니다.
+- API Connections의 Connection Profile 도구행에서 모델 관리 아이콘을 눌러 공식 SillyTavern 팝업으로 관리할 수 있습니다.
+- 등록 모델은 높이가 제한된 압축 목록에 표시되어 모델이 늘어나도 API Connections 화면을 길게 밀어내지 않습니다.
 - 등록 모델을 SillyTavern의 기본 Google Vertex AI 모델 선택기에 표시합니다.
 - 모델을 선택하면 SillyTavern의 기본 `vertexai_model` 설정과 `change` 흐름을 그대로 사용합니다.
 - 새로고침, 설정 갱신, Connection Profile 전환 뒤에도 사용자 옵션과 선택 상태를 복원합니다.
@@ -74,10 +77,13 @@ https://github.com/p16481012/Custom-Model-Router
 
 1. SillyTavern의 **API Connections**에서 `Google Vertex AI` 연결을 먼저 설정합니다.
 2. 인증 방식, 프로젝트 ID, 리전 등 기존 Vertex 설정을 완료합니다.
-3. **Extensions** 설정에서 `Custom Model Router`를 엽니다.
-4. Google이 공개한 정확한 모델 ID를 입력하고 **추가**를 누릅니다.
-5. 등록 목록에서 **선택**을 누르거나 API Connections의 Vertex 모델 선택기에서 `사용자 지정 모델 · Custom Model Router` 그룹을 선택합니다.
-6. 테스트 메시지를 보내 모델과 리전의 실제 사용 가능 여부를 확인합니다.
+3. API Connections 상단의 **Connection Profile 도구행**에서 `사용자 모델 관리` 아이콘을 누릅니다.
+4. 열린 SillyTavern 공식 팝업에 Google이 공개한 정확한 모델 ID를 입력하고 **추가**를 누릅니다.
+5. 팝업의 압축 목록에서 선택 아이콘을 누르거나 API Connections의 Vertex 모델 선택기에서 `사용자 지정 모델 · Custom Model Router` 그룹을 선택합니다.
+6. 팝업은 닫기 버튼이나 `Escape` 키로 닫을 수 있습니다. 닫은 뒤 초점은 모델 관리 아이콘으로 돌아갑니다.
+7. 테스트 메시지를 보내 모델과 리전의 실제 사용 가능 여부를 확인합니다.
+
+확장은 Extensions 설정에 긴 설정 블록을 추가하지 않습니다. 모델 관리 아이콘은 API Connections의 Connection Profile 도구행에 표시되며, 해당 도구가 비활성화된 환경에서는 API 제목 옆에 표시됩니다.
 
 모델 ID 예시는 형식을 설명하기 위한 것이며 실제 제공 여부를 보장하지 않습니다.
 
@@ -99,9 +105,13 @@ v0.1은 Vertex 요청 URL의 모델 경로를 안전하게 유지하기 위해 �
 
 ### Vertex 모델 선택기를 찾지 못했다는 메시지가 표시됨
 
-SillyTavern 버전을 확인하고 페이지를 새로고침해 주세요. 이 버전은 SillyTavern 1.18.0의 `#model_vertexai_select` 구조를 기준으로 검증합니다.
+SillyTavern 버전을 확인하고 Google Vertex AI 연결 화면을 연 뒤 페이지를 새로고침해 주세요. 이 버전은 SillyTavern 1.18.0의 `#model_vertexai_select`와 Connection Profile 도구행 구조를 기준으로 검증합니다.
 
-### 400 또는 404 오류가 발생함
+### 모델 관리 아이콘이 보이지 않음
+
+아이콘은 Extensions 설정이 아니라 API Connections의 Connection Profile 도구행에 표시됩니다. Connection Profile 도구가 비활성화된 환경에서는 API 제목 옆을 확인해 주세요. 계속 보이지 않으면 확장이 활성화되어 있는지 확인하고 페이지를 새로고침해 주세요.
+
+### API 요청 오류가 발생함
 
 다음을 확인해 주세요.
 
@@ -132,13 +142,14 @@ npm test
 npm run check
 ```
 
-현재 자동 검사 15개는 모델 ID 검증, 저장 설정 복구, 중복 처리, 선택 상태 관리, Vertex 옵션의 멱등 주입, 초기화·비활성화 수명주기, 지연 UI 로딩과 버전 표기 일치를 확인합니다. 실제 계정이 필요한 항목은 [사용자 검증 체크리스트](./USER_CHECKLIST.md)에서 별도로 확인합니다.
+현재 자동 검사 20개는 모델 ID 검증, 저장 설정 복구, 중복 처리, 선택 상태 관리, Vertex 옵션의 멱등 주입, 모델 관리 아이콘과 팝업 수명주기·실패 복구, Connection Profile 지연 삽입, MutationObserver 자기 반복 방지, 100개 모델 압축 목록, 지연 UI 로딩과 버전 표기 일치를 확인합니다. 실제 계정과 화면 조작이 필요한 항목은 [사용자 검증 체크리스트](./USER_CHECKLIST.md)에서 별도로 확인합니다.
 
 ## 버전 정책
 
 - 최초 v0.1 범위: `v0.1.0`
 - v0.1 사용자 검증 문서화: `v0.1.1`
-- v0.1의 버그 수정과 세부 호환성 개선: `v0.1.2`, `v0.1.3`, ...
+- API Connections 모델 관리 패널과 압축 목록: `v0.1.2`
+- v0.1의 버그 수정과 세부 호환성 개선: `v0.1.3`, `v0.1.4`, ...
 - 여러 제공업체 지원처럼 범위가 확장되는 다음 단계: `v0.2.0`
 
 작은 수정 때문에 바로 다음 기능 버전으로 올리지 않습니다. 버전을 변경할 때는 `manifest.json`, `package.json`, `settings.html`의 버전 배지, README의 현재 버전, `index.js`의 초기화 로그, 체크리스트와 로드맵의 대상 버전을 함께 갱신합니다.
@@ -147,7 +158,7 @@ npm run check
 
 | 버전 | 목표 | 상태 |
 |---|---|---|
-| `v0.1.x` | Vertex Gemini 실제 환경 검증과 안정화 | 🧪 검증 대기 |
+| `v0.1.x` | Vertex Gemini 실제 환경 검증과 안정화 | 🧪 v0.1.2 재검증 중 |
 | `v0.2.0` | OpenAI, Anthropic, Google AI Studio, Vertex Gemini, xAI 지원 | 📝 예정 |
 | `v0.3.0` | MAIN, AUX, FAST 등 모델 별칭 | 📝 예정 |
 | `v0.4.0` | 다른 확장이 사용할 수 있는 공개 Registry API | 📝 예정 |

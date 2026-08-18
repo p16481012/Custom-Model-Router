@@ -19,8 +19,9 @@ import {
 const SETTINGS_KEY = 'customModelRouter';
 const VERTEX_SELECT_SELECTOR = '#model_vertexai_select';
 const VERTEX_OBSERVER_ROOT_SELECTOR = '#rm_api_block';
-const SETTINGS_ROOT_SELECTOR = '#cmr_settings';
-const EXTENSION_SETTINGS_TARGETS = ['#extensions_settings2', '#extensions_settings'];
+const CONNECTION_PROFILE_SELECTOR = '#connection_profiles';
+const API_TITLE_SELECTOR = '#title_api';
+const LAUNCHER_SELECTOR = '#cmr_open_manager';
 const DEFAULT_VERTEX_MODEL = 'gemini-2.5-pro';
 
 let context = null;
@@ -33,6 +34,10 @@ let observer = null;
 let observedContainer = null;
 let syncScheduled = false;
 let settingsRoot = null;
+let settingsTemplateHtml = '';
+let launcherButton = null;
+let launcherCount = null;
+let activePopup = null;
 const subscribedEvents = [];
 
 function getSillyTavernContext() {
@@ -48,6 +53,8 @@ function getSillyTavernContext() {
         ['eventSource', value?.eventSource],
         ['eventTypes', value?.eventTypes ?? value?.event_types],
         ['chatCompletionSettings', value?.chatCompletionSettings],
+        ['Popup', value?.Popup],
+        ['POPUP_TYPE', value?.POPUP_TYPE],
     ];
     const missing = required.filter(([, item]) => !item).map(([name]) => name);
 
@@ -84,6 +91,77 @@ function getVertexSelect() {
     return element?.tagName === 'SELECT' ? element : null;
 }
 
+function getLauncherHost() {
+    const profiles = document.querySelector(CONNECTION_PROFILE_SELECTOR);
+    return profiles?.parentElement ?? document.querySelector(API_TITLE_SELECTOR);
+}
+
+function renderLauncher() {
+    if (!launcherButton || !settings) {
+        return;
+    }
+
+    const modelCount = getEnabledModels(settings).length;
+    const hasVertexSelect = Boolean(getVertexSelect());
+    launcherButton.disabled = !settingsTemplateHtml;
+    launcherButton.dataset.state = hasVertexSelect ? 'ready' : 'warning';
+    launcherButton.setAttribute('aria-expanded', String(Boolean(activePopup)));
+    launcherButton.setAttribute(
+        'aria-label',
+        `사용자 지정 Vertex 모델 관리, ${modelCount}개 등록됨${hasVertexSelect ? '' : ', Vertex 선택기 연결 안 됨'}`,
+    );
+    launcherButton.title = settingsTemplateHtml
+        ? '사용자 지정 Vertex 모델 관리'
+        : '모델 관리 패널을 불러오는 중';
+
+    if (launcherCount) {
+        const countText = String(modelCount);
+        if (launcherCount.textContent !== countText) {
+            launcherCount.textContent = countText;
+        }
+        launcherCount.hidden = modelCount === 0;
+    }
+}
+
+function ensureLauncher() {
+    const host = getLauncherHost();
+    if (!host) {
+        return;
+    }
+
+    if (!launcherButton) {
+        const existing = document.querySelector(LAUNCHER_SELECTOR);
+        if (existing) {
+            existing.remove();
+        }
+
+        launcherButton = document.createElement('button');
+        launcherButton.id = LAUNCHER_SELECTOR.slice(1);
+        launcherButton.type = 'button';
+        launcherButton.className = 'menu_button cmr-launcher';
+        launcherButton.setAttribute('aria-haspopup', 'dialog');
+        launcherButton.setAttribute('aria-controls', 'cmr_manager_dialog');
+        launcherButton.setAttribute('aria-expanded', 'false');
+
+        const icon = document.createElement('i');
+        icon.className = 'fa-solid fa-route';
+        icon.setAttribute('aria-hidden', 'true');
+
+        launcherCount = document.createElement('span');
+        launcherCount.className = 'cmr-launcher-count';
+        launcherCount.setAttribute('aria-hidden', 'true');
+
+        launcherButton.append(icon, launcherCount);
+        launcherButton.addEventListener('click', openSettingsPanel);
+    }
+
+    if (launcherButton.parentElement !== host) {
+        host.append(launcherButton);
+    }
+
+    renderLauncher();
+}
+
 function announce(message, state = 'ok') {
     const feedback = settingsRoot?.querySelector('#cmr_feedback');
     if (!feedback) {
@@ -103,8 +181,8 @@ function renderCompatibilityStatus() {
     const select = getVertexSelect();
     status.dataset.state = select ? 'ok' : 'error';
     status.textContent = select
-        ? '호환됨: Google Vertex AI 모델 선택기를 찾았습니다.'
-        : '호환성 오류: Google Vertex AI 모델 선택기를 찾지 못했습니다.';
+        ? 'Vertex 모델 선택기 연결됨'
+        : 'Vertex 모델 선택기를 찾지 못했습니다.';
 }
 
 function createBadge(text, kind) {
@@ -125,36 +203,44 @@ function renderModelList() {
     const select = getVertexSelect();
     const currentModel = normalizeModelId(context?.chatCompletionSettings?.vertexai_model);
     const nativeIds = select ? getNativeModelIds(select) : new Set();
+    const count = settingsRoot?.querySelector('#cmr_model_count');
+    if (count) {
+        count.textContent = `${models.length}개`;
+    }
     list.replaceChildren();
 
     if (models.length === 0) {
-        const empty = document.createElement('div');
+        const empty = document.createElement('li');
         empty.className = 'cmr-empty';
-        empty.textContent = '아직 등록된 모델이 없습니다.';
+        empty.textContent = '등록한 모델이 없습니다. 위 입력란에서 모델 ID를 추가하세요.';
         list.append(empty);
         return;
     }
 
     for (const model of models) {
-        const row = document.createElement('div');
+        const isCurrent = currentModel === model.id;
+        const row = document.createElement('li');
         row.className = 'cmr-model-row';
+        row.dataset.current = String(isCurrent);
+        if (isCurrent) {
+            row.setAttribute('aria-current', 'true');
+        }
 
         const info = document.createElement('div');
-        info.className = 'cmr-model-info';
+        info.className = 'cmr-model-summary';
 
         const modelId = document.createElement('code');
         modelId.className = 'cmr-model-id';
         modelId.textContent = model.id;
+        modelId.title = model.id;
 
         const badges = document.createElement('div');
         badges.className = 'cmr-model-badges';
-        if (currentModel === model.id) {
-            badges.append(createBadge('현재 선택', 'selected'));
+        if (isCurrent) {
+            badges.append(createBadge('현재', 'selected'));
         }
         if (nativeIds.has(model.id)) {
-            badges.append(createBadge('SillyTavern 기본 지원', 'core'));
-        } else {
-            badges.append(createBadge('사용자 등록', 'custom'));
+            badges.append(createBadge('기본 지원', 'core'));
         }
 
         info.append(modelId, badges);
@@ -164,30 +250,37 @@ function renderModelList() {
 
         const selectButton = document.createElement('button');
         selectButton.type = 'button';
-        selectButton.className = 'menu_button menu_button_icon';
+        selectButton.className = 'menu_button cmr-icon-button';
         selectButton.dataset.cmrAction = 'select';
         selectButton.dataset.modelId = model.id;
-        selectButton.disabled = currentModel === model.id || !select;
-        selectButton.title = select ? '이 모델을 Vertex AI 모델로 선택' : 'Vertex AI 모델 선택기를 찾을 수 없음';
+        selectButton.disabled = isCurrent || !select;
+        selectButton.title = isCurrent
+            ? '현재 선택된 모델'
+            : (select ? 'Vertex 모델로 적용' : 'Vertex AI 모델 선택기를 찾을 수 없음');
+        selectButton.setAttribute(
+            'aria-label',
+            isCurrent ? `${model.id}, 현재 선택된 모델` : `${model.id} 모델을 Vertex 모델로 적용`,
+        );
         const selectIcon = document.createElement('i');
         selectIcon.className = 'fa-solid fa-check';
         selectIcon.setAttribute('aria-hidden', 'true');
-        const selectText = document.createElement('span');
-        selectText.textContent = '선택';
-        selectButton.append(selectIcon, selectText);
+        selectButton.append(selectIcon);
 
         const deleteButton = document.createElement('button');
         deleteButton.type = 'button';
-        deleteButton.className = 'menu_button menu_button_icon';
+        deleteButton.className = 'menu_button cmr-icon-button cmr-delete-button';
         deleteButton.dataset.cmrAction = 'delete';
         deleteButton.dataset.modelId = model.id;
-        deleteButton.title = '등록 목록에서 삭제';
+        const deleteRequiresModelChange = isCurrent && !nativeIds.has(model.id);
+        deleteButton.title = deleteRequiresModelChange
+            ? '다른 Vertex 모델을 선택한 뒤 삭제할 수 있습니다.'
+            : '등록 삭제';
+        deleteButton.setAttribute('aria-disabled', String(deleteRequiresModelChange));
+        deleteButton.setAttribute('aria-label', `${model.id} 모델 등록 삭제`);
         const deleteIcon = document.createElement('i');
         deleteIcon.className = 'fa-solid fa-trash-can';
         deleteIcon.setAttribute('aria-hidden', 'true');
-        const deleteText = document.createElement('span');
-        deleteText.textContent = '삭제';
-        deleteButton.append(deleteIcon, deleteText);
+        deleteButton.append(deleteIcon);
 
         actions.append(selectButton, deleteButton);
         row.append(info, actions);
@@ -196,6 +289,7 @@ function renderModelList() {
 }
 
 function renderUi() {
+    renderLauncher();
     renderCompatibilityStatus();
     renderModelList();
 }
@@ -252,11 +346,12 @@ function synchronize() {
 
     observer?.disconnect();
     const select = getVertexSelect();
+    ensureLauncher();
     bindVertexSelect(select);
 
     if (!select) {
-        connectObserver(null);
         renderUi();
+        connectObserver(null);
         return;
     }
 
@@ -277,8 +372,8 @@ function synchronize() {
         selectVertexModel(select, selectedModel);
     }
 
-    connectObserver(select);
     renderUi();
+    connectObserver(select);
 }
 
 function scheduleSync() {
@@ -329,23 +424,13 @@ function subscribeToSillyTavernEvents() {
     }
 }
 
-async function mountSettingsUi(generation) {
+async function loadSettingsTemplate(generation) {
     if (generation !== lifecycleGeneration) {
         return false;
     }
 
-    const existing = document.querySelector(SETTINGS_ROOT_SELECTOR);
-    if (existing) {
-        settingsRoot = existing;
+    if (settingsTemplateHtml) {
         return true;
-    }
-
-    const target = EXTENSION_SETTINGS_TARGETS
-        .map(selector => document.querySelector(selector))
-        .find(Boolean);
-
-    if (!target) {
-        throw new Error('확장 설정 패널을 찾을 수 없습니다.');
     }
 
     const response = await fetch(new URL('./settings.html', import.meta.url));
@@ -358,18 +443,105 @@ async function mountSettingsUi(generation) {
         return false;
     }
 
+    if (!html) {
+        throw new Error('설정 UI가 비어 있습니다.');
+    }
+
+    settingsTemplateHtml = html;
+    renderLauncher();
+    return true;
+}
+
+function createSettingsPanel() {
+    if (!settingsTemplateHtml) {
+        throw new Error('설정 UI가 아직 준비되지 않았습니다.');
+    }
+
     const template = document.createElement('template');
-    template.innerHTML = html;
+    template.innerHTML = settingsTemplateHtml;
     const root = template.content.firstElementChild;
     if (!root) {
         throw new Error('설정 UI가 비어 있습니다.');
     }
 
-    target.append(root);
     settingsRoot = root;
     settingsRoot.querySelector('#cmr_add_form')?.addEventListener('submit', onAddModel);
     settingsRoot.querySelector('#cmr_model_list')?.addEventListener('click', onModelListClick);
-    return true;
+    settingsRoot.addEventListener('keydown', onPanelKeyDown);
+    return root;
+}
+
+function onPanelKeyDown(event) {
+    if (event.key === 'Enter') {
+        event.stopPropagation();
+    }
+}
+
+function handlePopupClosed(popup, root) {
+    if (activePopup === popup) {
+        activePopup = null;
+    }
+    if (settingsRoot === root) {
+        settingsRoot = null;
+    }
+
+    renderLauncher();
+    if (launcherButton?.parentElement) {
+        launcherButton.focus?.();
+    }
+}
+
+function handlePopupShowFailure(popup, root, error) {
+    popup?.dlg?.remove?.();
+    const popupList = context?.Popup?.util?.popups;
+    if (Array.isArray(popupList)) {
+        const popupIndex = popupList.indexOf(popup);
+        if (popupIndex >= 0) {
+            popupList.splice(popupIndex, 1);
+        }
+    }
+
+    handlePopupClosed(popup, root);
+    console.error('[Custom Model Router] 모델 관리 패널을 열지 못했습니다.', error);
+}
+
+function openSettingsPanel() {
+    if (!context || !settingsTemplateHtml) {
+        return;
+    }
+
+    if (activePopup) {
+        activePopup.setAutoFocus?.();
+        return;
+    }
+
+    let root;
+    let popup;
+    try {
+        root = createSettingsPanel();
+        popup = new context.Popup(root, context.POPUP_TYPE.DISPLAY, '', {
+            wider: true,
+            leftAlign: true,
+            allowVerticalScrolling: true,
+            allowHorizontalScrolling: false,
+            allowEscapeClose: true,
+            animation: 'fast',
+            onClose: () => handlePopupClosed(popup, root),
+        });
+        popup.dlg.id = 'cmr_manager_dialog';
+        popup.dlg.classList?.add('cmr-manager-dialog');
+        popup.dlg.setAttribute?.('aria-labelledby', 'cmr_panel_title');
+        activePopup = popup;
+        renderUi();
+
+        void popup.show().catch(error => {
+            handlePopupShowFailure(popup, root, error);
+        });
+    } catch (error) {
+        settingsRoot = null;
+        console.error('[Custom Model Router] 모델 관리 패널을 만들지 못했습니다.', error);
+        renderLauncher();
+    }
 }
 
 function onAddModel(event) {
@@ -387,6 +559,8 @@ function onAddModel(event) {
         persistSettings();
         if (input) {
             input.value = '';
+            input.setAttribute('aria-invalid', 'false');
+            input.focus?.();
         }
         synchronize();
         announce(`${id} 모델을 등록했습니다.`);
@@ -394,6 +568,7 @@ function onAddModel(event) {
         const message = error instanceof ModelRegistryError
             ? error.message
             : '모델을 등록하지 못했습니다.';
+        input?.setAttribute('aria-invalid', 'true');
         announce(message, 'error');
     }
 }
@@ -487,6 +662,12 @@ function teardownRuntime({ applyNativeFallback = false } = {}) {
 
     settingsRoot?.remove();
     settingsRoot = null;
+    activePopup = null;
+    launcherButton?.removeEventListener('click', openSettingsPanel);
+    launcherButton?.remove();
+    launcherButton = null;
+    launcherCount = null;
+    settingsTemplateHtml = '';
     context = null;
     settings = null;
     syncScheduled = false;
@@ -503,8 +684,8 @@ async function initialize(generation) {
     subscribeToSillyTavernEvents();
     synchronize();
 
-    const mounted = await mountSettingsUi(generation);
-    if (!mounted || generation !== lifecycleGeneration) {
+    const loaded = await loadSettingsTemplate(generation);
+    if (!loaded || generation !== lifecycleGeneration) {
         return;
     }
     renderUi();
@@ -514,7 +695,7 @@ async function initialize(generation) {
     }
 
     initialized = true;
-    console.info('[Custom Model Router] v0.1.1 초기화 완료');
+    console.info('[Custom Model Router] v0.1.2 초기화 완료');
 }
 
 export function init() {
@@ -542,8 +723,18 @@ export function init() {
     return trackedPromise;
 }
 
-export function destroy() {
+export async function destroy() {
     lifecycleGeneration += 1;
     initializationPromise = null;
+
+    const popup = activePopup;
+    if (popup && typeof popup.completeCancelled === 'function') {
+        try {
+            await popup.completeCancelled();
+        } catch (error) {
+            console.warn('[Custom Model Router] 모델 관리 패널을 닫는 중 오류가 발생했습니다.', error);
+        }
+    }
+
     teardownRuntime({ applyNativeFallback: true });
 }

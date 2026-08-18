@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 
 const ROOT_URL = new URL('../', import.meta.url);
 
@@ -17,6 +17,7 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
         entrypoint,
         checklist,
         roadmap,
+        rootEntries,
     ] = await Promise.all([
         readText('manifest.json'),
         readText('package.json'),
@@ -25,6 +26,7 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
         readText('index.js'),
         readText('USER_CHECKLIST.md'),
         readText('ROADMAP.md'),
+        readdir(ROOT_URL),
     ]);
     const manifest = JSON.parse(manifestText);
     const packageJson = JSON.parse(packageText);
@@ -39,6 +41,26 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
     assert.match(roadmap, new RegExp(`현재 릴리스: \\*\\*v${version.replaceAll('.', '\\.')}\\*\\*`));
     assert.match(readme, /\.\/USER_CHECKLIST\.md/);
     assert.match(readme, /\.\/ROADMAP\.md/);
+    assert.match(readme, /API Connections/);
+    assert.match(entrypoint, /new context\.Popup/);
+    assert.match(entrypoint, /#cmr_open_manager/);
+    assert.doesNotMatch(entrypoint, /#extensions_settings2|#extensions_settings/);
+    assert.doesNotMatch(settingsHtml, /inline-drawer/);
+    assert.equal(
+        rootEntries.some(name => /^licen[cs]e(?:\.|$)/i.test(name)),
+        false,
+        '사용자 요청에 따라 라이선스 파일을 추가하면 안 된다',
+    );
+
+    const testDirectory = new URL('../tests/', import.meta.url);
+    const testFiles = (await readdir(testDirectory)).filter(name => name.endsWith('.test.js'));
+    const testSources = await Promise.all(testFiles.map(name => readFile(new URL(name, testDirectory), 'utf8')));
+    const testCount = testSources.reduce(
+        (total, source) => total + Array.from(source.matchAll(/^test\(/gm)).length,
+        0,
+    );
+    assert.match(readme, new RegExp(`현재 자동 검사 ${testCount}개`));
+    assert.match(roadmap, new RegExp(`검사 ${testCount}개 통과`));
 
     const checklistIds = Array.from(
         checklist.matchAll(/\*\*\[(?:필수|조건부|권장|선택)\]\[([A-Z0-9-]+)\]/g),
