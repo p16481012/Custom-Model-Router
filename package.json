@@ -1,0 +1,13 @@
+{
+    "name": "custom-model-router",
+    "version": "0.1.0",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "test": "node --test",
+        "check": "node --check index.js && node --check src/registry.js && node --check src/vertex-select.js && node --test"
+    },
+    "engines": {
+        "node": ">=20"
+    }
+}

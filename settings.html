@@ -1,0 +1,48 @@
+<div id="cmr_settings" class="cmr-settings-root">
+    <div class="inline-drawer">
+        <div class="inline-drawer-toggle inline-drawer-header">
+            <div class="cmr-title-row">
+                <b>Custom Model Router</b>
+                <span class="cmr-version">v0.1.0</span>
+            </div>
+            <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+        </div>
+        <div class="inline-drawer-content">
+            <p class="cmr-description">
+                기존 Google Vertex AI 연결은 그대로 두고, 현재 Gemini 요청 규격과 호환되는 사용자 모델 ID를 추가합니다.
+            </p>
+
+            <div id="cmr_compatibility" class="cmr-status" role="status" aria-live="polite"></div>
+
+            <form id="cmr_add_form" class="cmr-add-form">
+                <label for="cmr_model_id">Vertex Gemini 모델 ID</label>
+                <div class="cmr-input-row">
+                    <input
+                        id="cmr_model_id"
+                        class="text_pole flex1"
+                        type="text"
+                        maxlength="128"
+                        autocomplete="off"
+                        autocapitalize="none"
+                        spellcheck="false"
+                        placeholder="gemini-x.y-pro-preview"
+                        required
+                    >
+                    <button class="menu_button menu_button_icon" type="submit">
+                        <i class="fa-solid fa-plus" aria-hidden="true"></i>
+                        <span>추가</span>
+                    </button>
+                </div>
+                <small><code>gemini-</code>로 시작해야 하며 영문 소문자, 숫자, 마침표, 밑줄, 하이픈만 허용합니다.</small>
+            </form>
+
+            <div id="cmr_feedback" class="cmr-feedback" role="status" aria-live="polite"></div>
+            <div id="cmr_model_list" class="cmr-model-list"></div>
+
+            <div class="cmr-scope-note">
+                <strong>v0.1 범위</strong>
+                <span>Vertex Gemini 텍스트 모델만 지원합니다. API 키, Service Account, 프로젝트 ID, 리전은 읽거나 저장하지 않습니다.</span>
+            </div>
+        </div>
+    </div>
+</div>

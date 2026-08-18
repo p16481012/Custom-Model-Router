@@ -1,0 +1,15 @@
+{
+    "display_name": "Custom Model Router",
+    "loading_order": 0,
+    "js": "index.js",
+    "css": "style.css",
+    "author": "p16481012",
+    "version": "0.1.0",
+    "homePage": "https://github.com/p16481012/Custom-Model-Router",
+    "auto_update": true,
+    "minimum_client_version": "1.18.0",
+    "hooks": {
+        "activate": "init",
+        "disable": "destroy"
+    }
+}

@@ -1,0 +1,117 @@
+#cmr_settings {
+    container-type: inline-size;
+}
+
+#cmr_settings .cmr-title-row,
+#cmr_settings .cmr-input-row,
+#cmr_settings .cmr-model-row,
+#cmr_settings .cmr-model-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+#cmr_settings .cmr-title-row {
+    min-width: 0;
+}
+
+#cmr_settings .cmr-version,
+#cmr_settings .cmr-badge {
+    border: 1px solid var(--SmartThemeBorderColor, currentColor);
+    border-radius: 999px;
+    font-size: 0.75rem;
+    line-height: 1.2;
+    padding: 0.15rem 0.45rem;
+    white-space: nowrap;
+}
+
+#cmr_settings .cmr-description,
+#cmr_settings .cmr-scope-note {
+    line-height: 1.45;
+}
+
+#cmr_settings .cmr-status,
+#cmr_settings .cmr-feedback,
+#cmr_settings .cmr-scope-note {
+    border: 1px solid var(--SmartThemeBorderColor, currentColor);
+    border-radius: 0.4rem;
+    margin: 0.65rem 0;
+    padding: 0.6rem 0.7rem;
+}
+
+#cmr_settings .cmr-status[data-state="ok"] {
+    border-color: var(--success-color, #4caf50);
+}
+
+#cmr_settings .cmr-status[data-state="error"],
+#cmr_settings .cmr-feedback[data-state="error"] {
+    border-color: var(--warning-color, #e57373);
+}
+
+#cmr_settings .cmr-feedback:empty {
+    display: none;
+}
+
+#cmr_settings .cmr-add-form {
+    margin-top: 0.8rem;
+}
+
+#cmr_settings .cmr-input-row {
+    margin-top: 0.35rem;
+}
+
+#cmr_settings .cmr-model-list {
+    display: grid;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+}
+
+#cmr_settings .cmr-empty {
+    opacity: 0.75;
+    padding: 0.75rem 0;
+    text-align: center;
+}
+
+#cmr_settings .cmr-model-row {
+    border: 1px solid var(--SmartThemeBorderColor, currentColor);
+    border-radius: 0.4rem;
+    justify-content: space-between;
+    padding: 0.55rem 0.6rem;
+}
+
+#cmr_settings .cmr-model-info {
+    display: grid;
+    gap: 0.3rem;
+    min-width: 0;
+}
+
+#cmr_settings .cmr-model-id {
+    overflow-wrap: anywhere;
+}
+
+#cmr_settings .cmr-model-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+}
+
+#cmr_settings .cmr-badge[data-kind="selected"] {
+    border-color: var(--success-color, #4caf50);
+}
+
+#cmr_settings .cmr-scope-note {
+    display: grid;
+    gap: 0.25rem;
+    margin-top: 0.9rem;
+}
+
+@container (max-width: 420px) {
+    #cmr_settings .cmr-model-row {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    #cmr_settings .cmr-model-actions {
+        justify-content: flex-end;
+    }
+}
