@@ -122,6 +122,63 @@
     flex: 1 1 7rem;
 }
 
+#cmr_settings .cmr-operation-actions {
+    display: grid;
+    gap: 0.4rem;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+#cmr_settings .cmr-operation-actions .menu_button,
+#cmr_settings .cmr-file-button {
+    box-sizing: border-box;
+    justify-content: center;
+    margin: 0;
+    text-align: center;
+}
+
+#cmr_settings .cmr-visually-hidden {
+    block-size: 1px;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    inline-size: 1px;
+    overflow: hidden;
+    position: absolute;
+    white-space: nowrap;
+}
+
+#cmr_settings .cmr-diagnostic-list {
+    border: 1px solid var(--SmartThemeBorderColor, currentColor);
+    border-radius: 0.4rem;
+    font-size: 0.82rem;
+    list-style: none;
+    margin: 0.45rem 0 0;
+    max-block-size: 13rem;
+    overflow-y: auto;
+    padding: 0;
+}
+
+#cmr_settings .cmr-diagnostic-list:empty {
+    display: none;
+}
+
+#cmr_settings .cmr-diagnostic-list li {
+    border-block-end: 1px solid var(--SmartThemeBorderColor, currentColor);
+    line-height: 1.35;
+    padding: 0.4rem 0.55rem;
+}
+
+#cmr_settings .cmr-diagnostic-list li:last-child {
+    border-block-end: 0;
+}
+
+#cmr_settings .cmr-diagnostic-list li[data-status="failed"] {
+    color: var(--warning-color, #e57373);
+}
+
+#cmr_settings .cmr-diagnostic-list li[data-status="warning"] {
+    color: var(--golden, #f2c94c);
+}
+
 #cmr_settings .cmr-provider-field,
 #cmr_settings .cmr-add-form {
     display: grid;
@@ -171,6 +228,11 @@
 #cmr_settings .cmr-status[data-state="error"]::before,
 #cmr_settings .cmr-feedback[data-state="error"]::before {
     background: var(--warning-color, #e57373);
+}
+
+#cmr_settings .cmr-status[data-state="warning"]::before,
+#cmr_settings .cmr-feedback[data-state="warning"]::before {
+    background: var(--golden, #f2c94c);
 }
 
 #cmr_settings .cmr-feedback:empty {

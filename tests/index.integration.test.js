@@ -307,6 +307,18 @@ class FakeDocument {
         routeForm.append(routePurpose, routeModel, routeProfile, routeClear, routeTest);
         const routeStatus = this.createElement('div');
         routeStatus.id = 'cmr_route_status';
+        const runDiagnostics = this.createElement('button');
+        runDiagnostics.id = 'cmr_run_diagnostics';
+        const copyDiagnostics = this.createElement('button');
+        copyDiagnostics.id = 'cmr_copy_diagnostics';
+        const exportBackup = this.createElement('button');
+        exportBackup.id = 'cmr_export_backup';
+        const importBackup = this.createElement('input');
+        importBackup.id = 'cmr_import_backup';
+        const diagnosticSummary = this.createElement('div');
+        diagnosticSummary.id = 'cmr_diagnostic_summary';
+        const diagnosticList = this.createElement('ul');
+        diagnosticList.id = 'cmr_diagnostic_list';
 
         root.append(
             provider,
@@ -319,6 +331,12 @@ class FakeDocument {
             modelList,
             routeForm,
             routeStatus,
+            runDiagnostics,
+            copyDiagnostics,
+            exportBackup,
+            importBackup,
+            diagnosticSummary,
+            diagnosticList,
         );
         return root;
     }
@@ -371,6 +389,20 @@ function createResponse() {
 function createModelRecord(providerId, id) {
     const provider = getProvider(providerId);
     return { id, provider: provider.id, protocol: provider.protocol, enabled: true };
+}
+
+function createPortableBackup(modelId) {
+    return JSON.stringify({
+        format: 'custom-model-router-portable-settings',
+        schemaVersion: 1,
+        createdAt: '2026-08-18T00:00:00.000Z',
+        registry: {
+            schemaVersion: 2,
+            models: [createModelRecord('vertexai', modelId)],
+            selectedModels: { vertexai: modelId },
+        },
+        purposeRoutes: { schemaVersion: 1, routes: {} },
+    });
 }
 
 function createHarness({
@@ -651,6 +683,22 @@ function installBrowserGlobals(harness) {
     };
 }
 
+function installConfirm(implementation) {
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'confirm');
+    Object.defineProperty(globalThis, 'confirm', {
+        configurable: true,
+        writable: true,
+        value: implementation,
+    });
+    return () => {
+        if (descriptor) {
+            Object.defineProperty(globalThis, 'confirm', descriptor);
+        } else {
+            delete globalThis.confirm;
+        }
+    };
+}
+
 function findElement(root, predicate) {
     if (predicate(root)) {
         return root;
@@ -716,7 +764,7 @@ test('init은 24개 제공업체를 연결하고 API Connections Popup을 한 �
         assert.equal(harness.observers.length, 1);
         assert.equal(harness.observers[0].target, harness.observerRoot);
         assert.equal(globalThis.CustomModelRouter.apiVersion, '1.1.0');
-        assert.equal(globalThis.CustomModelRouter.extensionVersion, '0.4.0');
+        assert.equal(globalThis.CustomModelRouter.extensionVersion, '0.5.0');
         assert.equal(globalThis.CustomModelRouter.routing.apiVersion, '1.0.0');
         assert.equal(globalThis.CustomModelRouter.getSnapshot().models.length, 1);
 
@@ -829,6 +877,10 @@ test('용도별 경로는 등록 모델과 같은 제공업체 프로필로 요�
         const model = panel.querySelector('#cmr_route_model');
         const profile = panel.querySelector('#cmr_route_profile');
         const mainSettingsBefore = structuredClone(harness.context.chatCompletionSettings);
+
+        panel.querySelector('#cmr_run_diagnostics').dispatchEvent(new FakeEvent('click'));
+        assert.ok(panel.querySelector('#cmr_diagnostic_list').children.length >= 5);
+        assert.match(panel.querySelector('#cmr_diagnostic_summary').textContent, /호환성 검사/);
 
         purpose.value = 'translation';
         purpose.dispatchEvent(new FakeEvent('change'));
@@ -1155,6 +1207,192 @@ test('v0.1 Vertex 설정은 v2 provider record와 selectedModels로 한 번만 �
         assert.equal(harness.saveCallCount, 1);
         assert.equal(harness.controls.get('vertexai').value, VERTEX_MODEL_ID);
     } finally {
+        await destroy();
+        restoreGlobals();
+    }
+});
+
+test('미래 Registry 스키마는 자동 하향 변환하지 않고 초기화를 안전하게 중단한다', async () => {
+    const storedSettings = { schemaVersion: 999, models: [], selectedModels: {} };
+    const harness = createHarness({ storedSettings });
+    const restoreGlobals = installBrowserGlobals(harness);
+    try {
+        await assert.rejects(init(), /미래 스키마 저장값/);
+        assert.equal(harness.context.extensionSettings.customModelRouter, storedSettings);
+        assert.equal(globalThis.CustomModelRouter, undefined);
+        assert.equal(harness.documentRef.querySelector('#cmr_open_manager'), null);
+    } finally {
+        await destroy();
+        restoreGlobals();
+    }
+});
+
+test('SETTINGS_UPDATED는 미래 스키마를 원자적으로 거부하고 다음 정상 설정은 반영한다', async () => {
+    const nextModelId = 'gemini-4-pro-preview';
+    const harness = createHarness();
+    const restoreGlobals = installBrowserGlobals(harness);
+    const originalConsoleError = console.error;
+    console.error = () => {};
+    try {
+        await init();
+        const panel = openPanel(harness);
+        const initialSaveCallCount = harness.saveCallCount;
+        const futureSettings = harness.context.extensionSettings.customModelRouter;
+        futureSettings.schemaVersion = 999;
+        const rejectedRoutes = {
+            schemaVersion: 1,
+            routes: {
+                translation: {
+                    provider: 'vertexai',
+                    modelId: nextModelId,
+                    adapterId: 'sillytavern.connection-profile',
+                    connectionProfileId: 'profile-vertex',
+                },
+            },
+        };
+        harness.context.extensionSettings.customModelRouterRouting = rejectedRoutes;
+
+        harness.eventSource.emit(harness.context.eventTypes.SETTINGS_UPDATED);
+        await flushMicrotasks();
+
+        assert.equal(harness.context.extensionSettings.customModelRouter, futureSettings);
+        assert.equal(harness.context.extensionSettings.customModelRouter.schemaVersion, 999);
+        assert.equal(harness.context.extensionSettings.customModelRouterRouting, rejectedRoutes);
+        assert.equal(harness.saveCallCount, initialSaveCallCount);
+        assert.deepEqual(
+            globalThis.CustomModelRouter.getSnapshot().models.map(model => model.id),
+            [VERTEX_MODEL_ID],
+        );
+        assert.equal(globalThis.CustomModelRouter.routing.getRoute('translation'), null);
+        assert.match(panel.querySelector('#cmr_feedback').textContent, /future_registry_schema/);
+
+        const acceptedSettings = {
+            schemaVersion: 2,
+            models: [createModelRecord('vertexai', nextModelId)],
+            selectedModels: { vertexai: nextModelId },
+        };
+        const futureRoutes = { schemaVersion: 999, routes: {} };
+        harness.context.extensionSettings.customModelRouter = acceptedSettings;
+        harness.context.extensionSettings.customModelRouterRouting = futureRoutes;
+        harness.eventSource.emit(harness.context.eventTypes.SETTINGS_UPDATED);
+        await flushMicrotasks();
+
+        assert.equal(harness.context.extensionSettings.customModelRouter, acceptedSettings);
+        assert.equal(harness.context.extensionSettings.customModelRouterRouting, futureRoutes);
+        assert.equal(harness.saveCallCount, initialSaveCallCount);
+        assert.deepEqual(
+            globalThis.CustomModelRouter.getSnapshot().models.map(model => model.id),
+            [VERTEX_MODEL_ID],
+        );
+        assert.equal(globalThis.CustomModelRouter.routing.getRoute('translation'), null);
+        assert.match(panel.querySelector('#cmr_feedback').textContent, /future_routes_schema/);
+
+        const acceptedRoutes = structuredClone(rejectedRoutes);
+        harness.context.extensionSettings.customModelRouter = acceptedSettings;
+        harness.context.extensionSettings.customModelRouterRouting = acceptedRoutes;
+        harness.eventSource.emit(harness.context.eventTypes.SETTINGS_UPDATED);
+        await flushMicrotasks();
+
+        assert.deepEqual(
+            globalThis.CustomModelRouter.getSnapshot().models.map(model => model.id),
+            [nextModelId],
+        );
+        assert.deepEqual(globalThis.CustomModelRouter.routing.getRoute('translation'), {
+            provider: 'vertexai',
+            modelId: nextModelId,
+            adapterId: 'sillytavern.connection-profile',
+            connectionProfileId: 'profile-vertex',
+        });
+        assert.equal(harness.context.extensionSettings.customModelRouter.schemaVersion, 2);
+        assert.equal(harness.context.extensionSettings.customModelRouterRouting.schemaVersion, 1);
+        assert.equal(harness.saveCallCount, initialSaveCallCount + 1);
+    } finally {
+        console.error = originalConsoleError;
+        await destroy();
+        restoreGlobals();
+    }
+});
+
+test('백업 파일 읽기 중 재활성화하면 이전 input 작업이 새 runtime을 덮지 않는다', async () => {
+    const importedModelId = 'gemini-stale-file-import';
+    const fileText = createDeferred();
+    let confirmCallCount = 0;
+    const harness = createHarness();
+    const restoreGlobals = installBrowserGlobals(harness);
+    const restoreConfirm = installConfirm(() => {
+        confirmCallCount += 1;
+        return true;
+    });
+    try {
+        await init();
+        const oldPanel = openPanel(harness);
+        const oldInput = oldPanel.querySelector('#cmr_import_backup');
+        oldInput.files = [{ text: () => fileText.promise }];
+        oldInput.value = 'stale-backup.json';
+        oldInput.dispatchEvent(new FakeEvent('change'));
+        await flushMicrotasks();
+
+        await destroy();
+        await init();
+        const newPanel = openPanel(harness);
+        assert.notEqual(newPanel.querySelector('#cmr_import_backup'), oldInput);
+
+        fileText.resolve(createPortableBackup(importedModelId));
+        await flushMicrotasks(12);
+
+        assert.equal(confirmCallCount, 0);
+        assert.equal(oldInput.value, '');
+        assert.deepEqual(
+            globalThis.CustomModelRouter.getSnapshot().models.map(model => model.id),
+            [VERTEX_MODEL_ID],
+        );
+        assert.equal(
+            harness.context.extensionSettings.customModelRouter.models.some(model => model.id === importedModelId),
+            false,
+        );
+    } finally {
+        fileText.resolve(createPortableBackup(importedModelId));
+        restoreConfirm();
+        await destroy();
+        restoreGlobals();
+    }
+});
+
+test('백업 확인창에서 비활성화하면 확인 뒤의 이전 작업이 다음 runtime을 덮지 않는다', async () => {
+    const importedModelId = 'gemini-stale-confirm-import';
+    let confirmCallCount = 0;
+    let destroyPromise = null;
+    const harness = createHarness();
+    const restoreGlobals = installBrowserGlobals(harness);
+    const restoreConfirm = installConfirm(() => {
+        confirmCallCount += 1;
+        destroyPromise = destroy();
+        return true;
+    });
+    try {
+        await init();
+        const panel = openPanel(harness);
+        const input = panel.querySelector('#cmr_import_backup');
+        input.files = [{ text: async () => createPortableBackup(importedModelId) }];
+        input.value = 'confirm-race-backup.json';
+        input.dispatchEvent(new FakeEvent('change'));
+        await flushMicrotasks(12);
+
+        assert.equal(confirmCallCount, 1);
+        await destroyPromise;
+        await init();
+
+        assert.deepEqual(
+            globalThis.CustomModelRouter.getSnapshot().models.map(model => model.id),
+            [VERTEX_MODEL_ID],
+        );
+        assert.equal(
+            harness.context.extensionSettings.customModelRouter.models.some(model => model.id === importedModelId),
+            false,
+        );
+    } finally {
+        restoreConfirm();
+        await destroyPromise?.catch(() => undefined);
         await destroy();
         restoreGlobals();
     }

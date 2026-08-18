@@ -42,8 +42,19 @@ import {
     SILLYTAVERN_CONNECTION_PROFILE_ADAPTER_ID,
     createSillyTavernConnectionProfileAdapter,
 } from './src/connection-profile-adapter.js';
+import {
+    createStabilityMonitor,
+    diagnoseCompatibility,
+} from './src/compatibility.js';
+import {
+    PORTABLE_SETTINGS_MAX_LENGTH,
+    PortableSettingsError,
+    parsePortableSettings,
+    repairSettingsBundle,
+    stringifyPortableSettings,
+} from './src/portable-settings.js';
 
-const EXTENSION_VERSION = '0.4.0';
+const EXTENSION_VERSION = '0.5.0';
 const SETTINGS_KEY = 'customModelRouter';
 const ROUTES_SETTINGS_KEY = 'customModelRouterRouting';
 const OBSERVER_ROOT_SELECTOR = '#rm_api_block';
@@ -98,6 +109,11 @@ let uninstallRegistryApi = null;
 let routingSettings = null;
 let purposeRouter = null;
 let unregisterConnectionProfileAdapter = null;
+let stabilityMonitor = null;
+let lastDiagnosticReport = null;
+let lastRepairReport = null;
+let acceptedSettingsSnapshot = null;
+let acceptedRoutingSnapshot = null;
 const boundControls = new Map();
 const pendingRestores = new Set();
 const pendingNativeChecks = new Map();
@@ -162,8 +178,14 @@ function findInitialProviderId() {
     return findActiveProvider()?.id ?? PROVIDER_IDS.VERTEXAI;
 }
 
+function rememberAcceptedSettings() {
+    acceptedSettingsSnapshot = normalizeSettings(settings);
+    acceptedRoutingSnapshot = normalizePurposeRoutes(routingSettings);
+}
+
 function persistSettings(source = 'runtime') {
     context.extensionSettings[SETTINGS_KEY] = settings;
+    acceptedSettingsSnapshot = normalizeSettings(settings);
     context.saveSettingsDebounced();
     registryApiController?.synchronize(source);
 }
@@ -171,6 +193,7 @@ function persistSettings(source = 'runtime') {
 function writeRegistryApiSettings(nextSettings) {
     settings = normalizeSettings(nextSettings);
     context.extensionSettings[SETTINGS_KEY] = settings;
+    acceptedSettingsSnapshot = normalizeSettings(settings);
     context.saveSettingsDebounced();
     scheduleSync();
 }
@@ -178,8 +201,25 @@ function writeRegistryApiSettings(nextSettings) {
 function persistRoutingSettings(nextRoutes) {
     routingSettings = normalizePurposeRoutes(nextRoutes);
     context.extensionSettings[ROUTES_SETTINGS_KEY] = routingSettings;
+    acceptedRoutingSnapshot = normalizePurposeRoutes(routingSettings);
     context.saveSettingsDebounced();
     renderRoutingFields();
+}
+
+function getRuntimeMetrics(phase = 'active') {
+    return {
+        phase,
+        launcherCount: launcherButton?.parentElement ? 1 : 0,
+        panelCount: activePopup ? 1 : 0,
+        observerCount: observer && observedContainer ? 1 : 0,
+        listenerCount: subscribedEvents.length,
+        boundControlCount: boundControls.size,
+        pendingTaskCount: pendingRestores.size + pendingNativeChecks.size + (syncScheduled ? 1 : 0),
+    };
+}
+
+function recordStabilitySample(reason) {
+    stabilityMonitor?.record(reason, getRuntimeMetrics());
 }
 
 function updateSelectedModel(providerId, modelId, save = true) {
@@ -547,7 +587,7 @@ function populateRouteModelSelect(select, preferredKey = null) {
     }
     select.replaceChildren(...groups);
     select.disabled = false;
-    if (preferredKey && select.options.some(option => option.value === preferredKey)) {
+    if (preferredKey && Array.from(select.options).some(option => option.value === preferredKey)) {
         select.value = preferredKey;
     } else {
         select.value = select.options[0]?.value ?? '';
@@ -624,6 +664,7 @@ function renderUi() {
     renderCompatibilityStatus();
     renderModelList();
     renderRoutingFields();
+    renderDiagnosticReport();
 }
 
 function isWithin(node, ancestor) {
@@ -860,14 +901,49 @@ function onSettingsUpdated() {
         return;
     }
     const storedSettings = context.extensionSettings[SETTINGS_KEY];
-    if (storedSettings !== settings) {
-        settings = normalizeSettings(storedSettings);
-        context.extensionSettings[SETTINGS_KEY] = settings;
+    const storedRoutes = context.extensionSettings[ROUTES_SETTINGS_KEY];
+    const repairReport = repairSettingsBundle({
+        registrySettings: storedSettings,
+        purposeRoutes: storedRoutes,
+    });
+    lastRepairReport = repairReport;
+
+    if (!repairReport.ok) {
+        settings = normalizeSettings(acceptedSettingsSnapshot ?? settings);
+        routingSettings = normalizePurposeRoutes(acceptedRoutingSnapshot ?? routingSettings);
+        registryApiController?.synchronize('external-settings-rejected');
+        const issue = repairReport.errors[0];
+        const message = issue
+            ? `${issue.code}: ${issue.message}`
+            : repairReport.summary;
+        console.error(`[Custom Model Router] 외부 설정을 적용하지 않았습니다. ${message}`);
+        announce(message, 'error');
+        scheduleSync();
+        return;
+    }
+
+    const nextSettings = normalizeSettings(repairReport.registrySettings);
+    const nextRoutes = normalizePurposeRoutes(repairReport.purposeRoutes);
+    const settingsChanged = JSON.stringify(settings) !== JSON.stringify(nextSettings);
+    const routesChanged = JSON.stringify(routingSettings) !== JSON.stringify(nextRoutes);
+    const storedSettingsRepaired = JSON.stringify(storedSettings) !== JSON.stringify(nextSettings);
+    const storedRoutesRepaired = JSON.stringify(storedRoutes) !== JSON.stringify(nextRoutes);
+
+    settings = nextSettings;
+    if (routesChanged && purposeRouter) {
+        purposeRouter.replaceRoutes(nextRoutes);
+    } else {
+        routingSettings = nextRoutes;
+    }
+    context.extensionSettings[SETTINGS_KEY] = settings;
+    context.extensionSettings[ROUTES_SETTINGS_KEY] = routingSettings;
+    rememberAcceptedSettings();
+
+    if (settingsChanged) {
         registryApiController?.synchronize('external-settings');
     }
-    const storedRoutes = context.extensionSettings[ROUTES_SETTINGS_KEY];
-    if (storedRoutes !== routingSettings && purposeRouter) {
-        purposeRouter.replaceRoutes(normalizePurposeRoutes(storedRoutes));
+    if ((storedSettingsRepaired || storedRoutesRepaired) && !routesChanged) {
+        context.saveSettingsDebounced();
     }
     scheduleSync();
 }
@@ -875,6 +951,7 @@ function onSettingsUpdated() {
 function onSourceChanged() {
     reconcileActiveProvider({ clearEmpty: false });
     scheduleSync();
+    queueMicrotask(() => recordStabilitySample('Chat Completion source 변경'));
 }
 
 function onModelChanged() {
@@ -901,6 +978,7 @@ function onModelChanged() {
 function onConnectionStateChanged() {
     reconcileActiveProvider({ clearEmpty: true });
     scheduleSync();
+    queueMicrotask(() => recordStabilitySample('Connection Profile 또는 preset 변경'));
 }
 
 function subscribeToSillyTavernEvents() {
@@ -1012,13 +1090,14 @@ function onRouteClear() {
 async function onRouteTest(event) {
     const button = event.currentTarget;
     const purpose = settingsRoot?.querySelector('#cmr_route_purpose')?.value;
-    if (!purposeRouter || !purpose) {
+    const router = purposeRouter;
+    if (!router || !purpose) {
         return;
     }
     button.disabled = true;
     announceRoute('보조 요청을 전송하고 있습니다.');
     try {
-        const result = await purposeRouter.execute(purpose, {
+        const result = await router.execute(purpose, {
             prompt: 'Reply with exactly CMR_OK.',
             maxTokens: 24,
             stream: false,
@@ -1033,7 +1112,193 @@ async function onRouteTest(event) {
             : '보조 요청 테스트에 실패했습니다.';
         announceRoute(message, 'error');
     } finally {
-        button.disabled = !purposeRouter.getRoute(purpose);
+        if (purposeRouter !== router) {
+            button.disabled = true;
+        } else {
+            try {
+                button.disabled = !router.getRoute(purpose);
+            } catch {
+                button.disabled = true;
+            }
+        }
+    }
+}
+
+function createDiagnosticReport() {
+    const compatibility = diagnoseCompatibility({
+        context,
+        documentRef: document,
+        runtimeState: {
+            ...getRuntimeMetrics(),
+            subscriptions: subscribedEvents,
+            controlBindings: [...boundControls.keys()].map(providerId => ({ providerId })),
+        },
+    });
+    const stability = stabilityMonitor?.analyze() ?? null;
+    const status = compatibility.status === 'error' || stability?.status === 'error'
+        ? 'error'
+        : (compatibility.status === 'warning' || stability?.status === 'warning' ? 'warning' : 'ok');
+    const summary = stability?.status === 'error'
+        ? `${compatibility.summary} 장시간 계측에서 자원 증가를 발견했습니다.`
+        : (stability?.status === 'warning' && compatibility.status === 'ok'
+            ? `${compatibility.summary} ${stability.summary}`
+            : compatibility.summary);
+    return {
+        ...compatibility,
+        status,
+        summary,
+        extensionVersion: EXTENSION_VERSION,
+        stability,
+        repair: lastRepairReport ? {
+            status: lastRepairReport.status,
+            summary: lastRepairReport.summary,
+            beforeCounts: lastRepairReport.beforeCounts,
+            afterCounts: lastRepairReport.afterCounts,
+            warnings: lastRepairReport.warnings,
+        } : null,
+    };
+}
+
+function renderDiagnosticReport() {
+    const list = settingsRoot?.querySelector('#cmr_diagnostic_list');
+    const summary = settingsRoot?.querySelector('#cmr_diagnostic_summary');
+    if (!list || !summary) {
+        return;
+    }
+    list.replaceChildren();
+    if (!lastDiagnosticReport) {
+        summary.dataset.state = 'ok';
+        summary.textContent = '진단을 실행하면 버전·이벤트·모델 컨트롤·중복 자원을 확인합니다.';
+        return;
+    }
+    summary.dataset.state = lastDiagnosticReport.status;
+    summary.textContent = lastDiagnosticReport.summary;
+    for (const check of lastDiagnosticReport.checks) {
+        const item = document.createElement('li');
+        item.dataset.status = check.status;
+        item.textContent = `${check.status === 'passed' ? '통과' : (check.status === 'warning' ? '주의' : '오류')} · ${check.message}`;
+        list.append(item);
+    }
+    if (lastDiagnosticReport.stability) {
+        const item = document.createElement('li');
+        item.dataset.status = lastDiagnosticReport.stability.status === 'error'
+            ? 'failed'
+            : (lastDiagnosticReport.stability.status === 'warning' ? 'warning' : 'passed');
+        item.textContent = `장시간 계측 · ${lastDiagnosticReport.stability.summary}`;
+        list.append(item);
+    }
+}
+
+function onRunDiagnostics() {
+    lastDiagnosticReport = createDiagnosticReport();
+    renderDiagnosticReport();
+}
+
+async function onCopyDiagnostics() {
+    try {
+        lastDiagnosticReport ??= createDiagnosticReport();
+        const clipboard = globalThis.navigator?.clipboard;
+        if (typeof clipboard?.writeText !== 'function') {
+            throw new Error('clipboard unavailable');
+        }
+        await clipboard.writeText(JSON.stringify(lastDiagnosticReport, null, 2));
+        renderDiagnosticReport();
+        announce('민감한 연결 값을 제외한 진단 결과를 복사했습니다.');
+    } catch {
+        announce('브라우저가 진단 결과 복사를 허용하지 않았습니다.', 'error');
+    }
+}
+
+function onExportBackup() {
+    try {
+        const content = stringifyPortableSettings({
+            registrySettings: settings,
+            purposeRoutes: routingSettings,
+        });
+        const BlobClass = globalThis.Blob;
+        const URLApi = globalThis.URL;
+        if (typeof BlobClass !== 'function' || typeof URLApi?.createObjectURL !== 'function') {
+            throw new Error('download unavailable');
+        }
+        const url = URLApi.createObjectURL(new BlobClass([content], { type: 'application/json' }));
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.download = `custom-model-router-backup-v${EXTENSION_VERSION}.json`;
+        anchor.hidden = true;
+        document.body.append(anchor);
+        anchor.click();
+        anchor.remove();
+        URLApi.revokeObjectURL(url);
+        announce('Registry와 용도별 경로 백업을 내보냈습니다.');
+    } catch {
+        announce('이 브라우저에서는 백업 파일을 내보내지 못했습니다.', 'error');
+    }
+}
+
+function isCurrentImportOperation(operation) {
+    return operation.generation === lifecycleGeneration
+        && context === operation.context
+        && purposeRouter === operation.purposeRouter
+        && settingsRoot?.querySelector('#cmr_import_backup') === operation.input;
+}
+
+async function onImportBackup(event) {
+    const input = event.currentTarget;
+    const file = input?.files?.[0];
+    if (!file) {
+        return;
+    }
+    const operation = {
+        generation: lifecycleGeneration,
+        context,
+        purposeRouter,
+        input,
+    };
+    try {
+        if (!isCurrentImportOperation(operation)) {
+            return;
+        }
+        if (Number.isFinite(file.size) && file.size > PORTABLE_SETTINGS_MAX_LENGTH) {
+            throw new PortableSettingsError(
+                'backup_too_large',
+                `백업 파일은 ${PORTABLE_SETTINGS_MAX_LENGTH.toLocaleString('ko-KR')}바이트 이하여야 합니다.`,
+            );
+        }
+        const content = await file.text();
+        if (!isCurrentImportOperation(operation)) {
+            return;
+        }
+        const parsed = parsePortableSettings(content);
+        if (!isCurrentImportOperation(operation)) {
+            return;
+        }
+        const confirmation = globalThis.confirm?.(
+            '현재 Custom Model Router 모델 Registry와 용도별 경로를 이 백업으로 교체할까요?',
+        );
+        if (!isCurrentImportOperation(operation)) {
+            return;
+        }
+        if (confirmation !== true) {
+            announce('백업 가져오기를 취소했습니다.', 'error');
+            return;
+        }
+        settings = normalizeSettings(parsed.registrySettings);
+        operation.context.extensionSettings[SETTINGS_KEY] = settings;
+        operation.purposeRouter.replaceRoutes(parsed.purposeRoutes);
+        persistSettings('backup-import');
+        synchronize();
+        announce(parsed.report.status === 'warning'
+            ? `백업을 가져왔습니다. ${parsed.report.summary}`
+            : '백업에서 Registry와 용도별 경로를 복구했습니다.');
+    } catch (error) {
+        if (isCurrentImportOperation(operation)) {
+            const message = error instanceof PortableSettingsError
+                ? `${error.code}: ${error.message}`
+                : '백업 파일을 읽지 못했습니다.';
+            announce(message, 'error');
+        }
+    } finally {
+        input.value = '';
     }
 }
 
@@ -1057,6 +1322,10 @@ function createSettingsPanel() {
     settingsRoot.querySelector('#cmr_route_form')?.addEventListener('submit', onRouteSubmit);
     settingsRoot.querySelector('#cmr_route_clear')?.addEventListener('click', onRouteClear);
     settingsRoot.querySelector('#cmr_route_test')?.addEventListener('click', onRouteTest);
+    settingsRoot.querySelector('#cmr_run_diagnostics')?.addEventListener('click', onRunDiagnostics);
+    settingsRoot.querySelector('#cmr_copy_diagnostics')?.addEventListener('click', onCopyDiagnostics);
+    settingsRoot.querySelector('#cmr_export_backup')?.addEventListener('click', onExportBackup);
+    settingsRoot.querySelector('#cmr_import_backup')?.addEventListener('change', onImportBackup);
     settingsRoot.addEventListener('keydown', onPanelKeyDown);
     return root;
 }
@@ -1275,6 +1544,12 @@ function teardownRuntime({ applyNativeFallback = false } = {}) {
     purposeRouter?.destroy();
     purposeRouter = null;
     routingSettings = null;
+    stabilityMonitor?.record('확장 비활성화', getRuntimeMetrics('destroyed'));
+    stabilityMonitor = null;
+    lastDiagnosticReport = null;
+    lastRepairReport = null;
+    acceptedSettingsSnapshot = null;
+    acceptedRoutingSnapshot = null;
     context = null;
     settings = null;
     syncScheduled = false;
@@ -1284,13 +1559,28 @@ function teardownRuntime({ applyNativeFallback = false } = {}) {
 async function initialize(generation) {
     context = getSillyTavernContext();
     const storedSettings = context.extensionSettings[SETTINGS_KEY];
-    settings = normalizeSettings(storedSettings);
-    const settingsChanged = JSON.stringify(storedSettings) !== JSON.stringify(settings);
-    context.extensionSettings[SETTINGS_KEY] = settings;
     const storedRoutes = context.extensionSettings[ROUTES_SETTINGS_KEY];
-    routingSettings = normalizePurposeRoutes(storedRoutes);
+    lastRepairReport = repairSettingsBundle({
+        registrySettings: storedSettings,
+        purposeRoutes: storedRoutes,
+    });
+    if (!lastRepairReport.ok) {
+        const issue = lastRepairReport.errors[0];
+        throw new PortableSettingsError(
+            issue?.code ?? 'settings_repair_failed',
+            lastRepairReport.summary,
+            lastRepairReport.errors,
+        );
+    }
+    settings = normalizeSettings(lastRepairReport.registrySettings);
+    routingSettings = normalizePurposeRoutes(lastRepairReport.purposeRoutes);
+    rememberAcceptedSettings();
+    const settingsChanged = JSON.stringify(storedSettings) !== JSON.stringify(settings);
     const routesChanged = JSON.stringify(storedRoutes) !== JSON.stringify(routingSettings);
+    context.extensionSettings[SETTINGS_KEY] = settings;
     context.extensionSettings[ROUTES_SETTINGS_KEY] = routingSettings;
+    stabilityMonitor = createStabilityMonitor({ sampleLimit: 512 });
+    lastDiagnosticReport = null;
     purposeRouter = new PurposeRouter({
         routes: routingSettings,
         getRegistrySettings: () => settings,

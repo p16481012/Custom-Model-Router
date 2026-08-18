@@ -20,6 +20,16 @@ import {
 
 const TEST_ADAPTER_ID = 'example.translation';
 
+function createDeferred() {
+    let resolve;
+    let reject;
+    const promise = new Promise((resolvePromise, rejectPromise) => {
+        resolve = resolvePromise;
+        reject = rejectPromise;
+    });
+    return { promise, resolve, reject };
+}
+
 function makeRoute(overrides = {}) {
     return {
         provider: 'openai',
@@ -150,7 +160,8 @@ test('용도 실행은 정확한 경로와 AbortSignal만 어댑터에 넘기고
     assert.equal(calls[0].modelId, 'gpt-auxiliary');
     assert.equal(calls[0].route.modelId, 'gpt-auxiliary');
     assert.equal(calls[0].request, request);
-    assert.equal(calls[0].signal, controller.signal);
+    assert.notEqual(calls[0].signal, controller.signal);
+    assert.equal(calls[0].signal.aborted, false);
     assert.equal(Object.isFrozen(calls[0].route), true);
     assert.deepEqual(mainSettings, mainSettingsBefore);
 });
@@ -250,6 +261,104 @@ test('이미 취소된 signal은 어댑터를 호출하기 전에 같은 취소 
     );
 });
 
+test('호출자 signal 취소를 내부 실행 signal에 전달하고 늦은 성공값을 반환하지 않는다', async () => {
+    const registry = makeRegistry();
+    const controller = new AbortController();
+    const adapterStarted = createDeferred();
+    const adapterResult = createDeferred();
+    const reason = new Error('호출자 취소');
+    let executionSignal;
+    const router = new PurposeRouter({
+        routes: { routes: { translation: makeRoute() } },
+        getRegistrySettings: () => registry,
+    });
+    router.registerAdapter({
+        id: TEST_ADAPTER_ID,
+        execute: async execution => {
+            executionSignal = execution.signal;
+            adapterStarted.resolve();
+            return adapterResult.promise;
+        },
+    });
+
+    const pending = router.execute('translation', {}, { signal: controller.signal });
+    await adapterStarted.promise;
+    controller.abort(reason);
+    assert.equal(executionSignal.aborted, true);
+    assert.equal(executionSignal.reason, reason);
+    adapterResult.resolve('취소 뒤 성공값');
+
+    await assert.rejects(pending, error => error === reason);
+});
+
+test('supports 대기 중 destroy하면 실행 signal을 중단하고 execute로 진행하지 않는다', async () => {
+    const registry = makeRegistry();
+    const supportsStarted = createDeferred();
+    const supportsResult = createDeferred();
+    let executionSignal;
+    let executeCalls = 0;
+    const router = new PurposeRouter({
+        routes: { routes: { summary: makeRoute() } },
+        getRegistrySettings: () => registry,
+    });
+    router.registerAdapter({
+        id: TEST_ADAPTER_ID,
+        supports: async execution => {
+            executionSignal = execution.signal;
+            supportsStarted.resolve();
+            return supportsResult.promise;
+        },
+        execute: async () => {
+            executeCalls += 1;
+            return '실행되면 안 됨';
+        },
+    });
+
+    const pending = router.execute('summary', {});
+    await supportsStarted.promise;
+    assert.equal(router.destroy(), true);
+    assert.equal(executionSignal.aborted, true);
+    assert.equal(executionSignal.reason.code, 'router_destroyed');
+    supportsResult.resolve(true);
+
+    await assert.rejects(
+        pending,
+        error => error instanceof PurposeRouterError && error.code === 'router_destroyed',
+    );
+    assert.equal(executeCalls, 0);
+});
+
+test('adapter 대기 중 destroy하면 나중에 완료된 성공값도 router_destroyed로 거부한다', async () => {
+    const registry = makeRegistry();
+    const adapterStarted = createDeferred();
+    const adapterResult = createDeferred();
+    let executionSignal;
+    const router = new PurposeRouter({
+        routes: { routes: { search: makeRoute() } },
+        getRegistrySettings: () => registry,
+    });
+    router.registerAdapter({
+        id: TEST_ADAPTER_ID,
+        execute: async execution => {
+            executionSignal = execution.signal;
+            adapterStarted.resolve();
+            return adapterResult.promise;
+        },
+    });
+
+    const pending = router.execute('search', {});
+    await adapterStarted.promise;
+    assert.equal(router.destroy(), true);
+    assert.equal(executionSignal.aborted, true);
+    adapterResult.resolve('종료 뒤 성공값');
+
+    await assert.rejects(
+        pending,
+        error => error instanceof PurposeRouterError && error.code === 'router_destroyed',
+    );
+    assert.equal(router.destroy(), false);
+});
+
 test('경로 변경 콜백 실패 시 메모리 상태를 커밋하지 않는다', () => {
     const registry = makeRegistry();
     const router = new PurposeRouter({
@@ -298,10 +407,12 @@ test('다른 확장용 routing facade는 계약과 스냅샷을 동결하고 opt
 test('destroy는 어댑터와 구독자를 정리하고 기존 공개 facade 접근을 차단한다', () => {
     const router = new PurposeRouter({ getRegistrySettings: () => makeRegistry() });
     const routing = createPurposeRoutingApi(router);
-    router.registerAdapter({ id: TEST_ADAPTER_ID, execute: async () => 'unused' });
+    const dispose = router.registerAdapter({ id: TEST_ADAPTER_ID, execute: async () => 'unused' });
 
     assert.equal(router.destroy(), true);
     assert.equal(router.destroy(), false);
+    assert.equal(dispose(), false);
+    assert.equal(dispose(), false);
     assert.throws(
         () => routing.getRoutes(),
         error => error instanceof PurposeRouterError && error.code === 'router_destroyed',

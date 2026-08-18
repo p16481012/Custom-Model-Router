@@ -4,7 +4,7 @@
             <h2 id="cmr_panel_title">사용자 모델 관리</h2>
             <span class="cmr-product-name">Custom Model Router</span>
         </div>
-        <span class="cmr-version">v0.4.0</span>
+        <span class="cmr-version">v0.5.0</span>
     </header>
 
     <p class="cmr-description">
@@ -56,7 +56,7 @@
     <details class="cmr-tool-section" id="cmr_routing_section">
         <summary>보조 기능별 모델 라우팅</summary>
         <p class="cmr-tool-description">
-            별칭 없이 등록 모델과 Connection Profile을 직접 연결합니다. 보조 요청은 메인 채팅 모델을 바꾸지 않습니다.
+            등록 모델과 Connection Profile을 직접 연결합니다. 보조 요청은 메인 채팅 모델을 바꾸지 않습니다.
         </p>
         <form id="cmr_route_form" class="cmr-route-form">
             <label for="cmr_route_purpose">용도</label>
@@ -78,8 +78,24 @@
         <div id="cmr_route_status" class="cmr-feedback" role="status" aria-live="polite" aria-atomic="true"></div>
     </details>
 
+    <details class="cmr-tool-section" id="cmr_operations_section">
+        <summary>호환성 진단 및 설정 복구</summary>
+        <p class="cmr-tool-description">
+            SillyTavern 공개 API·모델 컨트롤·중복 런타임 자원을 검사하고, 민감정보를 제외한 확장 설정만 백업합니다.
+        </p>
+        <div class="cmr-operation-actions">
+            <button id="cmr_run_diagnostics" type="button" class="menu_button">진단 실행</button>
+            <button id="cmr_copy_diagnostics" type="button" class="menu_button">진단 복사</button>
+            <button id="cmr_export_backup" type="button" class="menu_button">백업 내보내기</button>
+            <label for="cmr_import_backup" class="menu_button cmr-file-button">백업 가져오기</label>
+            <input id="cmr_import_backup" class="cmr-visually-hidden" type="file" accept="application/json,.json">
+        </div>
+        <div id="cmr_diagnostic_summary" class="cmr-feedback" role="status" aria-live="polite" aria-atomic="true"></div>
+        <ul id="cmr_diagnostic_list" class="cmr-diagnostic-list"></ul>
+    </details>
+
     <details class="cmr-scope-note">
         <summary>지원 범위 및 개인정보</summary>
-        <p>v0.4는 SillyTavern의 기존 Chat Completion 연결과 요청 규격을 그대로 사용하는 모델 ID를 지원합니다. 라우팅에는 모델 참조와 Connection Profile ID만 저장하며 API 키, Service Account, 프로젝트 ID, 리전, 엔드포인트 URL은 읽거나 저장하지 않습니다.</p>
+        <p>v0.5는 SillyTavern의 기존 Chat Completion 연결과 요청 규격을 그대로 사용하는 모델 ID를 지원합니다. 라우팅과 백업에는 모델 참조 및 Connection Profile ID만 저장하며 API 키, Service Account, 프로젝트 ID, 리전, 엔드포인트 URL은 읽거나 저장하지 않습니다.</p>
     </details>
 </section>

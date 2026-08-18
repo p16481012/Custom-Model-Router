@@ -284,6 +284,19 @@ function isAbortSignal(value) {
         );
 }
 
+function forwardAbort(sourceSignal, targetController) {
+    if (targetController.signal.aborted) {
+        return;
+    }
+
+    if (sourceSignal?.reason === undefined) {
+        targetController.abort();
+        return;
+    }
+
+    targetController.abort(sourceSignal.reason);
+}
+
 /**
  * 다른 확장이 명시적으로 opt-in할 수 있는 용도별 라우터다.
  * 어댑터를 찾지 못했을 때 다른 모델이나 어댑터로 자동 대체하지 않는다.
@@ -295,6 +308,7 @@ export class PurposeRouter {
     #getRegistrySettings;
     #onRoutesChanged;
     #active = true;
+    #activeExecutions = new Set();
 
     constructor(options = {}) {
         this.#routes = cloneRoutes(options.routes);
@@ -381,6 +395,9 @@ export class PurposeRouter {
                 return false;
             }
             disposed = true;
+            if (!this.#active) {
+                return false;
+            }
             return this.unregisterAdapter(registered.id, registered);
         };
     }
@@ -455,55 +472,79 @@ export class PurposeRouter {
             );
         }
 
+        const executionController = new AbortController();
+        const forwardCallerAbort = signal
+            ? () => forwardAbort(signal, executionController)
+            : null;
+        if (forwardCallerAbort) {
+            signal.addEventListener('abort', forwardCallerAbort, { once: true });
+            if (signal.aborted) {
+                forwardCallerAbort();
+            }
+        }
+        this.#activeExecutions.add(executionController);
+
         const execution = Object.freeze({
             purpose: purposeValidation.id,
             route: freezeRoute(routeValidation.route),
             provider: routeValidation.route.provider,
             modelId: routeValidation.route.modelId,
             request,
-            signal,
+            signal: executionController.signal,
         });
 
-        if (adapter.supports) {
-            let support;
+        try {
+            if (adapter.supports) {
+                let support;
+                try {
+                    support = await adapter.supports(execution);
+                } catch (error) {
+                    throwIfAborted(executionController.signal);
+                    if (error instanceof PurposeRouterError) {
+                        throw error;
+                    }
+                    throw new PurposeRouterError('adapter_support_check_failed', '어댑터 지원 여부를 확인하지 못했습니다.', {
+                        cause: error,
+                        details: { adapterId: adapter.id, purpose: purposeValidation.id },
+                    });
+                }
+                throwIfAborted(executionController.signal);
+
+                const supported = typeof support === 'object' ? support?.ok === true : support === true;
+                if (!supported) {
+                    const message = typeof support === 'object' && support?.message
+                        ? String(support.message)
+                        : `어댑터 '${adapter.id}'가 이 모델 경로를 지원하지 않습니다.`;
+                    throw new PurposeRouterError('adapter_unsupported', message, {
+                        details: {
+                            adapterId: adapter.id,
+                            purpose: purposeValidation.id,
+                            reasonCode: typeof support === 'object' ? support?.code ?? null : null,
+                        },
+                    });
+                }
+            }
+
+            throwIfAborted(executionController.signal);
             try {
-                support = await adapter.supports(execution);
+                const result = await adapter.execute(execution);
+                throwIfAborted(executionController.signal);
+                return result;
             } catch (error) {
-                if (error instanceof PurposeRouterError) {
+                throwIfAborted(executionController.signal);
+                if (error instanceof PurposeRouterError || error?.name === 'AbortError') {
                     throw error;
                 }
-                throw new PurposeRouterError('adapter_support_check_failed', '어댑터 지원 여부를 확인하지 못했습니다.', {
+                throw new PurposeRouterError('adapter_execution_failed', '어댑터 요청 실행에 실패했습니다.', {
                     cause: error,
                     details: { adapterId: adapter.id, purpose: purposeValidation.id },
                 });
             }
-
-            const supported = typeof support === 'object' ? support?.ok === true : support === true;
-            if (!supported) {
-                const message = typeof support === 'object' && support?.message
-                    ? String(support.message)
-                    : `어댑터 '${adapter.id}'가 이 모델 경로를 지원하지 않습니다.`;
-                throw new PurposeRouterError('adapter_unsupported', message, {
-                    details: {
-                        adapterId: adapter.id,
-                        purpose: purposeValidation.id,
-                        reasonCode: typeof support === 'object' ? support?.code ?? null : null,
-                    },
-                });
+        } finally {
+            this.#activeExecutions.delete(executionController);
+            if (forwardCallerAbort && typeof signal.removeEventListener === 'function') {
+                signal.removeEventListener('abort', forwardCallerAbort);
             }
-        }
-
-        throwIfAborted(signal);
-        try {
-            return await adapter.execute(execution);
-        } catch (error) {
-            if (error instanceof PurposeRouterError || signal?.aborted || error?.name === 'AbortError') {
-                throw error;
-            }
-            throw new PurposeRouterError('adapter_execution_failed', '어댑터 요청 실행에 실패했습니다.', {
-                cause: error,
-                details: { adapterId: adapter.id, purpose: purposeValidation.id },
-            });
         }
     }
 
@@ -532,6 +573,13 @@ export class PurposeRouter {
             return false;
         }
         this.#active = false;
+        for (const controller of this.#activeExecutions) {
+            controller.abort(new PurposeRouterError(
+                'router_destroyed',
+                '용도별 라우터가 종료되어 진행 중인 요청이 취소되었습니다.',
+            ));
+        }
+        this.#activeExecutions.clear();
         this.#adapters.clear();
         this.#listeners.clear();
         this.#onRoutesChanged = null;

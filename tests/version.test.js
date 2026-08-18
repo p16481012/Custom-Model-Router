@@ -41,6 +41,8 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
     assert.match(packageJson.scripts.check, /src\/registry-api\.js/);
     assert.match(packageJson.scripts.check, /src\/purpose-router\.js/);
     assert.match(packageJson.scripts.check, /src\/connection-profile-adapter\.js/);
+    assert.match(packageJson.scripts.check, /src\/compatibility\.js/);
+    assert.match(packageJson.scripts.check, /src\/portable-settings\.js/);
     assert.match(settingsHtml, new RegExp(`cmr-version[^>]*>v${version}<`));
     assert.match(readme, new RegExp(`현재 버전은 \\*\\*v${version.replaceAll('.', '\\.')}`));
     assert.match(entrypoint, new RegExp(`EXTENSION_VERSION = '${version.replaceAll('.', '\\.')}'`));
@@ -55,9 +57,9 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
     for (const document of [readme, roadmap]) {
         assert.doesNotMatch(document, /모델 별칭|`MAIN`|`AUX`|`FAST`/);
     }
-    assert.match(roadmap, /### v0\.3\.0 — 공개 Registry API/);
-    assert.match(roadmap, /### v0\.4\.0 — 확장 어댑터와 용도별 라우팅/);
-    assert.match(roadmap, /### v0\.5\.0 — 호환성과 운영 안정화/);
+    assert.match(roadmap, /## v0\.3\.0 — 공개 Registry API/);
+    assert.match(roadmap, /## v0\.4\.0 — 확장 어댑터와 용도별 라우팅/);
+    assert.match(roadmap, /## v0\.5\.0 — 호환성과 운영 안정화/);
     assert.doesNotMatch(roadmap, /v0\.6\.0/);
     assert.match(entrypoint, /new context\.Popup/);
     assert.match(entrypoint, /#cmr_open_manager/);
@@ -66,6 +68,11 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
     assert.match(entrypoint, /installRegistryApi\(globalThis/);
     assert.match(entrypoint, /createPurposeRoutingApi/);
     assert.match(entrypoint, /createSillyTavernConnectionProfileAdapter/);
+    assert.match(entrypoint, /diagnoseCompatibility/);
+    assert.match(entrypoint, /stringifyPortableSettings/);
+    assert.match(settingsHtml, /cmr_run_diagnostics/);
+    assert.match(settingsHtml, /cmr_export_backup/);
+    assert.doesNotMatch(entrypoint, /\.options\.some\(/, '실제 select.options는 Array가 아닌 HTMLCollection이다');
     assert.equal(
         rootEntries.some(name => /^licen[cs]e(?:\.|$)/i.test(name)),
         false,
