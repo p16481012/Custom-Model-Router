@@ -38,13 +38,16 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
     assert.equal(packageJson.version, version);
     assert.match(packageJson.scripts.check, /src\/providers\.js/);
     assert.match(packageJson.scripts.check, /src\/model-select\.js/);
+    assert.match(packageJson.scripts.check, /src\/registry-api\.js/);
     assert.match(settingsHtml, new RegExp(`cmr-version[^>]*>v${version}<`));
     assert.match(readme, new RegExp(`현재 버전은 \\*\\*v${version.replaceAll('.', '\\.')}`));
-    assert.match(entrypoint, new RegExp(`v${version.replaceAll('.', '\\.')} 초기화 완료`));
+    assert.match(entrypoint, new RegExp(`EXTENSION_VERSION = '${version.replaceAll('.', '\\.')}'`));
+    assert.match(entrypoint, /초기화 완료/);
     assert.match(checklist, new RegExp(`대상 버전: \\*\\*v${version.replaceAll('.', '\\.')}\\*\\*`));
     assert.match(roadmap, new RegExp(`현재 릴리스: \\*\\*v${version.replaceAll('.', '\\.')}\\*\\*`));
     assert.match(readme, /\.\/USER_CHECKLIST\.md/);
     assert.match(readme, /\.\/ROADMAP\.md/);
+    assert.match(readme, /\.\/API\.md/);
     assert.match(readme, /API Connections/);
     for (const document of [readme, roadmap]) {
         assert.doesNotMatch(document, /모델 별칭|`MAIN`|`AUX`|`FAST`/);
@@ -57,6 +60,7 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
     assert.match(entrypoint, /#cmr_open_manager/);
     assert.doesNotMatch(entrypoint, /#extensions_settings2|#extensions_settings/);
     assert.doesNotMatch(settingsHtml, /inline-drawer/);
+    assert.match(entrypoint, /installRegistryApi\(globalThis/);
     assert.equal(
         rootEntries.some(name => /^licen[cs]e(?:\.|$)/i.test(name)),
         false,

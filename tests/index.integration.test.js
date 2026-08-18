@@ -671,6 +671,9 @@ test('init은 24개 제공업체를 연결하고 API Connections Popup을 한 �
         assert.equal(harness.eventSource.listenerCount, 7);
         assert.equal(harness.observers.length, 1);
         assert.equal(harness.observers[0].target, harness.observerRoot);
+        assert.equal(globalThis.CustomModelRouter.apiVersion, '1.0.0');
+        assert.equal(globalThis.CustomModelRouter.extensionVersion, '0.3.0');
+        assert.equal(globalThis.CustomModelRouter.getSnapshot().models.length, 1);
 
         const panel = openPanel(harness);
         const popup = harness.popupInstances[0];
@@ -707,6 +710,7 @@ test('init은 24개 제공업체를 연결하고 API Connections Popup을 한 �
         assert.equal(harness.documentRef.activeElement, launcher);
 
         await destroy();
+        assert.equal(globalThis.CustomModelRouter, undefined);
         assert.equal(getCustomGroup(vertexSelect, 'vertexai'), null);
         assert.equal(harness.documentRef.querySelector('#cmr_open_manager'), null);
         assert.equal(harness.eventSource.removeCalls.length, 7);

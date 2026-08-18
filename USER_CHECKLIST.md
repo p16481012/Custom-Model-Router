@@ -1,6 +1,6 @@
 # 사용자 검증 체크리스트
 
-대상 버전: **v0.2.1**
+대상 버전: **v0.3.0**
 
 대상 기능: SillyTavern Chat Completion 연결 24개의 사용자 모델 등록·선택·복원, schema v1→v2 이관, API Connections 모델 관리 팝업
 
@@ -32,7 +32,7 @@
 
 ```text
 SillyTavern 버전:
-Custom Model Router 버전: v0.2.1
+Custom Model Router 버전: v0.3.0
 설치 방식: 신규 설치 / v0.1.x에서 업데이트
 브라우저와 버전:
 OS:
@@ -69,13 +69,13 @@ Connection Profile 사용 여부:
 - [ ] **[필수][MIG-01] 확장 업데이트 뒤 API Connections에 사용자 모델 관리 아이콘이 한 번만 표시된다.**
   - 기대 결과: 아이콘이 Connection Profile 도구행에 있고 다른 컨트롤을 가리지 않는다.
 
-- [ ] **[필수][MIG-02] 관리 팝업에 `v0.2.1` 배지와 제공업체 선택기가 표시된다.**
+- [ ] **[필수][MIG-02] 관리 팝업에 `v0.3.0` 배지와 제공업체 선택기가 표시된다.**
   - 기대 결과: Extensions 설정에 긴 인라인 패널이 생기지 않고 공식 팝업이 하나만 열린다.
 
 - [ ] **[조건부][MIG-03] v0.1.x에 등록했던 Vertex 모델이 업데이트 뒤 Google Vertex AI 목록에 남아 있다.**
   - 기대 결과: 기존 ID가 빠지거나 다른 제공업체로 이동하지 않는다.
 
-- [ ] **[조건부][MIG-04] v0.1.x에서 선택했던 Vertex 사용자 모델 상태가 v0.2.1에서 복원된다.**
+- [ ] **[조건부][MIG-04] v0.1.x에서 선택했던 Vertex 사용자 모델 상태가 v0.3.0에서 복원된다.**
   - 기대 결과: schema v1의 단일 선택값이 `vertexai` 선택 상태로 이관된다.
 
 - [ ] **[조건부][MIG-05] v0.1.x에 중복 또는 손상된 저장값이 있어도 팝업을 열 수 있다.**
@@ -272,13 +272,27 @@ Connection Profile 사용 여부:
 - [ ] **[필수][SEC-04] 오류 보고 전에 Console·Network 자료에서 비밀값을 제거했다.**
   - 기대 결과: Authorization, API 키, Service Account JSON, 전체 프로젝트·Account ID가 포함되지 않는다.
 
+## 9. 공개 Registry API
+
+- [ ] **[필수][API-01] 브라우저 Console에서 `CustomModelRouter.apiVersion`을 확인했다.**
+  - 기대 결과: `1.0.0`이며 `CustomModelRouter.isCompatible('1.0.0')`가 `true`다.
+
+- [ ] **[필수][API-02] `CustomModelRouter.getSnapshot()`을 호출했다.**
+  - 기대 결과: 등록 모델과 `selectedModels`가 보이고 API 키·endpoint·프로젝트·리전은 포함되지 않는다.
+
+- [ ] **[권장][API-03] `CustomModelRouter.subscribe('registry:changed', console.log)`로 구독한 뒤 모델을 하나 등록했다.**
+  - 기대 결과: revision과 불변 snapshot이 포함된 이벤트가 한 번의 변경 단위로 전달된다.
+
+- [ ] **[필수][API-04] 확장을 비활성화한 뒤 전역 API가 제거되는지 확인했다.**
+  - 기대 결과: `globalThis.CustomModelRouter`가 제거되고 재활성화하면 새 API 인스턴스가 한 개만 설치된다.
+
 ## 결과 제출 양식
 
 ```text
-제목: [v0.2.1][제공업체][항목 ID] 짧은 증상
+제목: [v0.3.0][제공업체][항목 ID] 짧은 증상
 
 SillyTavern 버전:
-Custom Model Router 버전: v0.2.1
+Custom Model Router 버전: v0.3.0
 OS / 브라우저:
 설치 방식: 신규 / v0.1.x에서 업데이트
 제공업체:

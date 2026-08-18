@@ -2,22 +2,22 @@
 
 SillyTavern 코어 파일을 수정하지 않고 Chat Completion 연결에 사용자 모델 ID를 추가하는 UI 확장입니다. 기존 API 키·엔드포인트·프로젝트·리전 설정은 그대로 두고 모델 값만 등록하고 적용합니다.
 
-현재 버전은 **v0.2.1**이며, SillyTavern 1.18.0의 Chat Completion 연결 24개를 지원합니다. Z.AI의 GLM, DeepSeek, Moonshot AI의 Kimi, MiniMax, SiliconFlow 모델도 각각의 전용 연결에서 등록할 수 있습니다.
+현재 버전은 **v0.3.0**이며, SillyTavern 1.18.0의 Chat Completion 연결 24개와 다른 확장이 사용할 수 있는 공개 Registry API를 지원합니다. Z.AI의 GLM, DeepSeek, Moonshot AI의 Kimi, MiniMax, SiliconFlow 모델도 각각의 전용 연결에서 등록할 수 있습니다.
 
 ## 현재 진행 상태
 
 | 항목 | 상태 |
 |---|---|
-| 현재 릴리스 | `v0.2.1` |
-| 다중 제공업체 구현과 자동 검사 | ✅ 완료 · 38개 검사 통과 |
+| 현재 릴리스 | `v0.3.0` |
+| 다중 제공업체·공개 API 구현 | ✅ 완료 |
 | v0.1 설정 이관 | ✅ schema v1의 Vertex 등록값을 v2로 자동 이관 |
 | 실제 제공업체 계정 검증 | 🧪 사용자 계정별 결과 보고 대기 |
 | 사용자가 할 일 | [사용자 검증 체크리스트](./USER_CHECKLIST.md)의 공통 항목과 사용하는 제공업체 행 확인 |
-| 다음 단계 | 실제 요청 결과에 따른 `v0.2.2+` 호환성 보완 |
+| 다음 단계 | `v0.4.0` 용도별 직접 모델 라우팅과 확장 어댑터 |
 
 전체 진행 위치와 버전별 완료 조건은 [개발 로드맵](./ROADMAP.md)에서 계속 갱신합니다.
 
-## v0.2.1에서 할 수 있는 일
+## v0.3.0에서 할 수 있는 일
 
 - 한 관리 팝업에서 제공업체를 바꾸며 사용자 모델을 등록·선택·삭제할 수 있습니다.
 - 등록 모델을 각 SillyTavern 기본 모델 선택기의 `사용자 지정 모델 · Custom Model Router` 그룹에 표시합니다.
@@ -26,6 +26,26 @@ SillyTavern 코어 파일을 수정하지 않고 Chat Completion 연결에 사�
 - v0.1의 Vertex 모델과 선택 상태를 제공업체별 schema v2로 자동 이관합니다.
 - API 키, Service Account, 프로젝트 ID, Account ID, 리전, 엔드포인트 URL, 필터 설정을 읽거나 저장하지 않습니다.
 - 확장을 비활성화할 때 확장이 추가한 옵션만 제거하고, 필요한 경우 사용 가능한 기본 모델로 전환합니다.
+- 다른 확장은 `globalThis.CustomModelRouter`에서 등록 모델과 제공업체별 Registry 선택 상태를 조회하고 변경 이벤트를 구독할 수 있습니다.
+- 공개 API의 스냅샷은 읽기 전용이며, `(provider, model ID)` 복합키로 같은 이름의 모델을 연결별로 구분합니다.
+
+## 공개 Registry API
+
+공개 API 계약 버전은 `1.0.0`입니다. 내부 `src` 파일을 직접 import하지 않고 확장 초기화 뒤 전역 객체를 사용합니다.
+
+```js
+const registry = globalThis.CustomModelRouter;
+if (!registry?.isCompatible('1.0.0')) {
+    throw new Error('Custom Model Router Registry API 1.0.0이 필요합니다.');
+}
+
+const glmModels = registry.listModels('zai');
+const unsubscribe = registry.subscribe('registry:changed', event => {
+    console.log(event.revision, event.snapshot.models);
+});
+```
+
+`selectModel()`은 Registry의 저장 선택 상태만 바꾸며 SillyTavern의 현재 연결이나 메인 채팅 모델을 전환하지 않습니다. 전체 계약과 오류·이벤트 표는 [공개 API 문서](./API.md), 복사 가능한 예제는 [연동 예제](./examples/registry-integration.js)를 참고하세요.
 
 동작 경로는 다음과 같습니다.
 
@@ -143,7 +163,7 @@ npm test
 npm run check
 ```
 
-현재 자동 검사 38개는 24개 provider descriptor 회계, Azure OpenAI·CometAPI 구조적 제외, 제공업체별 모델 ID 검증, schema v1→v2 이관, 제공업체별 등록·선택 격리, 옵션 재주입·복원, 모델 변경 거절 시 상태 롤백, 관리 팝업 수명주기, Connection Profile 지연 삽입, MutationObserver 자기 반복 방지, 100개 모델 압축 목록, 버전·문서 일치를 확인합니다. 실제 API 계정과 화면 조작이 필요한 결과는 [사용자 검증 체크리스트](./USER_CHECKLIST.md)에서 별도로 관리합니다.
+현재 자동 검사 50개는 24개 provider descriptor 회계, schema 이관, 옵션 재주입·복원, 관리 팝업 수명주기, 공개 API의 복합키·불변 스냅샷·이벤트·전역 충돌·종료 동작과 버전·문서 일치를 확인합니다. 실제 API 계정과 화면 조작이 필요한 결과는 [사용자 검증 체크리스트](./USER_CHECKLIST.md)에서 별도로 관리합니다.
 
 ## 버전 정책
 
@@ -161,9 +181,9 @@ npm run check
 |---|---|---|
 | `v0.1.x` | Vertex Gemini 기반 확립 | ✅ 완료 |
 | `v0.2.0` | 24개 Chat Completion 연결의 사용자 모델 등록 | ✅ 구현·자동 검사 완료 |
-| `v0.2.1` | 로드맵 간소화와 실제 계정 검증 지속 | 🧪 현재 |
+| `v0.2.1` | 로드맵 간소화 | ✅ 완료 |
 | `v0.2.2+` | 실제 검증에서 발견된 제공업체별 호환성 보완 | 📝 결과 대기 |
-| `v0.3.0` | 다른 확장이 사용할 수 있는 공개 Registry API | 📝 예정 |
+| `v0.3.0` | 다른 확장이 사용할 수 있는 공개 Registry API | ✅ 현재 |
 | `v0.4.0` | 주요 확장별 어댑터와 용도별 모델 라우팅 | 📝 예정 |
 | `v0.5.0` | 호환성과 운영 안정화 | 📝 예정 |
 

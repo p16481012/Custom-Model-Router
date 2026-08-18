@@ -26,7 +26,12 @@ import {
     selectModel,
     syncModelOptions,
 } from './src/model-select.js';
+import {
+    createRegistryApi,
+    installRegistryApi,
+} from './src/registry-api.js';
 
+const EXTENSION_VERSION = '0.3.0';
 const SETTINGS_KEY = 'customModelRouter';
 const OBSERVER_ROOT_SELECTOR = '#rm_api_block';
 const CONNECTION_PROFILE_SELECTOR = '#connection_profiles';
@@ -68,6 +73,8 @@ let launcherButton = null;
 let launcherCount = null;
 let activePopup = null;
 let activeProviderId = null;
+let registryApiController = null;
+let uninstallRegistryApi = null;
 const boundControls = new Map();
 const pendingRestores = new Set();
 const pendingNativeChecks = new Map();
@@ -132,9 +139,17 @@ function findInitialProviderId() {
     return findActiveProvider()?.id ?? PROVIDER_IDS.VERTEXAI;
 }
 
-function persistSettings() {
+function persistSettings(source = 'runtime') {
     context.extensionSettings[SETTINGS_KEY] = settings;
     context.saveSettingsDebounced();
+    registryApiController?.synchronize(source);
+}
+
+function writeRegistryApiSettings(nextSettings) {
+    settings = normalizeSettings(nextSettings);
+    context.extensionSettings[SETTINGS_KEY] = settings;
+    context.saveSettingsDebounced();
+    scheduleSync();
 }
 
 function updateSelectedModel(providerId, modelId, save = true) {
@@ -147,7 +162,7 @@ function updateSelectedModel(providerId, modelId, save = true) {
 
     settings = next;
     if (save) {
-        persistSettings();
+        persistSettings('model-selection');
     }
     return true;
 }
@@ -674,6 +689,7 @@ function onSettingsUpdated() {
     if (storedSettings !== settings) {
         settings = normalizeSettings(storedSettings);
         context.extensionSettings[SETTINGS_KEY] = settings;
+        registryApiController?.synchronize('external-settings');
     }
     scheduleSync();
 }
@@ -863,7 +879,7 @@ function onAddModel(event) {
             throw new ModelRegistryError('core_duplicate', '이미 SillyTavern 기본 목록에 있는 모델입니다.');
         }
         settings = addModel(settings, provider.id, id);
-        persistSettings();
+        persistSettings('settings-ui');
         if (input) {
             input.value = '';
             input.setAttribute('aria-invalid', 'false');
@@ -927,7 +943,7 @@ function onModelListClick(event) {
             return;
         }
         settings = removeModel(settings, provider.id, modelId);
-        persistSettings();
+        persistSettings('settings-ui');
         synchronize();
         announce(preservesInputValue
             ? `${provider.label}에서 ${modelId} 등록만 삭제했습니다. 현재 모델 입력값은 유지됩니다.`
@@ -969,7 +985,7 @@ function teardownRuntime({ applyNativeFallback = false } = {}) {
     pendingNativeChecks.clear();
 
     if (selectionChanged) {
-        persistSettings();
+        persistSettings('lifecycle');
     }
 
     if (context) {
@@ -988,6 +1004,10 @@ function teardownRuntime({ applyNativeFallback = false } = {}) {
     launcherButton = null;
     launcherCount = null;
     settingsTemplateHtml = '';
+    uninstallRegistryApi?.();
+    uninstallRegistryApi = null;
+    registryApiController?.destroy();
+    registryApiController = null;
     context = null;
     settings = null;
     syncScheduled = false;
@@ -1000,6 +1020,15 @@ async function initialize(generation) {
     settings = normalizeSettings(storedSettings);
     const settingsChanged = JSON.stringify(storedSettings) !== JSON.stringify(settings);
     context.extensionSettings[SETTINGS_KEY] = settings;
+    registryApiController = createRegistryApi({
+        extensionVersion: EXTENSION_VERSION,
+        readSettings: () => settings,
+        writeSettings: writeRegistryApiSettings,
+        onSubscriberError: error => {
+            console.error('[Custom Model Router] Registry API 구독자 처리 실패', error);
+        },
+    });
+    uninstallRegistryApi = installRegistryApi(globalThis, registryApiController.api);
     activeProviderId = findInitialProviderId();
     subscribeToSillyTavernEvents();
     synchronize();
@@ -1010,10 +1039,10 @@ async function initialize(generation) {
     }
     renderUi();
     if (settingsChanged) {
-        persistSettings();
+        persistSettings('migration');
     }
     initialized = true;
-    console.info('[Custom Model Router] v0.2.1 초기화 완료');
+    console.info(`[Custom Model Router] v${EXTENSION_VERSION} 초기화 완료`);
 }
 
 export function init() {
