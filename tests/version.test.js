@@ -46,6 +46,13 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
     assert.match(readme, /\.\/USER_CHECKLIST\.md/);
     assert.match(readme, /\.\/ROADMAP\.md/);
     assert.match(readme, /API Connections/);
+    for (const document of [readme, roadmap]) {
+        assert.doesNotMatch(document, /모델 별칭|`MAIN`|`AUX`|`FAST`/);
+    }
+    assert.match(roadmap, /### v0\.3\.0 — 공개 Registry API/);
+    assert.match(roadmap, /### v0\.4\.0 — 확장 어댑터와 용도별 라우팅/);
+    assert.match(roadmap, /### v0\.5\.0 — 호환성과 운영 안정화/);
+    assert.doesNotMatch(roadmap, /v0\.6\.0/);
     assert.match(entrypoint, /new context\.Popup/);
     assert.match(entrypoint, /#cmr_open_manager/);
     assert.doesNotMatch(entrypoint, /#extensions_settings2|#extensions_settings/);

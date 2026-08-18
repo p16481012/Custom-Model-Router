@@ -1013,7 +1013,7 @@ async function initialize(generation) {
         persistSettings();
     }
     initialized = true;
-    console.info('[Custom Model Router] v0.2.0 초기화 완료');
+    console.info('[Custom Model Router] v0.2.1 초기화 완료');
 }
 
 export function init() {
