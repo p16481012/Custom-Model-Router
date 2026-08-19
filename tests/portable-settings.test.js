@@ -11,7 +11,7 @@ import {
     repairSettingsBundle,
     stringifyPortableSettings,
 } from '../src/portable-settings.js';
-import { addModel, setSelectedModel } from '../src/registry.js';
+import { addModel, normalizeSettings, setSelectedModel } from '../src/registry.js';
 import { setPurposeRoute } from '../src/purpose-router.js';
 import { setExternalSelectedModel } from '../src/external-settings.js';
 
@@ -250,4 +250,38 @@ test('이전·손상 저장값을 정규화하고 미래 저장 스키마는 복
     assert.equal(future.status, 'error');
     assert.equal(future.errors[0].code, 'future_registry_schema');
     assert.equal(Object.hasOwn(future, 'registrySettings'), false);
+});
+
+test('정규화 설정의 비열거 하위 호환 getter를 중복 선택 레코드로 오인하지 않는다', () => {
+    const normalizedRegistry = normalizeSettings({
+        schemaVersion: 2,
+        models: [{
+            id: 'gemini-normalized',
+            provider: 'vertexai',
+            protocol: 'vertex-gemini',
+            enabled: true,
+        }],
+        selectedModels: { vertexai: 'gemini-normalized' },
+    });
+    assert.equal(Object.hasOwn(normalizedRegistry, 'selectedModelId'), true);
+    assert.equal(Object.keys(normalizedRegistry).includes('selectedModelId'), false);
+
+    const report = repairSettingsBundle({
+        registrySettings: normalizedRegistry,
+        purposeRoutes: { schemaVersion: 1, routes: {} },
+    });
+    assert.equal(report.status, 'ok');
+    assert.deepEqual(report.beforeCounts, { models: 1, selections: 1, routes: 0 });
+    assert.deepEqual(report.afterCounts, report.beforeCounts);
+    assert.deepEqual(report.warnings, []);
+
+    const duplicateLegacyField = repairSettingsBundle({
+        registrySettings: {
+            ...normalizedRegistry,
+            selectedModelId: 'gemini-normalized',
+        },
+        purposeRoutes: { schemaVersion: 1, routes: {} },
+    });
+    assert.equal(duplicateLegacyField.status, 'ok');
+    assert.deepEqual(duplicateLegacyField.beforeCounts, { models: 1, selections: 1, routes: 0 });
 });

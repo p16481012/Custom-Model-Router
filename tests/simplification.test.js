@@ -8,7 +8,7 @@ async function readText(path) {
     return readFile(new URL(path, ROOT_URL), 'utf8');
 }
 
-test('v0.6.7 모델 관리 영역은 등록·삭제와 읽기 전용 외부 연결 상태에 집중한다', async () => {
+test('v0.6.8 모델 관리 영역은 등록·삭제와 읽기 전용 외부 연결 상태에 집중한다', async () => {
     const [html, source] = await Promise.all([
         readText('settings.html'),
         readText('index.js'),
@@ -34,6 +34,6 @@ test('브라우저 샌드박스는 단일 직접 연결·provider metadata·재�
     assert.match(html, /id="switch_caption_provider"/);
     assert.match(html, /switchCaptionProvider\(\)/);
     assert.match(html, /data-extension-name="unknown helper"/);
-    assert.match(html, /browser-sandbox=0\.6\.7/);
+    assert.match(html, /browser-sandbox=0\.6\.8/);
     assert.match(html, /제공업체 선택기가 없어도 직접 연결/);
 });

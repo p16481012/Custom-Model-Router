@@ -18,6 +18,10 @@ const EXTERNAL_DATALIST_ATTRIBUTE = 'data-cmr-external-datalist';
 const EXTERNAL_DATALIST_PREVIOUS_LIST_ATTRIBUTE = 'data-cmr-previous-list';
 const EXTERNAL_DATALIST_HAD_LIST_ATTRIBUTE = 'data-cmr-had-list';
 const EXTERNAL_DIRECT_PROVIDER_MARKER = 'direct';
+// 동일 페이지에서 controller가 destroy/recreate되어도 살아 있는 외부 DOM control의
+// target ID를 유지한다. WeakMap이므로 제거된 외부 DOM을 수명 이상 붙잡지 않는다.
+const STABLE_EXTERNAL_TARGET_IDENTITIES = new WeakMap();
+let stableExternalTargetIdentitySequence = 0;
 
 const SAFE_TARGET_ID_PATTERN = /^cmr-ext-[a-f0-9]{8}$/;
 const MODEL_WORD_PATTERN = /(?:^|[^a-z0-9])(model|models|llm|engine)(?:$|[^a-z0-9])/i;
@@ -523,6 +527,29 @@ function getStableAncestorHint(control) {
     return '';
 }
 
+function getStructuralControlPath(control) {
+    const segments = [];
+    let current = control;
+    for (let depth = 0; current?.parentElement && depth < 6; depth += 1) {
+        const parent = current.parentElement;
+        const siblings = Array.from(parent.children ?? []);
+        const siblingIndex = Math.max(0, siblings.indexOf(current));
+        segments.unshift(`${tagName(current)}:${siblingIndex}`);
+
+        const parentHint = [
+            parent.id,
+            getAttribute(parent, 'data-extension-id'),
+            getAttribute(parent, 'data-extension-name'),
+            getAttribute(parent, 'data-name'),
+        ].map(normalizeText).find(Boolean);
+        if (parentHint || ['BODY', 'HTML'].includes(tagName(parent)) || parent.nodeType === 9) {
+            break;
+        }
+        current = parent;
+    }
+    return segments.join('/');
+}
+
 function fnv1a(value) {
     let hash = 0x811c9dc5;
     for (const character of String(value)) {
@@ -558,6 +585,47 @@ export function createExternalTargetId(control, options = {}) {
     return `cmr-ext-${fnv1a(identity)}`;
 }
 
+function getEffectiveIdentityControl(candidate, root, documentRef) {
+    return tagName(candidate) === 'DATALIST'
+        ? getReferencingInput(candidate, root, documentRef)
+        : candidate;
+}
+
+function isPotentialExternalIdentityControl(control, options = {}) {
+    const documentRef = getRootDocument(control, options.documentRef);
+    if (!control || isExcludedControl(control, options) || isSensitiveNonModelField(control, documentRef)) {
+        return false;
+    }
+    const tag = tagName(control);
+    if (tag === 'SELECT') {
+        return isModelSemantic(control, documentRef);
+    }
+    if (tag !== 'INPUT') {
+        return false;
+    }
+    const type = normalizeText(control.type ?? getAttribute(control, 'type') ?? 'text').toLowerCase();
+    return !UNSAFE_INPUT_TYPES.has(type) && isModelSemantic(control, documentRef);
+}
+
+function indexExternalTargetIdentities(candidates, root, documentRef, options) {
+    const identities = new Map();
+    const occurrences = new Map();
+    const seenControls = new Set();
+    for (const candidate of candidates) {
+        const control = getEffectiveIdentityControl(candidate, root, documentRef);
+        if (seenControls.has(control)
+            || !isPotentialExternalIdentityControl(control, { ...options, root, documentRef })) {
+            continue;
+        }
+        seenControls.add(control);
+        const baseTargetId = createExternalTargetId(control, { documentRef });
+        const occurrence = occurrences.get(baseTargetId) ?? 0;
+        occurrences.set(baseTargetId, occurrence + 1);
+        identities.set(control, { baseTargetId, occurrence });
+    }
+    return identities;
+}
+
 function describeControl(control, root, documentRef, options) {
     const tag = tagName(control);
     const referencingInput = tag === 'DATALIST'
@@ -588,8 +656,10 @@ function describeControl(control, root, documentRef, options) {
             signals: ['azure-deployment'],
         };
     }
+    const baseTargetId = createExternalTargetId(effectiveControl, { documentRef });
     return {
-        targetId: createExternalTargetId(effectiveControl, { documentRef }),
+        targetId: baseTargetId,
+        baseTargetId,
         control: effectiveControl,
         optionHost,
         controlType: tag === 'DATALIST' || optionHost ? (tag === 'SELECT' ? 'select' : 'datalist') : 'input',
@@ -607,6 +677,9 @@ function describeControl(control, root, documentRef, options) {
 export function discoverExternalModelTargets(root, options = {}) {
     const documentRef = options.documentRef ?? (root?.nodeType === 9 ? root : root?.ownerDocument) ?? globalThis.document;
     const candidates = getAll(root, 'select,input,datalist');
+    // disabled/readonly처럼 현재 주입 대상이 아닌 모델 칸도 collision occurrence에는 남겨
+    // 이웃 target의 ID가 일시적인 활성 상태 변화로 바뀌지 않게 한다.
+    const indexedIdentities = indexExternalTargetIdentities(candidates, root, documentRef, options);
     const targets = [];
     const seenControls = new Set();
     for (const candidate of candidates) {
@@ -622,6 +695,41 @@ export function discoverExternalModelTargets(root, options = {}) {
         }
         seenControls.add(target.control);
         targets.push(target);
+    }
+
+    // 같은 확장 안에 id/name/label까지 동일한 모델 칸이 여러 개일 수 있다.
+    // 첫 대상은 기존 target ID를 유지하고, 충돌한 후속 대상만 DOM 구조와 occurrence를
+    // salt로 다시 해시해 저장 선택과 CMR 소유 datalist가 서로 섞이지 않게 한다.
+    const reservedBaseIds = new Set(
+        [...indexedIdentities.values()].map(identity => identity.baseTargetId),
+    );
+    const usedTargetIds = new Set();
+    const fallbackOccurrences = new Map();
+    for (const target of targets) {
+        const baseTargetId = target.targetId;
+        const indexedIdentity = indexedIdentities.get(target.control);
+        const fallbackOccurrence = fallbackOccurrences.get(baseTargetId) ?? 0;
+        fallbackOccurrences.set(baseTargetId, fallbackOccurrence + 1);
+        const occurrence = indexedIdentity?.occurrence ?? fallbackOccurrence;
+        if (occurrence === 0) {
+            usedTargetIds.add(baseTargetId);
+            continue;
+        }
+
+        const structuralPath = getStructuralControlPath(target.control);
+        let attempt = occurrence;
+        let candidateTargetId;
+        do {
+            candidateTargetId = `cmr-ext-${fnv1a([
+                baseTargetId,
+                structuralPath,
+                occurrence,
+                attempt,
+            ].join('\u001f'))}`;
+            attempt += 1;
+        } while (usedTargetIds.has(candidateTargetId) || reservedBaseIds.has(candidateTargetId));
+        target.targetId = candidateTargetId;
+        usedTargetIds.add(candidateTargetId);
     }
     return targets;
 }
@@ -795,7 +903,14 @@ function ensureExternalOptionHost(target, providerMarker, documentRef) {
         const previousList = getAttribute(control, 'list');
         const hadList = control.hasAttribute?.('list') ?? Boolean(previousList);
         const datalist = documentRef.createElement('datalist');
-        datalist.id = `cmr_external_models_${String(target?.targetId ?? '').replace(/^cmr-ext-/, '')}`;
+        const baseListId = `cmr_external_models_${String(target?.targetId ?? '').replace(/^cmr-ext-/, '')}`;
+        let listId = baseListId;
+        let suffix = 2;
+        while (documentRef.getElementById?.(listId)) {
+            listId = `${baseListId}_${suffix}`;
+            suffix += 1;
+        }
+        datalist.id = listId;
         datalist.dataset.cmrExternalGroup = 'true';
         datalist.dataset.cmrProvider = providerMarker;
         datalist.setAttribute?.(EXTERNAL_DATALIST_ATTRIBUTE, 'true');
@@ -1227,6 +1342,85 @@ export function createExternalIntegrationController(options = {}) {
         return removed;
     }
 
+    function isControlConnectedToRoot(control) {
+        if (!control) {
+            return false;
+        }
+        const rootNode = root?.documentElement ?? root;
+        if (typeof rootNode?.contains === 'function') {
+            try {
+                return rootNode.contains(control);
+            } catch {
+                return false;
+            }
+        }
+        for (let current = control; current; current = current.parentElement) {
+            if (current === root || current === rootNode) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    function stabilizeTargetIds(nextTargets) {
+        const preservedControls = new Set();
+        const usedTargetIds = new Set();
+        const reservedBaseIds = new Set(nextTargets.map(target => target.baseTargetId));
+
+        // 같은 DOM control이 위치만 바뀐 경우에는 이전 target ID를 우선 보존한다.
+        // id·name·label 등 base identity가 달라졌다면 외부 확장이 control을 다른 용도로
+        // 재사용한 것이므로 새 target으로 취급한다.
+        const previousCandidates = nextTargets.map(target => ({
+            target,
+            identity: STABLE_EXTERNAL_TARGET_IDENTITIES.get(target.control),
+        })).filter(({ target, identity }) => (
+            identity?.baseTargetId === target.baseTargetId
+            && SAFE_TARGET_ID_PATTERN.test(identity.targetId)
+        )).sort((left, right) => left.identity.sequence - right.identity.sequence);
+        for (const { target, identity: previousIdentity } of previousCandidates) {
+            if (previousIdentity?.baseTargetId !== target.baseTargetId
+                || !SAFE_TARGET_ID_PATTERN.test(previousIdentity.targetId)
+                || usedTargetIds.has(previousIdentity.targetId)) {
+                continue;
+            }
+            target.targetId = previousIdentity.targetId;
+            preservedControls.add(target.control);
+            usedTargetIds.add(target.targetId);
+        }
+
+        for (const target of nextTargets) {
+            if (!preservedControls.has(target.control)) {
+                if (usedTargetIds.has(target.targetId)) {
+                    const structuralPath = getStructuralControlPath(target.control);
+                    let attempt = 1;
+                    let candidateTargetId;
+                    do {
+                        candidateTargetId = `cmr-ext-${fnv1a([
+                            target.baseTargetId,
+                            target.targetId,
+                            structuralPath,
+                            'runtime-reconcile',
+                            attempt,
+                        ].join('\u001f'))}`;
+                        attempt += 1;
+                    } while (usedTargetIds.has(candidateTargetId) || reservedBaseIds.has(candidateTargetId));
+                    target.targetId = candidateTargetId;
+                }
+                usedTargetIds.add(target.targetId);
+            }
+            const previousIdentity = STABLE_EXTERNAL_TARGET_IDENTITIES.get(target.control);
+            const sequence = previousIdentity?.baseTargetId === target.baseTargetId
+                && Number.isSafeInteger(previousIdentity.sequence)
+                ? previousIdentity.sequence
+                : ++stableExternalTargetIdentitySequence;
+            STABLE_EXTERNAL_TARGET_IDENTITIES.set(target.control, {
+                baseTargetId: target.baseTargetId,
+                targetId: target.targetId,
+                sequence,
+            });
+        }
+    }
+
     function bindTarget(target) {
         if (target.providerControl && target.providerControl !== target.control) {
             bindElement(target.providerControl, 'change', () => requestSync(), `provider:${target.targetId}`);
@@ -1310,6 +1504,7 @@ export function createExternalIntegrationController(options = {}) {
 
     function scanAndSync() {
         const nextTargets = discoverExternalModelTargets(root, options);
+        stabilizeTargetIds(nextTargets);
         const nextControls = new Set(nextTargets.map(target => target.control));
         // 재탐지마다 현재 descriptor를 기준으로 다시 바인딩해 교체된 provider control을 놓치지 않는다.
         for (const element of [...bindings.keys()]) {
@@ -1317,7 +1512,15 @@ export function createExternalIntegrationController(options = {}) {
         }
         for (const [control, target] of managedTargets) {
             if (!nextControls.has(control)) {
-                removeExternalTargetModels(target, null, { removeOwnedHost: true });
+                if (isControlConnectedToRoot(control)) {
+                    removeManagedModelsAndNotify(
+                        target,
+                        { removeOwnedHost: true },
+                        'target-unavailable',
+                    );
+                } else {
+                    removeExternalTargetModels(target, null, { removeOwnedHost: true });
+                }
                 managedTargets.delete(control);
             }
         }

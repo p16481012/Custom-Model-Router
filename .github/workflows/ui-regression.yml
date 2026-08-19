@@ -21,21 +21,23 @@ jobs:
 
     steps:
       - name: 확장 소스 체크아웃
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           path: custom-model-router
+          persist-credentials: false
 
       - name: SillyTavern 1.18.0 체크아웃
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           repository: SillyTavern/SillyTavern
           ref: 51ad27fb86d39a3daca3adaa970375c9670c12df
           path: sillytavern-1.18.0
+          persist-credentials: false
 
       - name: Node.js 준비
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
           cache-dependency-path: custom-model-router/package-lock.json
 
@@ -53,7 +55,7 @@ jobs:
 
       - name: 화면 증거와 실패 추적 파일 보관
         if: always() && !cancelled()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: ui-regression-evidence-${{ github.run_id }}-${{ github.run_attempt }}
           path: |

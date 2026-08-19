@@ -2,7 +2,7 @@
 
 SillyTavern 코어 파일을 수정하지 않고 기존 Chat Completion 연결에 사용자 모델 ID를 등록하는 UI 확장입니다. 관리 팝업의 기본 목록은 등록한 모든 모델을 제공업체별로 보여주며, 실제 모델은 SillyTavern의 기존 모델 선택기 또는 입력란에서 선택합니다. 범용 외부 확장 브리지는 안전하게 감지한 모델 컨트롤에 등록 모델 전체를 제공업체별로 직접 추가하며 외부 요청 본문을 직접 바꾸지 않습니다.
 
-현재 버전은 **v0.6.7**이며, SillyTavern 1.18.0의 등록 가능한 Chat Completion 연결 24개, 공개 Registry API, 개발자 opt-in Routing API, 범용 DOM 모델 브리지, 호환성 진단과 비밀정보를 제외한 설정 백업·복구를 제공합니다. v0.6.7은 실제 `settings.html`과 SillyTavern 1.18.0 고정 commit의 core·Popup CSS를 결합한 Playwright Chromium UI 회귀 검사를 도입했습니다. 320·360·420·720px 화면, 모델 0·6·7·100개 경계와 닫기·스크롤·버튼·단일 직접 연결 배치를 자동으로 확인합니다.
+현재 버전은 **v0.6.8**이며, SillyTavern 1.18.0의 등록 가능한 Chat Completion 연결 24개, 공개 Registry API, 개발자 opt-in Routing API, 범용 DOM 모델 브리지, 호환성 진단과 비밀정보를 제외한 CMR 설정 백업·복구를 제공합니다. v0.6.8은 같은 확장 영역에 구조가 같은 모델 칸이 여러 개 있어도 각각을 독립 target으로 관리하고, 진단의 계측 대기·오류·합계를 일치시키며 항상 현재 상태를 복사합니다. v0.6.7에서 도입한 Playwright Chromium UI 회귀 검사는 계속 320·360·420·720px 화면과 모델 0·6·7·100개 경계를 확인합니다.
 
 v0.5.0까지의 공개 API와 용도별 라우팅은 다른 확장이 스스로 연동해야 사용할 수 있었으며, 이미 설치된 다른 확장의 모델 선택기에 CMR 모델을 자동 표시하지는 않았습니다. v0.6.0은 이 누락을 보완해 표준 `select`, 텍스트 `input`, `datalist` 기반 Chat Completion 모델 컨트롤을 탐지했습니다. v0.6.6부터 대상별 모드 선택 없이, 감지된 안전한 Chat Completion 모델 컨트롤에 Registry 전체 모델을 제공업체별로 표시합니다.
 
@@ -10,7 +10,7 @@ v0.5.0까지의 공개 API와 용도별 라우팅은 다른 확장이 스스로 
 
 | 항목 | 상태 |
 |---|---|
-| 현재 릴리스 | `v0.6.7` |
+| 현재 릴리스 | `v0.6.8` |
 | v0.3 공개 Registry API | ✅ 구현·자동 검사 완료 |
 | v0.4 용도별 라우팅 | ✅ 구현·자동 검사 완료 |
 | v0.5 진단·복구·안정성 계측 | ✅ 구현·자동 검사 완료 |
@@ -30,8 +30,9 @@ v0.5.0까지의 공개 API와 용도별 라우팅은 다른 확장이 스스로 
 - 실제 모델 선택은 SillyTavern의 기존 모델 선택기 또는 입력란에서 수행합니다.
 - 정상적인 모델 컨트롤 감지 상태는 숨기고, 등록 모델을 표시할 수 없는 실제 오류만 관리 팝업에 알립니다.
 - 다른 확장의 표준 Chat Completion 모델 컨트롤을 자동 탐지해 Registry 전체 모델을 제공업체별 그룹으로 추가합니다.
+- 같은 확장 영역에 이름·라벨이 같은 모델 컨트롤이 여러 개 있어도 live DOM 객체와 안정된 구조 표식을 이용해 고유 target으로 구분하고 선택을 독립적으로 보존합니다.
 - 대상별 자동·직접·연결 안 함 선택과 수동 새로고침 버튼은 제공하지 않습니다. 외부 화면 변경은 MutationObserver로 자동 반영합니다.
-- Vectors·embedding·TTS·이미지 생성처럼 채팅 모델이 아닌 대상과 민감 설정 입력란은 안전상 제외합니다.
+- Vectors·embedding·TTS·이미지 생성처럼 채팅 모델이 아니거나 호환되지 않는 대상과 민감 설정 입력란은 직접 연결 후보에서 제외합니다.
 - 외부 확장이 선택기를 다시 렌더링하면 CMR 옵션을 다시 추가하고, 동일 target의 새 컨트롤 값이 비어 있을 때만 마지막 CMR 선택을 provider 식별자와 함께 복원합니다. 외부 확장이 둔 유효한 현재값은 덮어쓰지 않습니다.
 - 원격 모델 목록 재생성, source 변경, 새로고침과 Connection Profile 전환 뒤 옵션과 선택을 복원합니다.
 - v0.1의 Vertex 설정을 제공업체별 schema v2로 자동 이관합니다.
@@ -122,13 +123,13 @@ const unsubscribe = registry.subscribe('registry:changed', event => {
 
 ## 다른 확장 모델 연결
 
-범용 브리지는 페이지에 나타난 표준 Chat Completion 모델 `select`, 텍스트 `input`, `datalist`를 자동 탐지합니다. 감지된 안전한 대상에는 별도 설정 없이 Registry 전체 모델을 제공업체별 `사용자 모델` 그룹으로 추가합니다. 관리 팝업의 **다른 확장 모델 연결**은 연결한 대상만 보여주는 읽기 전용 상태이며, 안전상 제외 개수는 호환성 진단에서 확인합니다. 별도 새로고침 버튼 없이 외부 화면 변경을 자동 감지합니다.
+범용 브리지는 페이지에 나타난 표준 Chat Completion 모델 `select`, 텍스트 `input`, `datalist`를 자동 탐지합니다. 감지된 안전한 대상에는 별도 설정 없이 Registry 전체 모델을 제공업체별 `사용자 모델` 그룹으로 추가합니다. 관리 팝업의 **다른 확장 모델 연결**은 연결한 대상만 보여주는 읽기 전용 상태이며, 비채팅·비호환 제외 개수는 호환성 진단에서 확인합니다. 별도 새로고침 버튼 없이 외부 화면 변경을 자동 감지합니다.
 
 Caption처럼 provider 선택기와 model 선택기, option의 `data-type`을 사용하는 확장은 각 CMR option에 외부 provider 값을 보존합니다. 따라서 외부 확장이 자체 제공업체 필터를 적용해도 해당 제공업체의 등록 모델을 구분할 수 있습니다.
 
 v0.6.0~v0.6.5에 저장된 자동·직접·연결 안 함 및 provider 고정 mapping은 v0.6.6에서 제거합니다. 외부 target별 provider 모델 선택 기록은 보존합니다. 감지된 대상은 모두 동일한 직접 연결 동작을 사용하므로 이전 `disabled` 상태도 더 이상 대상 연결을 막지 않습니다.
 
-외부 확장이 모델 컨트롤을 다시 만들면 CMR 옵션을 다시 추가합니다. 저장된 마지막 CMR 선택은 동일 target으로 다시 감지된 새 컨트롤의 값이 비어 있을 때만 provider 식별자와 함께 복원하고, 외부 확장이 이미 설정한 유효한 현재값은 덮어쓰지 않습니다. 외부 확장 업데이트로 control의 ID·name·label 또는 상위 확장 구조가 바뀌면 새 target으로 인식될 수 있습니다.
+외부 확장이 모델 컨트롤을 다시 만들면 CMR 옵션을 다시 추가합니다. 저장된 마지막 CMR 선택은 동일 target으로 다시 감지된 새 컨트롤의 값이 비어 있을 때만 provider 식별자와 함께 복원하고, 외부 확장이 이미 설정한 유효한 현재값은 덮어쓰지 않습니다. 외부 확장 업데이트로 control의 ID·name·label 또는 상위 확장 구조가 바뀌면 새 target으로 인식될 수 있습니다. 동일한 ID·name·label·구조를 가진 여러 live 컨트롤은 같은 DOM 객체가 재정렬되어도 구분하지만, 외부 확장이 모두 새 객체로 만들면서 순서까지 뒤집으면 이전 target과 새 컨트롤을 대응할 안정 표식이 없어 선택 복원을 보장할 수 없습니다.
 
 이 브리지는 외부 확장의 기존 선택 이벤트와 저장 경로를 사용합니다. 전역 `fetch`나 `XMLHttpRequest`를 교체하지 않고, API 키·endpoint 또는 외부 확장의 요청 본문을 직접 읽거나 덮어쓰지 않습니다. 따라서 실제 요청 반영 여부는 해당 확장이 표준 컨트롤의 `input` 또는 `change` 이벤트로 모델을 저장하는지에 달려 있으며, Network 요청의 `model` 값으로 최종 확인해야 합니다.
 
@@ -159,16 +160,20 @@ console.log(result.content);
 
 ## 호환성 진단
 
-관리 팝업에서 **호환성 진단 및 설정 복구 → 진단 실행**을 누르면 다음을 확인합니다.
+관리 팝업에서 **호환성 진단 및 CMR 설정 백업 → 진단 실행**을 누르면 다음을 확인합니다.
 
 - SillyTavern 최소·검증 기준 버전
 - 공개 context와 이벤트 계약
 - 24개 provider 컨트롤과 런타임 바인딩 상태
-- 외부 모델 컨트롤의 직접 연결·안전상 건너뜀 개수
+- 외부 모델 컨트롤의 직접 연결·비채팅·비호환 제외 개수
 - 런처, MutationObserver, 이벤트 구독과 사용자 모델 그룹 중복
 - source·profile 전환 표본에서 자원이 증가하는지 여부
 
-**진단 복사**는 코드·상태·개수로 구성된 JSON을 복사합니다. API 키, endpoint URL, project ID, Service Account와 Connection Profile 본문은 포함하지 않습니다. 오류를 보고할 때도 복사한 내용을 검토한 뒤 민감정보가 없는지 한 번 더 확인하세요.
+안정성 전환 표본이 2개보다 적으면 오류나 주의가 아니라 **계측 대기**로 표시합니다. source 또는 Connection Profile을 전환해 표본이 2개 이상 모인 뒤부터 자원 증가 여부를 판정합니다. 외부 모델 칸 진단은 `후보 = 직접 연결 + 비채팅·비호환 제외` 관계와 observer·listener·binding 상태를 함께 확인합니다.
+
+**진단 복사**는 누를 때마다 현재 상태를 다시 검사한 뒤 진단 JSON schema v2의 코드·상태·개수를 복사합니다. API 키, endpoint URL, project ID, Service Account와 Connection Profile 본문은 포함하지 않습니다. 오류를 보고할 때도 복사한 내용을 검토한 뒤 민감정보가 없는지 한 번 더 확인하세요.
+
+복사 JSON의 `repair`와 `settings-repair` check는 마지막으로 의미 있었던 CMR 저장값 검사 결과를 비식별 코드와 개수로 보존합니다. 손실 없는 `settings_migrated` 이관은 `notices`의 통과 정보, `invalid_records_removed`는 `warnings`의 주의, 미래 스키마 거부는 `errors`의 오류로 분리되며 전체 `status`·`summary`·`counts`에도 같은 의미로 반영됩니다. `invalid_records_removed`가 있으면 `beforeCounts`와 `afterCounts`를 비교하고, 예상한 항목이 빠졌다면 기존 백업을 보존한 채 문제를 보고하세요. 이후 복구할 것이 없는 설정 이벤트가 와도 이 마지막 안내·경고·오류 기록은 사라지지 않습니다.
 
 ## 설정 백업과 복구
 
@@ -191,6 +196,7 @@ API 키, endpoint, 리전, project/account ID, Service Account, 프로필 본문
 - 원격 카탈로그에 없는 모델은 context·가격·멀티모달 metadata 자동 판단이 제한될 수 있습니다.
 - 실제 제공업체 계정, 권한, 지역별 제공 여부는 자동 검사할 수 없습니다.
 - 범용 브리지는 표준 DOM Chat Completion 컨트롤에만 선택지를 추가합니다. 자체 위젯·iframe·닫힌 Shadow DOM이나 컨트롤 없는 요청은 직접 연결할 수 없으며 전용 연동이 필요합니다.
+- 같은 표식의 외부 모델 컨트롤이 여러 개라면 안정된 ID·name·label 또는 상위 구조가 필요합니다. 외부 확장이 모든 컨트롤을 새 객체로 교체하면서 순서까지 바꾸면 이전 선택과의 대응을 보장할 수 없습니다.
 - 외부 확장의 provider alias, `data-type`과 선택 이벤트는 보존하지만 그 확장의 실제 request body 생성 로직까지 통제하지 않습니다.
 - Vectors·embedding·TTS·Stable Diffusion·이미지 생성 모델은 Chat Completion Registry와 모델 종류가 달라 의도적으로 제외합니다.
 
@@ -206,7 +212,7 @@ API 키, endpoint, 리전, project/account ID, Service Account, 프로필 본문
 
 ### 다른 확장에서 모델이 보이지 않음
 
-관리 팝업의 **다른 확장 모델 연결**에서 해당 대상을 찾습니다. 감지된 대상에는 모든 provider의 등록 모델이 provider별로 자동 표시됩니다. 목록에 대상 자체가 없으면 그 확장이 자체 위젯, iframe, 닫힌 Shadow DOM 또는 모델 컨트롤 없는 요청 방식을 쓰거나 안전상 제외된 비채팅 모델 칸인지 확인하세요.
+관리 팝업의 **다른 확장 모델 연결**에서 해당 대상을 찾습니다. 감지된 대상에는 모든 provider의 등록 모델이 provider별로 자동 표시됩니다. 목록에 대상 자체가 없으면 그 확장이 자체 위젯, iframe, 닫힌 Shadow DOM 또는 모델 컨트롤 없는 요청 방식을 쓰거나 비채팅·비호환 모델 칸으로 제외되었는지 확인하세요.
 
 ### 등록 모델 삭제가 거부됨
 
@@ -222,7 +228,7 @@ select형 연결에서 현재 사용 중인 custom-only 모델은 관리 UI와 �
 
 ## 개발 및 검사
 
-확장 런타임 의존성과 빌드 과정은 없습니다. Node.js 20 이상에서 실행하며, UI 회귀 검사에만 개발 의존성인 Playwright와 Chromium을 사용합니다.
+확장 런타임 의존성과 빌드 과정은 없습니다. 개발 검사는 Node.js 24 이상에서 실행하며, UI 회귀 검사에만 개발 의존성인 Playwright와 Chromium을 사용합니다.
 
 ```bash
 npm ci
@@ -233,7 +239,7 @@ npm run test:ui
 
 로컬 UI 검사는 SillyTavern 1.18.0 소스가 필요합니다. `SILLYTAVERN_ROOT`에 해당 저장소 경로를 지정하거나 CMR 저장소와 나란히 `sillytavern-1.18.0-review`를 두세요. 버전이 다르거나 필요한 CSS가 없으면 검사를 시작하지 않고 명시적으로 중단합니다. GitHub Actions는 검증한 SillyTavern 1.18.0 commit을 별도로 체크아웃합니다.
 
-현재 자동 검사 148개는 24개 provider 회계, 전체 등록 모델 UI와 SillyTavern native 선택 경계, 공개 API의 `model_in_use` 보호, schema 이관, 동적 옵션 복원, 팝업 수명주기, 개발자용 라우팅 격리, 외부 select/input/datalist 단일 직접 연결, provider별 그룹 주입·재렌더·정리, legacy mapping 제거와 선택 보존, 비대상 제외, host별 중복 자원 진단, portable schema v1→v2 이관과 버전·문서 일치를 검증합니다. 실제 계정과 브라우저 조작이 필요한 결과는 [통합 사용자 체크리스트](./USER_CHECKLIST.md)에서 별도로 확인합니다.
+현재 자동 검사 160개는 24개 provider 회계, 전체 등록 모델 UI와 SillyTavern native 선택 경계, 공개 API의 `model_in_use` 보호, schema 이관, 동적 옵션 복원, 팝업 수명주기, 개발자용 라우팅 격리, 외부 select/input/datalist 단일 직접 연결, 동일 구조 target 구분, provider별 그룹 주입·재렌더·정리, legacy mapping 제거와 선택 보존, 비대상 제외, 진단 schema v2 합계·계측 대기·최신 복사, 복구 경고·오류 보존, portable schema v1→v2 이관과 버전·문서 일치를 검증합니다. 실제 계정과 브라우저 조작이 필요한 결과는 [통합 사용자 체크리스트](./USER_CHECKLIST.md)에서 별도로 확인합니다.
 
 추가로 브라우저 DOM 샌드박스에서 24개 컨트롤 감지, GLM 등록과 SillyTavern native 선택, 개발자 API 라우팅, 외부 모델 컨트롤 연결, source/profile 이벤트 반복, 비활성화·재활성화와 정리 수명주기를 확인합니다.
 
@@ -264,6 +270,7 @@ Playwright Chromium UI 회귀 검사 6개는 제품 `settings.html`을 SillyTave
 | `v0.6.4` | 공개 API 삭제 안전성, 512개 legacy mapping 선택 우선 이관, stale 외부 선택 저장 회복 | ✅ 완료 |
 | `v0.6.5` | 전체 등록 목록·UI 정리, 외부 직접 연결과 연결 안 함 회귀 복구 | ✅ 완료 |
 | `v0.6.6` | 외부 연결 단일화, 중복 자원 진단 오탐·닫기 버튼·추가 버튼 수정 | ✅ 완료 |
-| `v0.6.7` | SillyTavern 1.18.0 CSS 기반 Chromium UI 회귀 검사와 CI 증거 보관 | ✅ 현재 릴리스 |
+| `v0.6.7` | SillyTavern 1.18.0 CSS 기반 Chromium UI 회귀 검사와 CI 증거 보관 | ✅ 완료 |
+| `v0.6.8` | 외부 target 식별 안정화, 진단 정합성, Popup 실패 정리와 CI Action 갱신 | ✅ 현재 릴리스 |
 
 문제가 있으면 [GitHub Issues](https://github.com/p16481012/Custom-Model-Router/issues)에 SillyTavern 버전, 제공업체, 체크리스트 항목 ID와 민감정보를 제거한 오류를 남겨 주세요.

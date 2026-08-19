@@ -22,6 +22,7 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
         roadmap,
         apiDocument,
         portableSettings,
+        compatibility,
         playwrightConfig,
         uiRegressionSpec,
         uiRegressionServer,
@@ -38,6 +39,7 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
         readText('ROADMAP.md'),
         readText('API.md'),
         readText('src/portable-settings.js'),
+        readText('src/compatibility.js'),
         readText('playwright.config.js'),
         readText('tests/visual/ui-regression.spec.js'),
         readText('tests/visual/server.js'),
@@ -53,6 +55,8 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
     assert.equal(packageJson.version, version);
     assert.equal(packageLock.version, version);
     assert.equal(packageLock.packages[''].version, version);
+    assert.equal(packageJson.engines.node, '>=24');
+    assert.equal(packageLock.packages[''].engines.node, '>=24');
     assert.match(packageJson.scripts['test:ui'], /playwright test.*playwright\.config\.js/);
     assert.match(packageJson.scripts.check, /src\/providers\.js/);
     assert.match(packageJson.scripts.check, /src\/model-select\.js/);
@@ -85,6 +89,7 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
     assert.match(roadmap, /## v0\.6\.5 — UI 정리와 직접 연결 회귀 복구/);
     assert.match(roadmap, /## v0\.6\.6 — 외부 연결 단일화와 진단·버튼 수정/);
     assert.match(roadmap, /## v0\.6\.7 — 실제 UI 회귀 검사 자동화/);
+    assert.match(roadmap, /## v0\.6\.8 — 외부 target 식별 안정화와 진단 정합성/);
     assert.match(entrypoint, /new context\.Popup/);
     assert.match(entrypoint, /#cmr_open_manager/);
     assert.doesNotMatch(entrypoint, /#extensions_settings2|#extensions_settings/);
@@ -98,14 +103,20 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
     assert.match(entrypoint, /normalizeAutomaticExternalSettings/);
     assert.match(settingsHtml, /cmr_run_diagnostics/);
     assert.match(settingsHtml, /cmr_export_backup/);
+    assert.match(settingsHtml, /호환성 진단 및 CMR 설정 백업/);
     assert.match(settingsHtml, /cmr_external_(?:section|list|status|count)/);
     assert.doesNotMatch(settingsHtml, /cmr_external_refresh|data-cmr-external-mode/);
     assert.doesNotMatch(settingsHtml, /cmr_rout(?:ing_section|e_(?:form|purpose|model|profile|clear|test|status))/);
     assert.match(portableSettings, /PORTABLE_SETTINGS_SCHEMA_VERSION = 2/);
     assert.match(portableSettings, /externalIntegrations/);
+    assert.match(compatibility, /DIAGNOSTIC_SCHEMA_VERSION = 2/);
+    assert.match(readme, /진단 JSON schema v2/);
+    assert.match(roadmap, /진단 JSON schema v2/);
+    assert.match(checklist, /진단 schema v2/);
     assert.match(apiDocument, /v0\.6 범용 DOM 모델 브리지/);
     assert.match(apiDocument, /Portable backup schema v2/);
     assert.match(apiDocument, /v0\.6\.7의 Playwright UI 회귀 검사 인프라/);
+    assert.match(apiDocument, /모두 새 객체로 만들고 순서까지 뒤집으면/);
     assert.match(readme, /select\/input\/datalist/);
     assert.match(roadmap, /fetch.*XMLHttpRequest.*monkey patch/);
     for (const document of [readme, roadmap, checklist]) {
@@ -133,12 +144,17 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
     assert.match(uiRegressionWorkflow, /ref: 51ad27fb86d39a3daca3adaa970375c9670c12df/);
     assert.doesNotMatch(uiRegressionWorkflow, /uses:\s*actions\/(?:checkout|setup-node|upload-artifact)@v\d+/);
     for (const actionCommit of [
-        '11d5960a326750d5838078e36cf38b85af677262',
-        '49933ea5288caeca8642d1e84afbd3f7d6820020',
-        'ea165f8d65b6e75b540449e92b4886f43607fa02',
+        'fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09',
+        'a0853c24544627f65ddf259abe73b1d18a591444',
+        'b7c566a772e6b6bfb58ed0dc250532a479d7789f',
     ]) {
         assert.match(uiRegressionWorkflow, new RegExp(actionCommit));
     }
+    assert.equal(
+        (uiRegressionWorkflow.match(/persist-credentials:\s*false/g) ?? []).length,
+        2,
+    );
+    assert.match(uiRegressionWorkflow, /node-version:\s*24/);
     assert.match(uiRegressionWorkflow, /ui-regression-evidence-/);
     assert.match(uiRegressionWorkflow, /if: always\(\) && !cancelled\(\)/);
     assert.match(uiRegressionWorkflow, /retention-days: 14/);

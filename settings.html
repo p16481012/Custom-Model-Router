@@ -79,10 +79,10 @@
     </details>
 
     <details class="cmr-tool-section" id="cmr_operations_section">
-        <summary>호환성 진단 및 설정 복구</summary>
+        <summary>호환성 진단 및 CMR 설정 백업</summary>
         <div class="cmr-tool-body">
             <p class="cmr-tool-description">
-                SillyTavern 공개 API·모델 컨트롤·중복 런타임 자원을 검사하고, 민감정보를 제외한 등록 모델과 API 연동 설정을 백업합니다.
+                SillyTavern 공개 API·모델 컨트롤·런타임 자원을 검사하고, CMR의 등록 모델·경로·외부 선택 기록만 백업합니다. 저장값은 확장을 불러올 때 자동으로 검사하고 안전한 범위에서 정리합니다.
             </p>
             <div class="cmr-operation-actions">
                 <button id="cmr_run_diagnostics" type="button" class="menu_button">진단 실행</button>
@@ -107,7 +107,7 @@
             </p>
             <p>
                 <span class="cmr-sentence">공개 API와 백업에는 모델 참조, 외부 컨트롤 식별자 및 Connection Profile ID만 저장합니다.</span>
-                <span class="cmr-sentence">API 키, Service Account, 프로젝트 ID, 리전, 엔드포인트 URL은 읽거나 저장하지 않습니다.</span>
+                <span class="cmr-sentence">진단·백업에는 API 키, Service Account, 프로젝트 ID, 리전, 엔드포인트 URL을 포함하지 않으며 CMR 설정에 복제해 저장하지 않습니다.</span>
             </p>
         </div>
     </details>

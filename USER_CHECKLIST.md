@@ -1,6 +1,6 @@
-# v0.6.7 통합 사용자 검증 체크리스트
+# v0.6.8 통합 사용자 검증 체크리스트
 
-대상 버전: **v0.6.7**
+대상 버전: **v0.6.8**
 
 이 문서는 v0.1~v0.6 기능을 한 번에 확인하는 최종 수동 검증 순서입니다. 위에서 아래로 진행하고, 사용하지 않는 제공업체·외부 확장·개발자 API 항목은 `해당 없음`으로 표시하세요.
 
@@ -17,7 +17,7 @@
 
 ## 자동 검사 완료 범위
 
-v0.6.7 저장소에서는 Node 자동 검사 148개와 Playwright Chromium UI 회귀 검사 6개를 별도로 실행합니다. UI 검사는 실제 `settings.html`과 SillyTavern 1.18.0 고정 commit의 core·Popup CSS를 결합해 320·360·420·720px 화면, 모델 0·6·7·100개 경계, 클릭·`Escape` 닫기, 버튼 정렬, 공백 단위 줄바꿈과 숨은 스크롤바 조작을 확인합니다. GitHub Actions의 `ui-regression-evidence-*` artifact에는 성공·실패 PNG와 HTML report가 14일 보관됩니다.
+v0.6.8 저장소에서는 Node 자동 검사 160개와 Playwright Chromium UI 회귀 검사 6개를 별도로 실행합니다. Node 검사는 동일 구조 외부 target 분리, 연결 해제 통지, 진단 schema v2의 계측 대기·합계·최신 복사·복구 상태 보존과 Popup 실패 수명주기를 포함합니다. UI 검사는 실제 `settings.html`과 SillyTavern 1.18.0 고정 commit의 core·Popup CSS를 결합해 320·360·420·720px 화면, 모델 0·6·7·100개 경계, 클릭·`Escape` 닫기, 버튼 정렬, 공백 단위 줄바꿈과 숨은 스크롤바 조작을 확인합니다. GitHub Actions의 `ui-regression-evidence-*` artifact에는 성공·실패 PNG와 HTML report가 14일 보관됩니다.
 
 이 자동 검사는 전체 SillyTavern JavaScript 런타임이나 실제 외부 확장·API 요청을 실행하지 않습니다. 아래 체크리스트에서 실제 설치 화면, 외부 확장의 선택 저장, Network payload와 제공업체 요청 성공을 계속 확인해야 합니다. API 키나 Service Account를 자동 검사에 제공할 필요는 없습니다.
 
@@ -26,7 +26,7 @@ v0.6.7 저장소에서는 Node 자동 검사 148개와 Playwright Chromium UI �
 ```text
 검증 날짜:
 SillyTavern 버전:
-Custom Model Router 버전: v0.6.7
+Custom Model Router 버전: v0.6.8
 브라우저·OS:
 설치 방식: 신규 / 업데이트
 이전 확장 버전:
@@ -79,7 +79,7 @@ Connection Profile 사용 여부:
 - [ ] **[필수][UI-12] 등록 목록에는 제공업체 이름, 모델 ID와 작은 휴지통 버튼만 있고 선택·적용 버튼, 현재 사용 배지와 라우팅 설정 UI가 없다. 삭제 버튼이 모델 행보다 과도하게 크지 않다.**
 - [ ] **[필수][UI-13] 팝업 안내가 실제 모델 선택은 SillyTavern의 기존 모델 선택기 또는 입력란에서 한다고 명시한다.**
 - [ ] **[필수][UI-14] SillyTavern 공식 닫기 버튼 하나만 보이고 CMR 내부에 두 번째 닫기 버튼이 없다. 공식 버튼과 `Escape`가 모두 팝업을 닫는다.**
-- [ ] **[권장][UI-15] `호환성 진단 및 설정 복구`와 `지원 범위 및 개인정보`를 펼쳤을 때 내용 아래에 충분한 안쪽 여백이 있어 마지막 문장이 테두리에 붙지 않는다.**
+- [ ] **[권장][UI-15] `호환성 진단 및 CMR 설정 백업`과 `지원 범위 및 개인정보`를 펼쳤을 때 내용 아래에 충분한 안쪽 여백이 있어 마지막 문장이 테두리에 붙지 않는다.**
 - [ ] **[권장][UI-16] 일반 안내 문구는 단어 중간에서 잘리지 않고 공간이 부족할 때만 공백에서 줄바꿈된다. 짧은 구절은 가능한 한 한 줄에 유지되고 각 문장은 종결부호 뒤에서 다음 줄로 분리된다.**
 - [ ] **[필수][UI-17] 추가·삭제·진단·백업 버튼의 아이콘과 텍스트가 가로·세로 중앙에 정렬되고 글자가 세로로 쪼개지지 않는다. 모델 추가 버튼은 입력란 옆에서 필요한 크기만 차지한다.**
 - [ ] **[권장][UI-18] GitHub Actions의 최신 `UI 회귀 검사`가 통과했고 `ui-regression-evidence-*` artifact의 320·360·420·720px PNG에서 잘림·겹침·가로 넘침이 없는지 확인한다.**
@@ -120,11 +120,14 @@ Connection Profile 사용 여부:
 - [ ] **[조건부][EXT-10A] Caption에서 CMR 모델을 선택해 이미지 설명을 한 번 실행하고, 실제 `/caption-image` Network 요청 JSON의 `model`이 선택한 정확한 ID인지 확인한다. 모델이 목록에 보이는 것만으로 통과 처리하지 않는다.**
 - [ ] **[조건부][EXT-11] 페이지 새로고침 뒤 DOM 표식이 같은 외부 target의 마지막 CMR 선택을 provider 식별자와 함께 복원한다. 새 control 값이 비어 있을 때만 선택을 복원하고 외부 확장이 둔 유효한 현재값은 덮어쓰지 않는다.**
 - [ ] **[조건부][EXT-11A] 외부 확장 업데이트로 control ID·name·label 또는 상위 구조가 바뀌면 새 target으로 다시 감지되며, 안전한 표준 모델 컨트롤이면 별도 설정 없이 직접 연결된다.**
+- [ ] **[조건부][EXT-11B] 같은 외부 확장 영역에 ID 없이 name·label이 같은 모델 칸 두 개가 있어도 live DOM 객체 또는 안정된 상위 구조 표식이 유지되면 각각 다른 CMR 모델을 선택할 수 있고, 재정렬 뒤에도 두 선택이 서로 바뀌거나 합쳐지지 않는다.**
+- [ ] **[조건부][EXT-11C] 동일한 ID·name·label·구조의 모델 칸을 외부 확장이 모두 새 객체로 교체하면서 순서까지 뒤집는 경우에는 이전 선택 대응을 보장할 안정 표식이 없음을 확인한다. 해당 확장에는 고유 ID·name·label 또는 안정된 구조 표식이 필요하다.**
 - [ ] **[조건부][EXT-12] 외부 확장의 새로고침 버튼 또는 설정 전환으로 모델 `select`가 다시 렌더링되어도 CMR option이 한 번만 복원된다.**
+- [ ] **[조건부][EXT-12A] CMR 모델을 선택한 외부 `select`가 disabled·비대상 상태로 바뀌면 화면과 외부 확장 저장 상태가 같은 native fallback으로 전환된다. readonly input은 현재 값과 기존 datalist를 보존한 채 CMR 제안만 정리하며, DOM에서 이미 제거된 이전 control에는 불필요한 이벤트가 발생하지 않는다.**
 - [ ] **[필수][EXT-13] Vectors·embedding·rerank 모델 컨트롤이 직접 연결 대상에 포함되지 않는다.**
 - [ ] **[필수][EXT-14] TTS·voice·speech 모델 컨트롤이 직접 연결 대상에 포함되지 않는다.**
 - [ ] **[필수][EXT-15] Stable Diffusion·이미지 생성 모델 컨트롤이 직접 연결 대상에 포함되지 않는다.**
-- [ ] **[권장][EXT-16] 진단 결과의 직접 연결과 안전상 건너뜀 개수가 실제 외부 컨트롤과 일치한다.**
+- [ ] **[권장][EXT-16] 진단 결과의 직접 연결과 비채팅·비호환 제외 개수가 실제 외부 컨트롤과 일치한다.**
 - [ ] **[필수][EXT-17] 외부 브리지 동작 전후 메인 Chat Completion source·모델·API 키·endpoint가 바뀌지 않는다.**
 - [ ] **[선택][EXT-18] React 자체 위젯, iframe, 닫힌 Shadow DOM과 모델 control 없는 확장은 대상 목록에도 나타나지 않으며 전용 opt-in API 연동이 필요하다는 안내를 확인한다.**
 
@@ -202,17 +205,24 @@ CMR은 전역 `fetch`나 `XMLHttpRequest`를 monkey patch하지 않습니다. �
 
 ## 8. 호환성 진단
 
-- [ ] **[필수][DIAG-01] 호환성 진단 및 설정 복구 섹션에서 `진단 실행`을 누른다.**
+- [ ] **[필수][DIAG-01] 호환성 진단 및 CMR 설정 백업 섹션에서 `진단 실행`을 누른다.**
+- [ ] **[필수][DIAG-01A] `진단 복사` JSON의 `schemaVersion`이 `2`이고 `status`·`summary`·`counts`가 `checks`의 상태 합계와 일치한다.**
 - [ ] **[필수][DIAG-02] SillyTavern 1.18.0이면 버전 계약이 통과로 표시된다.**
 - [ ] **[필수][DIAG-03] 현재 화면의 공개 context·event·provider control 결과에 설명 없는 실패가 없다.**
 - [ ] **[필수][DIAG-04] 런처·observer·listener·사용자 모델 그룹 중복이 없다고 표시된다. 서로 다른 모델 선택기에 같은 제공업체 그룹이 하나씩 있는 것은 중복으로 오인하지 않는다.**
-- [ ] **[필수][DIAG-04A] 외부 브리지 observer·listener·target 수와 직접 연결·안전상 건너뜀 수가 표시되고 설명 없는 증가가 없다.**
-- [ ] **[필수][DIAG-05] 경고가 있다면 코드와 사유를 결과 메모에 기록한다.**
+- [ ] **[필수][DIAG-04A] 복사 JSON에서 외부 브리지 observer·listener·target 수와 직접 연결·비채팅·비호환 제외 수를 확인하고 설명 없는 증가가 없다.**
+- [ ] **[필수][DIAG-04B] 외부 모델 칸 집계가 `후보 = 직접 연결 + 비채팅·비호환 제외`로 일치하며 observer·listener·binding 불일치가 통과로 표시되지 않는다.**
+- [ ] **[필수][DIAG-05] 경고가 있다면 `진단 복사` JSON의 check ID·코드와 사유를 결과 메모에 기록한다. 화면 목록에 별도 코드가 보이지 않으면 복사 JSON을 기준으로 한다.**
 - [ ] **[필수][DIAG-06] `진단 복사` 결과를 텍스트 편집기에서 열어 API 키·endpoint·project/account ID·Service Account가 없는지 확인한다.**
 - [ ] **[권장][DIAG-07] 1.18.0보다 새 버전에서는 미검증 경고가 표시되고 확장이 무조건 호환이라고 단정하지 않는다.**
+- [ ] **[필수][DIAG-08] source·profile 전환 표본이 0개 또는 1개이면 장시간 계측이 오류·주의가 아닌 `pending` 미실시로 표시되고 전체 진단 합계를 올리지 않는다.**
+- [ ] **[필수][DIAG-09] source 또는 profile을 바꾼 직후 `진단 복사`를 누르면 이전 JSON이 아니라 현재 source·표본·외부 대상 개수가 반영된다.**
+- [ ] **[조건부][DIAG-10] 복사 JSON의 `repair`와 `settings-repair` check에서 손실 없는 `settings_migrated`는 `notices`의 통과 정보, `invalid_records_removed`는 `warnings`의 주의, 미래 스키마 거부는 `errors`의 오류로 분리된다. `invalid_records_removed`이면 `beforeCounts`·`afterCounts`에서 제외된 모델·선택·경로 수가 예상 범위인지 확인한다.**
+- [ ] **[조건부][DIAG-11] 복구 주의 또는 오류 뒤 정상 `SETTINGS_UPDATED`가 발생해도 마지막 의미 있는 `repair` 코드가 다음 진단 복사에 남고, 원래 저장 객체의 임의 필드·값은 복사되지 않는다.**
 
 ## 9. 반복 전환 안정성
 
+- [ ] **[권장][STAB-00] 첫 진단 JSON을 기준값으로 저장한다. `activeSampleCount` 0·1은 미실시이며 2개 이상부터 판정된다는 점을 확인한다.**
 - [ ] **[권장][STAB-01] source를 두 제공업체 사이에서 20회 왕복한 뒤 진단을 다시 실행한다.**
 - [ ] **[권장][STAB-02] Connection Profile A/B를 20회 왕복한 뒤 진단을 다시 실행한다.**
 - [ ] **[권장][STAB-03] 동적 모델 목록을 사용하는 source에서 연결·목록 갱신을 10회 반복한다.**
@@ -223,7 +233,7 @@ CMR은 전역 `fetch`나 `XMLHttpRequest`를 monkey patch하지 않습니다. �
 
 ## 10. 확장 전용 백업·복구
 
-- [ ] **[필수][BKP-01] `백업 내보내기`로 `custom-model-router-backup-v0.6.7.json`을 저장한다.**
+- [ ] **[필수][BKP-01] `백업 내보내기`로 `custom-model-router-backup-v0.6.8.json`을 저장한다.**
 - [ ] **[필수][BKP-02] JSON 최상위에 `format`, `schemaVersion`, `createdAt`, `registry`, `purposeRoutes`, `externalIntegrations`만 있고 portable schemaVersion이 `2`인지 확인한다.**
 - [ ] **[필수][BKP-03] Registry에는 provider·model ID·protocol·enabled·선택 상태만 있는지 확인한다.**
 - [ ] **[필수][BKP-04] route에는 provider·model ID·adapter ID·Connection Profile ID만 있는지 확인한다.**
@@ -257,10 +267,10 @@ CMR은 전역 `fetch`나 `XMLHttpRequest`를 monkey patch하지 않습니다. �
 ## 결과 보고 양식
 
 ```text
-제목: [v0.6.7][제공업체 또는 기능][항목 ID] 짧은 증상
+제목: [v0.6.8][제공업체 또는 기능][항목 ID] 짧은 증상
 
 SillyTavern 버전:
-Custom Model Router 버전: v0.6.7
+Custom Model Router 버전: v0.6.8
 OS / 브라우저:
 신규 설치 또는 업데이트:
 이전 CMR 버전:
@@ -276,7 +286,7 @@ Connection Profile 사용 여부와 비밀이 아닌 이름:
 source/Profile 반복 횟수:
 진단 상태·경고 코드:
 백업 가져오기 결과:
-외부 target 직접 연결/안전상 건너뜀 상태:
+외부 target 직접 연결/비채팅·비호환 제외 상태:
 외부 control 종류(select/input/datalist/기타):
 Network payload의 model 확인 결과:
 Caption /caption-image payload의 model 확인 결과:
@@ -284,4 +294,4 @@ Caption /caption-image payload의 model 확인 결과:
 민감정보를 제거한 스크린샷:
 ```
 
-실패 항목이 있어도 데이터 손실·무한 반복·비밀 노출이 아니라면 나머지 독립 항목은 계속 확인해도 됩니다. 결과를 모으면 같은 v0.6 범위의 후속 수정은 `v0.6.8`, `v0.6.9`, ...로 반영합니다.
+실패 항목이 있어도 데이터 손실·무한 반복·비밀 노출이 아니라면 나머지 독립 항목은 계속 확인해도 됩니다. 결과를 모으면 같은 v0.6 범위의 후속 수정은 `v0.6.9`, `v0.6.10`, ...로 반영합니다.

@@ -2,11 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+    DIAGNOSTIC_SCHEMA_VERSION,
     MINIMUM_SILLYTAVERN_VERSION,
     VALIDATED_SILLYTAVERN_VERSIONS,
     compareVersions,
     createStabilityMonitor,
     diagnoseCompatibility,
+    diagnoseExternalRuntimeResources,
     diagnoseRuntimeResources,
     getMostSevereCheck,
     normalizeSillyTavernVersion,
@@ -112,7 +114,8 @@ test('SillyTavern 1.18 공개 context·DOM·요청 계약을 구조화된 한국
         },
     });
 
-    assert.equal(result.schemaVersion, 1);
+    assert.equal(DIAGNOSTIC_SCHEMA_VERSION, 2);
+    assert.equal(result.schemaVersion, 2);
     assert.equal(result.status, 'ok');
     assert.match(result.summary, /모두 통과/);
     assert.equal(result.environment.sillyTavernVersion, '1.18.0');
@@ -267,6 +270,7 @@ test('100회 동일 자원 표본과 표본 수 제한을 안정 상태로 판�
     assert.equal(stable.size, 100);
     assert.equal(stable.getSamples()[0].sequence, 1);
     assert.equal(stable.analyze().status, 'ok');
+    assert.equal(stable.analyze().evaluated, true);
 
     const capped = createStabilityMonitor({ sampleLimit: 4 });
     for (let index = 0; index < 8; index += 1) {
@@ -354,5 +358,102 @@ test('실제 리스너·옵저버·바인딩·모델 그룹 누적은 오류로 
 
     leaking.clear();
     assert.equal(leaking.size, 0);
-    assert.equal(leaking.analyze().status, 'warning');
+    assert.equal(leaking.analyze().status, 'pending');
+    assert.equal(leaking.analyze().evaluated, false);
+});
+
+test('활성 표본 0개와 1개는 오류나 주의가 아닌 미실시 상태로 구분한다', () => {
+    const monitor = createStabilityMonitor();
+    const empty = monitor.analyze();
+    assert.equal(empty.status, 'pending');
+    assert.equal(empty.evaluated, false);
+    assert.equal(empty.activeSampleCount, 0);
+
+    monitor.record('첫 전환', { observerCount: 1, externalObserverCount: 1 });
+    const oneSample = monitor.analyze();
+    assert.equal(oneSample.status, 'pending');
+    assert.equal(oneSample.evaluated, false);
+    assert.equal(oneSample.activeSampleCount, 1);
+    assert.match(oneSample.summary, /아직 실행하지 않았습니다/);
+});
+
+test('외부 observer 중복은 누적으로 찾되 외부 대상 수 변화 자체는 drift로 보지 않는다', () => {
+    const stable = createStabilityMonitor();
+    stable.record('외부 대상 1개', { observerCount: 1, externalObserverCount: 1, externalTargetCount: 1 });
+    stable.record('외부 대상 8개', { observerCount: 1, externalObserverCount: 1, externalTargetCount: 8 });
+    assert.equal(stable.analyze().status, 'ok');
+    assert.deepEqual(stable.analyze().drift, []);
+
+    const duplicate = createStabilityMonitor();
+    duplicate.record('정상', { observerCount: 1, externalObserverCount: 1 });
+    duplicate.record('중복', { observerCount: 1, externalObserverCount: 2 });
+    const report = duplicate.analyze();
+    assert.equal(report.status, 'error');
+    assert.deepEqual(report.drift.map(item => item.metric), ['externalObserverCount']);
+});
+
+test('외부 모델 칸 후보를 직접 연결과 비채팅 제외로 분해하고 런타임 불일치를 실패 처리한다', () => {
+    const secretLabel = 'SECRET_PROJECT_AND_ENDPOINT';
+    const targets = [
+        { label: secretLabel, targetId: 'cmr-ext-secret', resolution: { source: 'direct' } },
+        {
+            label: secretLabel,
+            targetId: 'cmr-ext-secret-2',
+            resolution: { source: 'risk-blocked', excludedReason: 'embedding-model' },
+        },
+    ];
+    const passed = diagnoseExternalRuntimeResources({
+        observerCount: 1,
+        targetCount: 2,
+        boundCount: 1,
+        directCount: 1,
+        listenerCount: 1,
+    }, targets);
+    assert.equal(passed.status, 'passed');
+    assert.match(passed.message, /후보 2개 = 직접 연결 1개 \+ 비채팅·비호환 제외 1개/);
+    assert.deepEqual(passed.details.excludedByReason, { 'embedding-model': 1 });
+    assert.doesNotMatch(JSON.stringify(passed), /SECRET_PROJECT_AND_ENDPOINT|cmr-ext-secret/);
+
+    const missingObserver = diagnoseExternalRuntimeResources({
+        observerCount: 0,
+        targetCount: 2,
+        boundCount: 0,
+        directCount: 1,
+    }, targets);
+    assert.equal(missingObserver.status, 'failed');
+    assert.equal(missingObserver.details.invariants.singleObserver, false);
+    assert.equal(missingObserver.details.invariants.directBindingsMatch, false);
+
+    const duplicateListener = diagnoseExternalRuntimeResources({
+        observerCount: 1,
+        targetCount: 2,
+        boundCount: 1,
+        directCount: 1,
+        listenerCount: 2,
+    }, targets);
+    assert.equal(duplicateListener.status, 'failed');
+    assert.equal(duplicateListener.details.expectedListenerCount, 1);
+    assert.equal(duplicateListener.details.invariants.listenerBindingsMatch, false);
+});
+
+test('외부 제외 사유의 특수 객체 키도 독립된 진단 개수로 보존한다', () => {
+    const targets = [
+        { resolution: { source: 'risk-blocked', excludedReason: '__proto__' } },
+        { resolution: { source: 'risk-blocked', excludedReason: 'constructor' } },
+        { resolution: { source: 'risk-blocked', excludedReason: '__proto__' } },
+    ];
+    const report = diagnoseExternalRuntimeResources({
+        observerCount: 1,
+        targetCount: 3,
+        boundCount: 0,
+        directCount: 0,
+        listenerCount: 0,
+    }, targets);
+
+    assert.equal(report.status, 'passed');
+    assert.deepEqual(
+        report.details.excludedByReason,
+        Object.fromEntries([['__proto__', 2], ['constructor', 1]]),
+    );
+    assert.equal(Object.getPrototypeOf(report.details.excludedByReason), Object.prototype);
 });

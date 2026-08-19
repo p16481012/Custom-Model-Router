@@ -1,6 +1,6 @@
 {
     "name": "custom-model-router",
-    "version": "0.6.7",
+    "version": "0.6.8",
     "private": true,
     "type": "module",
     "scripts": {
@@ -9,7 +9,7 @@
         "check": "node --check index.js && node --check src/registry.js && node --check src/providers.js && node --check src/model-select.js && node --check src/vertex-select.js && node --check src/registry-api.js && node --check src/purpose-router.js && node --check src/connection-profile-adapter.js && node --check src/compatibility.js && node --check src/portable-settings.js && node --check src/external-integrations.js && node --check src/external-settings.js && node --test"
     },
     "engines": {
-        "node": ">=20"
+        "node": ">=24"
     },
     "devDependencies": {
         "@playwright/test": "^1.62.1"

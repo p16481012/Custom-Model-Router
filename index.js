@@ -38,6 +38,8 @@ import { createSillyTavernConnectionProfileAdapter } from './src/connection-prof
 import {
     createStabilityMonitor,
     diagnoseCompatibility,
+    diagnoseExternalRuntimeResources,
+    summarizeDiagnosticChecks,
 } from './src/compatibility.js';
 import {
     PORTABLE_SETTINGS_MAX_LENGTH,
@@ -57,7 +59,7 @@ import {
     setExternalSelectedModel,
 } from './src/external-settings.js';
 
-const EXTENSION_VERSION = '0.6.7';
+const EXTENSION_VERSION = '0.6.8';
 const SETTINGS_KEY = 'customModelRouter';
 const ROUTES_SETTINGS_KEY = 'customModelRouterRouting';
 const EXTERNAL_SETTINGS_KEY = 'customModelRouterExternalIntegrations';
@@ -66,6 +68,13 @@ const CONNECTION_PROFILE_SELECTOR = '#connection_profiles';
 const API_TITLE_SELECTOR = '#title_api';
 const LAUNCHER_SELECTOR = '#cmr_open_manager';
 const MODEL_LIST_SCROLL_THRESHOLD = 6;
+const REPAIR_ISSUE_MESSAGES = Object.freeze({
+    settings_migrated: '이전 저장 스키마를 현재 버전으로 이관했습니다.',
+    invalid_records_removed: '손상되거나 중복된 모델·선택·경로 레코드를 제외했습니다.',
+    future_registry_schema: '현재 확장보다 새로운 Registry 스키마라 저장값 적용을 중단했습니다.',
+    future_routes_schema: '현재 확장보다 새로운 용도별 경로 스키마라 저장값 적용을 중단했습니다.',
+});
+const REPAIR_COUNT_KEYS = Object.freeze(['models', 'selections', 'routes']);
 const PROVIDER_GROUPS = [
     {
         label: '모델 개발사 API',
@@ -347,6 +356,102 @@ function announce(message, state = 'ok') {
 
 function formatUiSentences(value) {
     return String(value ?? '').replace(/([.!?])\s+(?=\S)/g, '$1\n');
+}
+
+function sanitizeRepairIssue(issue, fallbackSeverity) {
+    const rawCode = typeof issue?.code === 'string' ? issue.code.trim() : '';
+    const code = /^[a-z0-9_-]{1,64}$/.test(rawCode) ? rawCode : 'unknown_repair_issue';
+    const severity = issue?.severity === 'error' || issue?.severity === 'warning'
+        ? issue.severity
+        : fallbackSeverity;
+    return {
+        severity,
+        code,
+        message: Object.hasOwn(REPAIR_ISSUE_MESSAGES, code)
+            ? REPAIR_ISSUE_MESSAGES[code]
+            : '저장값 검사에서 분류되지 않은 문제를 발견했습니다.',
+    };
+}
+
+function sanitizeRepairCounts(value) {
+    if (!value || typeof value !== 'object') {
+        return null;
+    }
+    return Object.fromEntries(REPAIR_COUNT_KEYS.map((key) => {
+        const count = value[key];
+        return [key, Number.isInteger(count) && count >= 0 ? count : 0];
+    }));
+}
+
+function sanitizeMaterialRepairReport(report) {
+    if (report?.status !== 'warning' && report?.status !== 'error') {
+        return null;
+    }
+    const repairWarnings = Array.from(
+        report.warnings ?? [],
+        issue => sanitizeRepairIssue(issue, 'warning'),
+    );
+    const notices = repairWarnings
+        .filter(issue => issue.code === 'settings_migrated')
+        .map(issue => ({ ...issue, severity: 'info' }));
+    const warnings = repairWarnings.filter(issue => issue.code !== 'settings_migrated');
+    const errors = Array.from(report.errors ?? [], issue => sanitizeRepairIssue(issue, 'error'));
+    const status = report.status === 'error' || errors.length
+        ? 'error'
+        : (warnings.length ? 'warning' : 'ok');
+    const result = {
+        status,
+        summary: status === 'error'
+            ? 'CMR 저장값을 적용하지 않았습니다. 오류 코드를 확인해 주세요.'
+            : (status === 'warning'
+                ? 'CMR 저장값을 복구했습니다. 변경 내역을 확인해 주세요.'
+                : 'CMR 저장값을 현재 스키마로 안전하게 이관했습니다.'),
+        notices,
+        warnings,
+        errors,
+    };
+    const beforeCounts = sanitizeRepairCounts(report.beforeCounts);
+    const afterCounts = sanitizeRepairCounts(report.afterCounts);
+    if (beforeCounts) {
+        result.beforeCounts = beforeCounts;
+    }
+    if (afterCounts) {
+        result.afterCounts = afterCounts;
+    }
+    return result;
+}
+
+function rememberMaterialRepairReport(report) {
+    const sanitized = sanitizeMaterialRepairReport(report);
+    if (sanitized) {
+        lastRepairReport = sanitized;
+    }
+}
+
+function createRepairDiagnosticCheck(report) {
+    if (!report) {
+        return null;
+    }
+    const details = {
+        noticeCodes: report.notices.map(issue => issue.code),
+        warningCodes: report.warnings.map(issue => issue.code),
+        errorCodes: report.errors.map(issue => issue.code),
+    };
+    if (report.beforeCounts) {
+        details.beforeCounts = report.beforeCounts;
+    }
+    if (report.afterCounts) {
+        details.afterCounts = report.afterCounts;
+    }
+    return {
+        id: 'settings-repair',
+        category: 'settings',
+        status: report.status === 'error'
+            ? 'failed'
+            : (report.status === 'warning' ? 'warning' : 'passed'),
+        message: report.summary,
+        details,
+    };
 }
 
 function createOption(provider) {
@@ -862,7 +967,7 @@ function onSettingsUpdated() {
         registrySettings: storedSettings,
         purposeRoutes: storedRoutes,
     });
-    lastRepairReport = repairReport;
+    rememberMaterialRepairReport(repairReport);
 
     if (!repairReport.ok) {
         settings = normalizeSettings(acceptedSettingsSnapshot ?? settings);
@@ -1117,52 +1222,38 @@ function createDiagnosticReport() {
         listenerCount: 0,
     };
     const externalTargets = externalIntegrationController?.getTargets?.() ?? [];
-    const externalExcludedCount = externalTargets.filter(target => (
-        target.resolution?.source === 'risk-blocked'
-    )).length;
-    const externalCheck = {
-        id: 'external-model-controls',
-        status: 'passed',
-        message: `외부 모델 컨트롤 ${externalMetrics.targetCount}개 감지 · 직접 연결 ${externalMetrics.directCount}개 · 안전상 제외 ${externalExcludedCount}개`,
-        details: {
-            ...externalMetrics,
-            excludedCount: externalExcludedCount,
-        },
-    };
+    const externalCheck = diagnoseExternalRuntimeResources(externalMetrics, externalTargets);
     const stability = stabilityMonitor?.analyze() ?? null;
-    const status = compatibility.status === 'error' || stability?.status === 'error'
-        ? 'error'
-        : (compatibility.status === 'warning' || stability?.status === 'warning'
-            ? 'warning'
-            : 'ok');
-    const compatibilitySummary = stability?.status === 'error'
-        ? `${compatibility.summary} 장시간 계측에서 자원 증가를 발견했습니다.`
-        : (stability?.status === 'warning' && compatibility.status === 'ok'
-            ? `${compatibility.summary} ${stability.summary}`
-            : compatibility.summary);
-    const checks = [...compatibility.checks, externalCheck];
-    const counts = checks.reduce((result, check) => {
-        if (Object.hasOwn(result, check.status)) {
-            result[check.status] += 1;
-        }
-        return result;
-    }, { passed: 0, warning: 0, failed: 0 });
+    const stabilityCheck = stability?.evaluated ? {
+        id: 'runtime-stability',
+        category: 'stability',
+        status: stability.status === 'error'
+            ? 'failed'
+            : (stability.status === 'warning' ? 'warning' : 'passed'),
+        message: `장시간 계측 · ${stability.summary}`,
+        details: {
+            sampleCount: stability.sampleCount,
+            activeSampleCount: stability.activeSampleCount,
+        },
+    } : null;
+    const repairCheck = createRepairDiagnosticCheck(lastRepairReport);
+    const checks = [
+        ...compatibility.checks,
+        externalCheck,
+        ...(repairCheck ? [repairCheck] : []),
+        ...(stabilityCheck ? [stabilityCheck] : []),
+    ];
+    const diagnosticSummary = summarizeDiagnosticChecks(checks);
     return {
         ...compatibility,
         checks,
-        counts,
-        status,
-        summary: compatibilitySummary,
+        counts: diagnosticSummary.counts,
+        status: diagnosticSummary.status,
+        summary: diagnosticSummary.summary,
         extensionVersion: EXTENSION_VERSION,
         externalIntegrations: externalCheck.details,
         stability,
-        repair: lastRepairReport ? {
-            status: lastRepairReport.status,
-            summary: lastRepairReport.summary,
-            beforeCounts: lastRepairReport.beforeCounts,
-            afterCounts: lastRepairReport.afterCounts,
-            warnings: lastRepairReport.warnings,
-        } : null,
+        repair: lastRepairReport,
     };
 }
 
@@ -1186,24 +1277,24 @@ function renderDiagnosticReport() {
         item.textContent = formatUiSentences(`${check.status === 'passed' ? '통과' : (check.status === 'warning' ? '주의' : '오류')} · ${check.message}`);
         list.append(item);
     }
-    if (lastDiagnosticReport.stability) {
+    if (lastDiagnosticReport.stability && !lastDiagnosticReport.stability.evaluated) {
         const item = document.createElement('li');
-        item.dataset.status = lastDiagnosticReport.stability.status === 'error'
-            ? 'failed'
-            : (lastDiagnosticReport.stability.status === 'warning' ? 'warning' : 'passed');
+        item.dataset.status = 'pending';
         item.textContent = formatUiSentences(`장시간 계측 · ${lastDiagnosticReport.stability.summary}`);
         list.append(item);
     }
 }
 
 function onRunDiagnostics() {
+    externalIntegrationController?.sync?.();
     lastDiagnosticReport = createDiagnosticReport();
     renderDiagnosticReport();
 }
 
 async function onCopyDiagnostics() {
     try {
-        lastDiagnosticReport ??= createDiagnosticReport();
+        externalIntegrationController?.sync?.();
+        lastDiagnosticReport = createDiagnosticReport();
         const clipboard = globalThis.navigator?.clipboard;
         if (typeof clipboard?.writeText !== 'function') {
             throw new Error('clipboard unavailable');
@@ -1398,7 +1489,14 @@ function openSettingsPanel() {
         popup.dlg.setAttribute?.('aria-labelledby', 'cmr_panel_title');
         activePopup = popup;
         renderUi();
-        void popup.show().catch(error => handlePopupShowFailure(popup, root, error));
+        let showResult;
+        try {
+            showResult = popup.show();
+        } catch (error) {
+            handlePopupShowFailure(popup, root, error);
+            return;
+        }
+        void Promise.resolve(showResult).catch(error => handlePopupShowFailure(popup, root, error));
     } catch (error) {
         settingsRoot = null;
         console.error('[Custom Model Router] 모델 관리 패널을 만들지 못했습니다.', error);
@@ -1546,20 +1644,21 @@ async function initialize(generation) {
     const storedSettings = context.extensionSettings[SETTINGS_KEY];
     const storedRoutes = context.extensionSettings[ROUTES_SETTINGS_KEY];
     const storedExternal = context.extensionSettings[EXTERNAL_SETTINGS_KEY];
-    lastRepairReport = repairSettingsBundle({
+    const initialRepairReport = repairSettingsBundle({
         registrySettings: storedSettings,
         purposeRoutes: storedRoutes,
     });
-    if (!lastRepairReport.ok) {
-        const issue = lastRepairReport.errors[0];
+    rememberMaterialRepairReport(initialRepairReport);
+    if (!initialRepairReport.ok) {
+        const issue = initialRepairReport.errors[0];
         throw new PortableSettingsError(
             issue?.code ?? 'settings_repair_failed',
-            lastRepairReport.summary,
-            lastRepairReport.errors,
+            initialRepairReport.summary,
+            initialRepairReport.errors,
         );
     }
-    settings = normalizeSettings(lastRepairReport.registrySettings);
-    routingSettings = normalizePurposeRoutes(lastRepairReport.purposeRoutes);
+    settings = normalizeSettings(initialRepairReport.registrySettings);
+    routingSettings = normalizePurposeRoutes(initialRepairReport.purposeRoutes);
     externalSettings = normalizeAutomaticExternalSettings(storedExternal);
     rememberAcceptedSettings();
     const settingsChanged = JSON.stringify(storedSettings) !== JSON.stringify(settings);

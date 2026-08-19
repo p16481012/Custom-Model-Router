@@ -509,6 +509,7 @@ function createHarness({
     mainApi = 'openai',
     includeConnectionProfiles = true,
     popupShowError = null,
+    popupShowMode = 'promise',
     ignoredModelChangeProviders = [],
 } = {}) {
     const documentRef = new FakeDocument();
@@ -618,7 +619,13 @@ function createHarness({
             this.showCallCount += 1;
             documentRef.body.append(this.dlg);
             if (popupShowError) {
+                if (popupShowMode === 'throw') {
+                    throw popupShowError;
+                }
                 return Promise.reject(popupShowError);
+            }
+            if (popupShowMode === 'non-promise') {
+                return undefined;
             }
             return this.completion.promise;
         }
@@ -978,7 +985,7 @@ test('init은 24개 제공업체를 연결하고 API Connections Popup을 한 �
         assert.ok(harness.observers.some(observer => observer.target === harness.observerRoot));
         assert.ok(harness.observers.some(observer => observer.target === harness.documentRef.body));
         assert.equal(globalThis.CustomModelRouter.apiVersion, '1.1.0');
-        assert.equal(globalThis.CustomModelRouter.extensionVersion, '0.6.7');
+        assert.equal(globalThis.CustomModelRouter.extensionVersion, '0.6.8');
         assert.equal(globalThis.CustomModelRouter.routing.apiVersion, '1.0.0');
         assert.equal(globalThis.CustomModelRouter.getSnapshot().models.length, 1);
 
@@ -1271,6 +1278,56 @@ test('Popup show 실패는 고아 dialog와 열린 상태를 남기지 않는다
     }
 });
 
+test('Popup show 동기 예외도 고아 dialog와 열린 상태를 남기지 않는다', async () => {
+    const harness = createHarness({
+        popupShowError: new Error('show 동기 실패'),
+        popupShowMode: 'throw',
+    });
+    const restoreGlobals = installBrowserGlobals(harness);
+    const originalConsoleError = console.error;
+    console.error = () => {};
+    try {
+        await init();
+        const launcher = harness.documentRef.querySelector('#cmr_open_manager');
+        launcher.dispatchEvent(new FakeEvent('click'));
+        assert.equal(harness.popupInstances.length, 1);
+        assert.equal(harness.documentRef.querySelector('#cmr_manager_dialog'), null);
+        assert.equal(harness.documentRef.querySelector('#cmr_settings'), null);
+        assert.equal(launcher.getAttribute('aria-expanded'), 'false');
+        assert.equal(harness.documentRef.activeElement, launcher);
+    } finally {
+        console.error = originalConsoleError;
+        await destroy();
+        restoreGlobals();
+    }
+});
+
+test('Popup show가 Promise를 반환하지 않아도 열린 상태와 닫기 동작을 유지한다', async () => {
+    const harness = createHarness({ popupShowMode: 'non-promise' });
+    const restoreGlobals = installBrowserGlobals(harness);
+    try {
+        await init();
+        const launcher = harness.documentRef.querySelector('#cmr_open_manager');
+        launcher.dispatchEvent(new FakeEvent('click'));
+        await flushMicrotasks();
+        const popup = harness.popupInstances[0];
+        assert.equal(popup.showCallCount, 1);
+        assert.ok(harness.documentRef.querySelector('#cmr_manager_dialog'));
+        assert.ok(harness.documentRef.querySelector('#cmr_settings'));
+        assert.equal(launcher.getAttribute('aria-expanded'), 'true');
+
+        popup.closeButton.dispatchEvent(new FakeEvent('click'));
+        await flushMicrotasks();
+        assert.equal(harness.documentRef.querySelector('#cmr_manager_dialog'), null);
+        assert.equal(harness.documentRef.querySelector('#cmr_settings'), null);
+        assert.equal(launcher.getAttribute('aria-expanded'), 'false');
+        assert.equal(harness.documentRef.activeElement, launcher);
+    } finally {
+        await destroy();
+        restoreGlobals();
+    }
+});
+
 test('Vertex 모델 카드는 등록과 삭제만 제공하며 등록만으로 현재 모델을 바꾸지 않는다', async () => {
     const harness = createHarness();
     const restoreGlobals = installBrowserGlobals(harness);
@@ -1369,19 +1426,256 @@ test('진단은 서로 다른 모델 선택기의 동일 제공업체 그룹을 
 
         const panel = openPanel(harness);
         panel.querySelector('#cmr_run_diagnostics').dispatchEvent(new FakeEvent('click'));
+        const pendingStabilityItem = panel.querySelector('#cmr_diagnostic_list').children.find(item => (
+            item.textContent.includes('장시간 계측')
+        ));
+        assert.ok(pendingStabilityItem);
+        assert.equal(pendingStabilityItem.dataset.status, 'pending');
+        assert.equal(panel.querySelector('#cmr_diagnostic_summary').dataset.state, 'warning');
         const duplicateResourceItem = panel.querySelector('#cmr_diagnostic_list').children.find(item => (
             item.textContent.includes('중복 런처·패널·옵저버·이벤트 구독')
         ));
         assert.ok(duplicateResourceItem);
         assert.equal(duplicateResourceItem.dataset.status, 'passed');
+
+        harness.setActiveSource('openai');
+        await flushMicrotasks();
+        const thirdExternal = appendExternalModelSelect(harness, {
+            containerId: 'third_openai_extension',
+            selectId: 'third_openai_model',
+            label: '세 번째 OpenAI 모델',
+            attributes: { 'data-provider': 'openai' },
+        });
+        assert.equal(thirdExternal.select.querySelector('optgroup[data-cmr-provider]'), null);
         panel.querySelector('#cmr_copy_diagnostics').dispatchEvent(new FakeEvent('click'));
         await flushMicrotasks();
-        const report = JSON.parse(copiedDiagnostics);
+        assert.ok(thirdExternal.select.querySelector('optgroup[data-cmr-provider]'));
+        let report = JSON.parse(copiedDiagnostics);
+        assert.equal(report.status, 'warning');
+        const pendingWarningCount = report.counts.warning;
+        assert.equal(report.stability.status, 'pending');
+        assert.equal(report.stability.evaluated, false);
+        assert.equal(report.stability.activeSampleCount, 1);
+        assert.equal(report.checks.some(check => check.id === 'runtime-stability'), false);
+        assert.equal(
+            report.counts.passed + report.counts.warning + report.counts.failed,
+            report.checks.length,
+        );
+        assert.match(
+            report.checks.find(check => check.id === 'external-model-controls').message,
+            /후보 3개 = 직접 연결 3개 \+ 비채팅·비호환 제외 0개/,
+        );
+
+        harness.setActiveSource('vertexai');
+        await flushMicrotasks();
+        panel.querySelector('#cmr_copy_diagnostics').dispatchEvent(new FakeEvent('click'));
+        await flushMicrotasks();
+        report = JSON.parse(copiedDiagnostics);
+        assert.equal(report.status, 'warning');
+        assert.equal(report.counts.warning, pendingWarningCount);
+        assert.equal(report.stability.evaluated, true);
+        assert.equal(report.stability.activeSampleCount, 2);
+        assert.ok(report.checks.some(check => (
+            check.id === 'runtime-stability' && check.status === 'passed'
+        )));
         assert.equal(
             report.counts.passed + report.counts.warning + report.counts.failed,
             report.checks.length,
         );
     } finally {
+        if (navigatorDescriptor) {
+            Object.defineProperty(globalThis, 'navigator', navigatorDescriptor);
+        } else {
+            delete globalThis.navigator;
+        }
+        await destroy();
+        restoreGlobals();
+    }
+});
+
+test('복구 경고는 정식 진단 항목에 합산되고 이후 정상 설정 이벤트에도 보존된다', async () => {
+    const harness = createHarness({
+        storedSettings: {
+            schemaVersion: 1,
+            models: [
+                { id: 'gemini-legacy' },
+                { id: 'gemini-legacy' },
+                { id: 'bad/model' },
+            ],
+            selectedModelId: 'gemini-legacy',
+        },
+    });
+    const restoreGlobals = installBrowserGlobals(harness);
+    const navigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+    let copiedDiagnostics = '';
+    Object.defineProperty(globalThis, 'navigator', {
+        configurable: true,
+        value: {
+            clipboard: {
+                async writeText(value) {
+                    copiedDiagnostics = value;
+                },
+            },
+        },
+    });
+    try {
+        await init();
+        assert.deepEqual(harness.context.extensionSettings.customModelRouter, {
+            schemaVersion: 2,
+            models: [createModelRecord('vertexai', 'gemini-legacy')],
+            selectedModels: { vertexai: 'gemini-legacy' },
+        });
+        const panel = openPanel(harness);
+        panel.querySelector('#cmr_copy_diagnostics').dispatchEvent(new FakeEvent('click'));
+        await flushMicrotasks(8);
+        let repair = JSON.parse(copiedDiagnostics).repair;
+        assert.deepEqual(repair.notices.map(issue => issue.code), ['settings_migrated']);
+        assert.deepEqual(repair.warnings.map(issue => issue.code), ['invalid_records_removed']);
+        harness.eventSource.emit(harness.context.eventTypes.SETTINGS_UPDATED);
+        await flushMicrotasks(8);
+
+        panel.querySelector('#cmr_copy_diagnostics').dispatchEvent(new FakeEvent('click'));
+        await flushMicrotasks(8);
+
+        const report = JSON.parse(copiedDiagnostics);
+        const repairCheck = report.checks.find(check => check.id === 'settings-repair');
+        assert.equal(report.schemaVersion, 2);
+        assert.equal(report.status, 'warning');
+        assert.equal(repairCheck.status, 'warning');
+        assert.deepEqual(repairCheck.details.noticeCodes, ['settings_migrated']);
+        assert.deepEqual(repairCheck.details.warningCodes, ['invalid_records_removed']);
+        assert.deepEqual(report.repair.beforeCounts, { models: 3, selections: 1, routes: 0 });
+        assert.deepEqual(report.repair.afterCounts, { models: 1, selections: 1, routes: 0 });
+        assert.deepEqual(report.repair.errors, []);
+        assert.equal(
+            report.counts.passed + report.counts.warning + report.counts.failed,
+            report.checks.length,
+        );
+        assert.doesNotMatch(copiedDiagnostics, /bad\/model|selectedModelId/);
+    } finally {
+        if (navigatorDescriptor) {
+            Object.defineProperty(globalThis, 'navigator', navigatorDescriptor);
+        } else {
+            delete globalThis.navigator;
+        }
+        await destroy();
+        restoreGlobals();
+    }
+});
+
+test('손실 없는 저장 스키마 이관은 진단 주의가 아니라 통과 정보로 표시된다', async () => {
+    const harness = createHarness({
+        storedSettings: {
+            schemaVersion: 1,
+            models: [{ id: 'gemini-migrated' }],
+            selectedModelId: 'gemini-migrated',
+        },
+    });
+    const restoreGlobals = installBrowserGlobals(harness);
+    const navigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+    let copiedDiagnostics = '';
+    Object.defineProperty(globalThis, 'navigator', {
+        configurable: true,
+        value: {
+            clipboard: {
+                async writeText(value) {
+                    copiedDiagnostics = value;
+                },
+            },
+        },
+    });
+    try {
+        await init();
+        const panel = openPanel(harness);
+        panel.querySelector('#cmr_copy_diagnostics').dispatchEvent(new FakeEvent('click'));
+        await flushMicrotasks(8);
+
+        const repairItem = panel.querySelector('#cmr_diagnostic_list').children.find(item => (
+            item.textContent.includes('현재 스키마로 안전하게 이관')
+        ));
+        assert.ok(repairItem);
+        assert.equal(repairItem.dataset.status, 'passed');
+        const report = JSON.parse(copiedDiagnostics);
+        const repairCheck = report.checks.find(check => check.id === 'settings-repair');
+        assert.equal(report.repair.status, 'ok');
+        assert.deepEqual(report.repair.notices, [{
+            severity: 'info',
+            code: 'settings_migrated',
+            message: '이전 저장 스키마를 현재 버전으로 이관했습니다.',
+        }]);
+        assert.deepEqual(report.repair.warnings, []);
+        assert.deepEqual(repairCheck.details.noticeCodes, ['settings_migrated']);
+        assert.deepEqual(repairCheck.details.warningCodes, []);
+    } finally {
+        if (navigatorDescriptor) {
+            Object.defineProperty(globalThis, 'navigator', navigatorDescriptor);
+        } else {
+            delete globalThis.navigator;
+        }
+        await destroy();
+        restoreGlobals();
+    }
+});
+
+test('복구 오류 코드는 비식별 진단 실패로 남고 이후 정상 설정 이벤트가 덮지 않는다', async () => {
+    const harness = createHarness();
+    const restoreGlobals = installBrowserGlobals(harness);
+    const navigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+    const originalConsoleError = console.error;
+    let copiedDiagnostics = '';
+    Object.defineProperty(globalThis, 'navigator', {
+        configurable: true,
+        value: {
+            clipboard: {
+                async writeText(value) {
+                    copiedDiagnostics = value;
+                },
+            },
+        },
+    });
+    console.error = () => {};
+    try {
+        await init();
+        harness.context.extensionSettings.customModelRouter = {
+            schemaVersion: 999,
+            models: [],
+            selectedModels: {},
+            sensitiveRawValue: 'SHOULD_NOT_BE_COPIED',
+        };
+        harness.eventSource.emit(harness.context.eventTypes.SETTINGS_UPDATED);
+        await flushMicrotasks(8);
+
+        harness.context.extensionSettings.customModelRouter = {
+            schemaVersion: 2,
+            models: [createModelRecord('vertexai', VERTEX_MODEL_ID)],
+            selectedModels: { vertexai: VERTEX_MODEL_ID },
+        };
+        harness.eventSource.emit(harness.context.eventTypes.SETTINGS_UPDATED);
+        await flushMicrotasks(8);
+
+        const panel = openPanel(harness);
+        panel.querySelector('#cmr_copy_diagnostics').dispatchEvent(new FakeEvent('click'));
+        await flushMicrotasks(8);
+
+        const report = JSON.parse(copiedDiagnostics);
+        const repairCheck = report.checks.find(check => check.id === 'settings-repair');
+        assert.equal(report.status, 'error');
+        assert.equal(repairCheck.status, 'failed');
+        assert.deepEqual(repairCheck.details.errorCodes, ['future_registry_schema']);
+        assert.deepEqual(report.repair.notices, []);
+        assert.deepEqual(report.repair.warnings, []);
+        assert.deepEqual(report.repair.errors, [{
+            severity: 'error',
+            code: 'future_registry_schema',
+            message: '현재 확장보다 새로운 Registry 스키마라 저장값 적용을 중단했습니다.',
+        }]);
+        assert.equal(
+            report.counts.passed + report.counts.warning + report.counts.failed,
+            report.checks.length,
+        );
+        assert.doesNotMatch(copiedDiagnostics, /999|SHOULD_NOT_BE_COPIED|sensitiveRawValue/);
+    } finally {
+        console.error = originalConsoleError;
         if (navigatorDescriptor) {
             Object.defineProperty(globalThis, 'navigator', navigatorDescriptor);
         } else {

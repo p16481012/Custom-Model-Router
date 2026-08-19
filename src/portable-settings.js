@@ -1,5 +1,6 @@
 import {
     SETTINGS_SCHEMA_VERSION,
+    VERTEX_PROVIDER,
     hasEnabledModel,
     normalizeSettings,
 } from './registry.js';
@@ -628,6 +629,17 @@ function countRecordEntries(value) {
     return isRecord(value) ? Object.keys(value).length : 0;
 }
 
+function countRegistrySelections(value) {
+    const selectedModels = isRecord(value?.selectedModels) ? value.selectedModels : {};
+    const legacySelection = value?.selectedModelId;
+    const currentVertexSelection = Object.hasOwn(selectedModels, VERTEX_PROVIDER)
+        ? selectedModels[VERTEX_PROVIDER]
+        : undefined;
+    const legacyIsDistinct = Boolean(legacySelection)
+        && currentVertexSelection !== legacySelection;
+    return Object.keys(selectedModels).length + (legacyIsDistinct ? 1 : 0);
+}
+
 /**
  * 현재 확장 저장값을 복구한다. 미래 스키마는 조용히 낮추지 않고 명시적으로 중단한다.
  */
@@ -668,8 +680,7 @@ export function repairSettingsBundle(options = {}) {
     const purposeRoutes = clonePurposeRoutes(routesSource);
     const beforeCounts = {
         models: Array.isArray(registrySource.models) ? registrySource.models.length : 0,
-        selections: countRecordEntries(registrySource.selectedModels)
-            + (registrySource.selectedModelId ? 1 : 0),
+        selections: countRegistrySelections(registrySource),
         routes: countRecordEntries(routesSource.routes),
     };
     const afterCounts = {

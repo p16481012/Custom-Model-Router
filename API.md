@@ -1,8 +1,8 @@
 # 공개 Registry API
 
-Custom Model Router v0.6.7은 다른 SillyTavern 확장이 내부 파일 경로에 의존하지 않고 등록 모델과 용도별 라우팅을 사용할 수 있도록 `globalThis.CustomModelRouter`를 제공합니다. Registry API 계약 버전은 `1.1.0`, Routing API 계약 버전은 `1.0.0`이며 v0.5.0과 동일합니다.
+Custom Model Router v0.6.8은 다른 SillyTavern 확장이 내부 파일 경로에 의존하지 않고 등록 모델과 용도별 라우팅을 사용할 수 있도록 `globalThis.CustomModelRouter`를 제공합니다. Registry API 계약 버전은 `1.1.0`, Routing API 계약 버전은 `1.0.0`이며 v0.5.0과 동일합니다.
 
-v0.6.0의 범용 DOM 모델 브리지, 호환성 진단과 설정 백업·복구, v0.6.7의 Playwright UI 회귀 검사 인프라는 이 전역 API 계약에 포함되지 않습니다. v0.6.6부터 일반 UI의 모델 목록은 등록·삭제만 담당하고, 외부 대상 목록은 단일 직접 연결 상태만 읽기 전용으로 표시합니다. v0.6.7은 이 동작이나 공개 API 버전을 바꾸지 않습니다. Routing API는 개발자 또는 연동 확장이 명시적으로 사용하는 opt-in 계약이며 일반 라우팅 UI는 없습니다. 용도별 경로에는 Connection Profile ID만 저장되고 프로필 본문·API 키·endpoint는 복제되지 않습니다.
+v0.6.0의 범용 DOM 모델 브리지, 호환성 진단과 설정 백업·복구, v0.6.7의 Playwright UI 회귀 검사 인프라는 이 전역 API 계약에 포함되지 않습니다. v0.6.6부터 일반 UI의 모델 목록은 등록·삭제만 담당하고, 외부 대상 목록은 단일 직접 연결 상태만 읽기 전용으로 표시합니다. v0.6.8은 동일 구조의 외부 모델 칸을 각각 고유 target으로 구분하고 진단 정합성을 보완했지만 공개 API 버전과 호출 계약은 바꾸지 않습니다. Routing API는 개발자 또는 연동 확장이 명시적으로 사용하는 opt-in 계약이며 일반 라우팅 UI는 없습니다. 용도별 경로에는 Connection Profile ID만 저장되고 프로필 본문·API 키·endpoint는 복제되지 않습니다.
 
 ## 호환성 확인
 
@@ -111,7 +111,7 @@ DOM 브리지는 전역 `fetch` 또는 `XMLHttpRequest`를 monkey patch하지 �
 
 ## 외부 연결 저장 계약
 
-DOM 브리지 내부 저장 schema v1은 다음 구조입니다. target ID는 외부 컨트롤의 ID·name·label과 상위 확장 구조 등 DOM 표식을 조합해 만든 식별자이며 endpoint나 비밀값을 포함하지 않습니다. `mappings`는 과거 설정을 읽기 위한 빈 호환 필드로만 남고, `selectedModels`에는 target의 마지막 CMR 선택과 provider 식별자를 저장합니다. 동일 값이 여러 provider에 존재하는 입력란에서는 오연결을 피하기 위해 후보 provider가 함께 저장될 수 있습니다.
+DOM 브리지 내부 저장 schema v1은 다음 구조입니다. target ID는 외부 컨트롤의 ID·name·label과 상위 확장 구조 등 DOM 표식을 조합해 만든 식별자이며 endpoint나 비밀값을 포함하지 않습니다. 같은 확장 영역에서 이 표식까지 같은 모델 칸이 여러 개면 첫 대상의 기존 ID를 유지하고 후속 대상에는 구조 위치를 더해 서로 구분합니다. 같은 live DOM 객체가 재정렬될 때는 기존 target ID를 유지하지만, 동일한 ID·name·label·구조의 컨트롤을 외부 확장이 모두 새 객체로 만들고 순서까지 뒤집으면 이전 target과 새 컨트롤을 대응할 안정 표식이 없습니다. 이 경우 선택 복원을 보장하려면 외부 확장이 고유 ID·name·label 또는 안정된 상위 구조 표식을 제공해야 합니다. `mappings`는 과거 설정을 읽기 위한 빈 호환 필드로만 남고, `selectedModels`에는 target의 마지막 CMR 선택과 provider 식별자를 저장합니다. 동일 값이 여러 provider에 존재하는 입력란에서는 오연결을 피하기 위해 후보 provider가 함께 저장될 수 있습니다.
 
 ```json
 {

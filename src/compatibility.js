@@ -1,6 +1,6 @@
 import { getProvider, getProviders } from './providers.js';
 
-export const DIAGNOSTIC_SCHEMA_VERSION = 1;
+export const DIAGNOSTIC_SCHEMA_VERSION = 2;
 export const MINIMUM_SILLYTAVERN_VERSION = '1.18.0';
 export const VALIDATED_SILLYTAVERN_VERSIONS = Object.freeze(['1.18.0']);
 
@@ -29,6 +29,7 @@ const RESOURCE_METRICS = Object.freeze([
     'launcherCount',
     'panelCount',
     'observerCount',
+    'externalObserverCount',
     'listenerCount',
     'boundControlCount',
     'modelGroupCount',
@@ -39,6 +40,7 @@ const SINGLE_INSTANCE_RESOURCE_LIMITS = Object.freeze({
     launcherCount: 1,
     panelCount: 1,
     observerCount: 1,
+    externalObserverCount: 1,
 });
 
 const BOUNDED_RESOURCE_LIMITS = Object.freeze({
@@ -65,10 +67,12 @@ function createCheck(id, category, status, message, details = undefined) {
     return result;
 }
 
-function summarizeChecks(checks) {
+export function summarizeDiagnosticChecks(checks) {
     const counts = { passed: 0, warning: 0, failed: 0 };
     for (const check of checks) {
-        counts[check.status] += 1;
+        if (Object.hasOwn(counts, check?.status)) {
+            counts[check.status] += 1;
+        }
     }
 
     const status = counts.failed > 0 ? 'error' : (counts.warning > 0 ? 'warning' : 'ok');
@@ -557,7 +561,7 @@ export function diagnoseCompatibility(options = {}) {
         ));
 
     checks.push(...diagnoseRuntimeResources(options.runtimeState, documentRef));
-    const result = summarizeChecks(checks);
+    const result = summarizeDiagnosticChecks(checks);
     return {
         schemaVersion: DIAGNOSTIC_SCHEMA_VERSION,
         status: result.status,
@@ -593,8 +597,9 @@ function analyzeMonitorSamples(samples) {
     const activeSamples = samples.filter(sample => sample.phase === 'active');
     if (activeSamples.length < 2) {
         return {
-            status: 'warning',
-            summary: '장시간 안정성을 판단하려면 활성 상태 샘플이 2개 이상 필요합니다.',
+            status: 'pending',
+            evaluated: false,
+            summary: '반복 전환 표본이 부족해 장시간 안정성 검사를 아직 실행하지 않았습니다.',
             sampleCount: samples.length,
             activeSampleCount: activeSamples.length,
             drift: [],
@@ -650,6 +655,7 @@ function analyzeMonitorSamples(samples) {
     const status = drift.length ? 'error' : 'ok';
     return {
         status,
+        evaluated: true,
         summary: status === 'ok'
             ? `활성 상태 샘플 ${activeSamples.length}개에서 런타임 자원 제한 초과를 찾지 못했습니다.`
             : `활성 상태 샘플 ${activeSamples.length}개에서 런타임 자원 제한 초과 또는 중복을 찾았습니다.`,
@@ -659,6 +665,72 @@ function analyzeMonitorSamples(samples) {
         maxima,
         transient,
     };
+}
+
+function normalizeRuntimeCount(value) {
+    return Number.isInteger(value) && value >= 0 ? value : 0;
+}
+
+/**
+ * 외부 브리지의 공개 가능한 개수만으로 observer와 대상 분류 불변식을 검사한다.
+ * 대상 label·DOM 식별자·현재 값은 결과에 포함하지 않는다.
+ */
+export function diagnoseExternalRuntimeResources(metrics = {}, targets = []) {
+    const normalizedTargets = Array.isArray(targets) ? targets : [];
+    const observerCount = normalizeRuntimeCount(metrics.observerCount);
+    const targetCount = normalizeRuntimeCount(metrics.targetCount);
+    const boundCount = normalizeRuntimeCount(metrics.boundCount);
+    const directCount = normalizeRuntimeCount(metrics.directCount);
+    const listenerCount = normalizeRuntimeCount(metrics.listenerCount);
+    const actualDirectCount = normalizedTargets.filter(target => (
+        target?.resolution?.source === 'direct'
+    )).length;
+    const excludedTargets = normalizedTargets.filter(target => (
+        target?.resolution?.source === 'risk-blocked'
+    ));
+    const excludedCount = excludedTargets.length;
+    const expectedListenerCount = normalizedTargets.reduce((count, target) => (
+        count
+        + (target?.resolution?.source === 'direct' ? 1 : 0)
+        + (target?.providerControl && target.providerControl !== target.control ? 2 : 0)
+    ), 0);
+    const excludedReasonCounts = new Map();
+    for (const target of excludedTargets) {
+        const reason = String(target?.resolution?.excludedReason ?? 'unspecified').slice(0, 64);
+        excludedReasonCounts.set(reason, (excludedReasonCounts.get(reason) ?? 0) + 1);
+    }
+    const excludedByReason = Object.fromEntries(excludedReasonCounts);
+
+    const invariants = {
+        singleObserver: observerCount === 1,
+        reportedTargetsMatch: targetCount === normalizedTargets.length,
+        reportedDirectMatch: directCount === actualDirectCount,
+        candidatePartitionMatches: targetCount === directCount + excludedCount,
+        directBindingsMatch: boundCount === directCount,
+        listenerBindingsMatch: listenerCount === expectedListenerCount,
+    };
+    const valid = Object.values(invariants).every(Boolean);
+    const inventory = `후보 ${targetCount}개 = 직접 연결 ${directCount}개 + 비채팅·비호환 제외 ${excludedCount}개`;
+
+    return createCheck(
+        'external-model-controls',
+        'external',
+        valid ? 'passed' : 'failed',
+        valid
+            ? `외부 모델 칸 ${inventory}`
+            : `외부 모델 칸 런타임 집계가 일치하지 않습니다. ${inventory}`,
+        {
+            observerCount,
+            targetCount,
+            boundCount,
+            directCount,
+            listenerCount,
+            expectedListenerCount,
+            excludedCount,
+            excludedByReason,
+            invariants,
+        },
+    );
 }
 
 /**

@@ -368,6 +368,197 @@ test('target ID는 동일한 extension 구조의 DOM 재생성 후에도 안정�
     assert.match(createExternalTargetId(first), /^cmr-ext-[a-f0-9]{8}$/);
 });
 
+test('동일 구조 target 충돌은 첫 ID를 유지하고 후속 input의 선택과 datalist를 안정적으로 분리한다', () => {
+    function createDuplicateInputs() {
+        const documentRef = new FakeDocument();
+        const panel = documentRef.createElement('section');
+        panel.setAttribute('data-extension-id', 'duplicate-model-fields');
+        const first = documentRef.createElement('input');
+        const second = documentRef.createElement('input');
+        first.name = 'model';
+        second.name = 'model';
+        panel.append(first, second);
+        documentRef.append(panel);
+        return { documentRef, first, second };
+    }
+
+    const firstRuntime = createDuplicateInputs();
+    const legacyTargetId = createExternalTargetId(firstRuntime.first, {
+        documentRef: firstRuntime.documentRef,
+    });
+    assert.equal(
+        legacyTargetId,
+        createExternalTargetId(firstRuntime.second, { documentRef: firstRuntime.documentRef }),
+    );
+    const selections = [];
+    const controller = createExternalIntegrationController({
+        root: firstRuntime.documentRef,
+        documentRef: firstRuntime.documentRef,
+        getModels: providerId => providerId === 'openai'
+            ? [
+                { provider: 'openai', id: 'gpt-first' },
+                { provider: 'openai', id: 'gpt-second' },
+            ]
+            : [],
+        onSelectionChanged: selection => selections.push(selection),
+        observerFactory: () => ({ observe() {}, disconnect() {} }),
+    });
+
+    const started = controller.start();
+    assert.equal(started.length, 2);
+    assert.equal(started[0].targetId, legacyTargetId);
+    assert.notEqual(started[1].targetId, legacyTargetId);
+    assert.match(started[1].targetId, /^cmr-ext-[a-f0-9]{8}$/);
+    const firstListId = firstRuntime.first.getAttribute('list');
+    const secondListId = firstRuntime.second.getAttribute('list');
+    assert.notEqual(firstListId, secondListId);
+    assert.equal(firstRuntime.documentRef.getElementById(firstListId), started[0].optionHost);
+    assert.equal(firstRuntime.documentRef.getElementById(secondListId), started[1].optionHost);
+    firstRuntime.first.value = 'gpt-first';
+    firstRuntime.first.dispatchEvent({ type: 'input', isTrusted: true });
+    firstRuntime.second.value = 'gpt-second';
+    firstRuntime.second.dispatchEvent({ type: 'input', isTrusted: true });
+    assert.deepEqual(selections.map(selection => [selection.targetId, selection.modelId]), [
+        [started[0].targetId, 'gpt-first'],
+        [started[1].targetId, 'gpt-second'],
+    ]);
+
+    const rescanned = controller.rescan();
+    assert.deepEqual(
+        rescanned.map(target => target.targetId),
+        started.map(target => target.targetId),
+    );
+    assert.equal(firstRuntime.first.getAttribute('list'), firstListId);
+    assert.equal(firstRuntime.second.getAttribute('list'), secondListId);
+
+    firstRuntime.first.readOnly = true;
+    const secondOnly = controller.rescan();
+    assert.equal(secondOnly.length, 1);
+    assert.equal(secondOnly[0].control, firstRuntime.second);
+    assert.equal(secondOnly[0].targetId, started[1].targetId);
+    firstRuntime.first.parentElement.append(firstRuntime.first);
+    const secondOnlyAfterMove = controller.rescan();
+    assert.equal(secondOnlyAfterMove.length, 1);
+    assert.equal(secondOnlyAfterMove[0].targetId, started[1].targetId);
+    firstRuntime.first.readOnly = false;
+    const restoredAfterMove = controller.rescan();
+    assert.equal(
+        restoredAfterMove.find(target => target.control === firstRuntime.first).targetId,
+        started[0].targetId,
+    );
+    assert.equal(
+        restoredAfterMove.find(target => target.control === firstRuntime.second).targetId,
+        started[1].targetId,
+    );
+
+    const originalTargetIdByControl = new Map(started.map(target => [target.control, target.targetId]));
+    firstRuntime.first.parentElement.prepend(firstRuntime.first);
+    const reordered = controller.rescan();
+    assert.deepEqual(reordered.map(target => target.control), [firstRuntime.first, firstRuntime.second]);
+    assert.equal(
+        reordered.find(target => target.control === firstRuntime.first).targetId,
+        originalTargetIdByControl.get(firstRuntime.first),
+    );
+    assert.equal(
+        reordered.find(target => target.control === firstRuntime.second).targetId,
+        originalTargetIdByControl.get(firstRuntime.second),
+    );
+    selections.length = 0;
+    firstRuntime.second.value = 'gpt-first';
+    firstRuntime.second.dispatchEvent({ type: 'input', isTrusted: true });
+    firstRuntime.first.value = 'gpt-second';
+    firstRuntime.first.dispatchEvent({ type: 'input', isTrusted: true });
+    assert.deepEqual(selections.map(selection => [selection.targetId, selection.modelId]), [
+        [originalTargetIdByControl.get(firstRuntime.second), 'gpt-first'],
+        [originalTargetIdByControl.get(firstRuntime.first), 'gpt-second'],
+    ]);
+
+    firstRuntime.first.parentElement.append(firstRuntime.first);
+    controller.rescan();
+    controller.destroy();
+    firstRuntime.first.value = '';
+    firstRuntime.second.value = '';
+    const inserted = firstRuntime.documentRef.createElement('input');
+    inserted.name = 'model';
+    firstRuntime.first.parentElement.prepend(inserted);
+    const liveRecreatedController = createExternalIntegrationController({
+        root: firstRuntime.documentRef,
+        documentRef: firstRuntime.documentRef,
+        getModels: providerId => providerId === 'openai'
+            ? [
+                { provider: 'openai', id: 'gpt-first' },
+                { provider: 'openai', id: 'gpt-second' },
+            ]
+            : [],
+        getPreferredModels: targetId => {
+            if (targetId === originalTargetIdByControl.get(firstRuntime.first)) {
+                return { openai: 'gpt-second' };
+            }
+            if (targetId === originalTargetIdByControl.get(firstRuntime.second)) {
+                return { openai: 'gpt-first' };
+            }
+            return {};
+        },
+        observerFactory: () => ({ observe() {}, disconnect() {} }),
+        eventFactory: type => ({ type, isTrusted: false }),
+    });
+    const liveRecreatedTargets = liveRecreatedController.start();
+    assert.deepEqual(
+        liveRecreatedTargets.map(target => target.control),
+        [inserted, firstRuntime.second, firstRuntime.first],
+    );
+    assert.equal(
+        liveRecreatedTargets.find(target => target.control === firstRuntime.first).targetId,
+        originalTargetIdByControl.get(firstRuntime.first),
+    );
+    assert.equal(
+        liveRecreatedTargets.find(target => target.control === firstRuntime.second).targetId,
+        originalTargetIdByControl.get(firstRuntime.second),
+    );
+    assert.equal(firstRuntime.first.value, 'gpt-second');
+    assert.equal(firstRuntime.second.value, 'gpt-first');
+    assert.equal(inserted.value, '');
+    assert.notEqual(
+        liveRecreatedTargets.find(target => target.control === inserted).targetId,
+        originalTargetIdByControl.get(firstRuntime.first),
+    );
+    assert.notEqual(
+        liveRecreatedTargets.find(target => target.control === inserted).targetId,
+        originalTargetIdByControl.get(firstRuntime.second),
+    );
+
+    const secondRuntime = createDuplicateInputs();
+    const recreatedController = createExternalIntegrationController({
+        root: secondRuntime.documentRef,
+        documentRef: secondRuntime.documentRef,
+        getModels: providerId => providerId === 'openai'
+            ? [
+                { provider: 'openai', id: 'gpt-first' },
+                { provider: 'openai', id: 'gpt-second' },
+            ]
+            : [],
+        getPreferredModels: targetId => targetId === started[0].targetId
+            ? { openai: 'gpt-first' }
+            : { openai: 'gpt-second' },
+        observerFactory: () => ({ observe() {}, disconnect() {} }),
+        eventFactory: type => ({ type, isTrusted: false }),
+    });
+    const recreatedTargets = recreatedController.start();
+    assert.deepEqual(
+        recreatedTargets.map(target => target.targetId),
+        started.map(target => target.targetId),
+    );
+    assert.equal(secondRuntime.first.value, 'gpt-first');
+    assert.equal(secondRuntime.second.value, 'gpt-second');
+
+    liveRecreatedController.destroy();
+    recreatedController.destroy();
+    assert.equal(firstRuntime.first.getAttribute('list'), null);
+    assert.equal(firstRuntime.second.getAttribute('list'), null);
+    assert.equal(firstRuntime.documentRef.getElementById(firstListId), null);
+    assert.equal(firstRuntime.documentRef.getElementById(secondListId), null);
+});
+
 test('legacy provider mapping은 제거되고 안전한 target은 모두 직접 연결된다', () => {
     const target = {
         targetId: 'cmr-ext-deadbeef',
@@ -1009,6 +1200,69 @@ test('controller는 모든 안전 target을 직접 연결하고 재렌더·선�
     assert.deepEqual(controller.getMetrics(), {
         observerCount: 0, targetCount: 0, boundCount: 0, directCount: 0, listenerCount: 0,
     });
+});
+
+test('DOM에 남은 비활성 target은 native fallback을 알리고 분리된 target은 조용히 정리한다', () => {
+    const documentRef = new FakeDocument();
+    const panel = documentRef.createElement('section');
+    panel.setAttribute('data-extension-id', 'lifecycle-targets');
+    const disabledSelect = documentRef.createElement('select');
+    disabledSelect.id = 'disabled_later_model';
+    disabledSelect.append(option(documentRef, 'native-disabled'));
+    disabledSelect.value = 'native-disabled';
+    const detachedSelect = documentRef.createElement('select');
+    detachedSelect.id = 'detached_later_model';
+    detachedSelect.append(option(documentRef, 'native-detached'));
+    detachedSelect.value = 'native-detached';
+    panel.append(disabledSelect, detachedSelect);
+    documentRef.append(panel);
+
+    const disabledEvents = [];
+    const detachedEvents = [];
+    const invalidations = [];
+    disabledSelect.addEventListener('change', event => {
+        if (event.isTrusted === false) {
+            disabledEvents.push(disabledSelect.value);
+        }
+    });
+    detachedSelect.addEventListener('change', event => {
+        if (event.isTrusted === false) {
+            detachedEvents.push(detachedSelect.value);
+        }
+    });
+    const controller = createExternalIntegrationController({
+        root: documentRef,
+        documentRef,
+        getModels: providerId => providerId === 'openai'
+            ? [{ provider: 'openai', id: 'gpt-next' }]
+            : [],
+        onSelectionInvalidated: invalidation => invalidations.push(invalidation),
+        observerFactory: () => ({ observe() {}, disconnect() {} }),
+        eventFactory: type => ({ type, isTrusted: false }),
+    });
+    controller.start();
+
+    for (const select of [disabledSelect, detachedSelect]) {
+        const managed = select.options.find(item => item.dataset.cmrExternalModel === 'true');
+        assert.ok(managed);
+        for (const optionItem of select.options) {
+            optionItem.selected = optionItem === managed;
+        }
+        select.value = 'gpt-next';
+    }
+    disabledSelect.disabled = true;
+    detachedSelect.remove();
+
+    assert.deepEqual(controller.rescan(), []);
+    assert.equal(disabledSelect.value, 'native-disabled');
+    assert.deepEqual(disabledEvents, ['native-disabled']);
+    assert.deepEqual(detachedEvents, []);
+    assert.equal(disabledSelect.options.some(item => item.dataset.cmrExternalModel === 'true'), false);
+    assert.equal(detachedSelect.options.some(item => item.dataset.cmrExternalModel === 'true'), false);
+    assert.equal(invalidations.length, 1);
+    assert.equal(invalidations[0].reason, 'target-unavailable');
+
+    controller.destroy();
 });
 
 test('직접 연결 controller는 중복 모델 ID도 실제 selected option metadata로 제공업체를 구분한다', () => {
