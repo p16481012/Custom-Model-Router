@@ -1,6 +1,6 @@
 # 공개 Registry API
 
-Custom Model Router v0.6.0은 다른 SillyTavern 확장이 내부 파일 경로에 의존하지 않고 등록 모델과 용도별 라우팅을 사용할 수 있도록 `globalThis.CustomModelRouter`를 제공합니다. Registry API 계약 버전은 `1.1.0`, Routing API 계약 버전은 `1.0.0`이며 v0.5.0과 동일합니다.
+Custom Model Router v0.6.1은 다른 SillyTavern 확장이 내부 파일 경로에 의존하지 않고 등록 모델과 용도별 라우팅을 사용할 수 있도록 `globalThis.CustomModelRouter`를 제공합니다. Registry API 계약 버전은 `1.1.0`, Routing API 계약 버전은 `1.0.0`이며 v0.5.0과 동일합니다.
 
 v0.6.0의 범용 DOM 모델 브리지, 호환성 진단과 설정 백업·복구는 관리 팝업 기능이며 이 전역 API 계약에는 포함되지 않습니다. 용도별 경로에는 Connection Profile ID만 저장되고 프로필 본문·API 키·endpoint는 복제되지 않습니다.
 
@@ -73,7 +73,7 @@ v0.5.0의 Registry/Routing API는 소비 확장이 직접 호출해야 하는 op
 1. 표준 `select`, 텍스트 `input`, `datalist` 중 model/LLM 의미를 가진 외부 컨트롤을 찾습니다.
 2. 명시 provider attribute, 연결된 provider/source select, ID·name·label, option의 `data-type`과 provider alias를 조합해 제공업체를 추론합니다.
 3. 신뢰도가 충분한 대상에는 해당 provider의 Registry 모델만 CMR 소유 option으로 추가합니다.
-4. 모호한 대상은 변경하지 않고 관리 팝업에서 수동 provider mapping 또는 사용 안 함을 선택하게 합니다.
+4. 모호한 대상은 변경하지 않고 관리 팝업의 `연결 방식`에서 provider 직접 지정 또는 연결 안 함을 선택하게 합니다.
 5. 외부 확장이 컨트롤을 다시 렌더링하면 CMR option을 다시 추가합니다. 동일 target의 새 컨트롤 값이 비어 있을 때만 provider별 마지막 CMR 선택을 복원하며, 외부 확장이 둔 유효한 현재값은 덮어쓰지 않습니다.
 6. 비활성화 시 CMR이 추가한 option, observer와 listener만 제거합니다.
 
@@ -103,7 +103,7 @@ DOM 브리지는 전역 `fetch` 또는 `XMLHttpRequest`를 monkey patch하지 �
 - React 등 자체 위젯만 있는 확장, iframe 내부, 닫힌 Shadow DOM
 - 모델 컨트롤 없이 직접 요청하는 확장
 
-마지막 세 유형은 자동 연결할 수 없으며 이 문서의 Registry 또는 Routing API를 사용하는 전용 opt-in 연동이 필요합니다. 비대상 판별도 DOM의 이름·레이블·속성·상위 확장 표식에 의존하는 best-effort입니다. 용도를 드러내지 않는 일반적인 모델 컨트롤이 잘못 감지되면 대상 mapping을 `disabled`로 저장해 **사용 안 함**으로 지정해야 합니다.
+마지막 세 유형은 자동 연결할 수 없으며 이 문서의 Registry 또는 Routing API를 사용하는 전용 opt-in 연동이 필요합니다. 비대상 판별도 DOM의 이름·레이블·속성·상위 확장 표식에 의존하는 best-effort입니다. 용도를 드러내지 않는 일반적인 모델 컨트롤이 잘못 감지되면 대상 mapping을 `disabled`로 저장해 **연결 안 함**으로 지정해야 합니다.
 
 ## 외부 연결 저장 계약
 

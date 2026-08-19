@@ -66,10 +66,11 @@ import {
     setExternalSelectedModel,
 } from './src/external-settings.js';
 
-const EXTENSION_VERSION = '0.6.0';
+const EXTENSION_VERSION = '0.6.1';
 const SETTINGS_KEY = 'customModelRouter';
 const ROUTES_SETTINGS_KEY = 'customModelRouterRouting';
 const EXTERNAL_SETTINGS_KEY = 'customModelRouterExternalIntegrations';
+const EXTERNAL_MODE_CHOOSE = '__choose_provider__';
 const OBSERVER_ROOT_SELECTOR = '#rm_api_block';
 const CONNECTION_PROFILE_SELECTOR = '#connection_profiles';
 const API_TITLE_SELECTOR = '#title_api';
@@ -700,116 +701,261 @@ function announceExternal(message, state = 'ok') {
     status.textContent = message;
 }
 
-function populateExternalProviderSelect(select, selectedProviderId = '') {
-    const placeholder = document.createElement('option');
-    placeholder.value = '';
-    placeholder.textContent = '제공업체 선택';
-    const options = getProviders().map(provider => createOption(provider));
-    select.replaceChildren(placeholder, ...options);
-    select.value = options.some(option => option.value === selectedProviderId)
-        ? selectedProviderId
-        : '';
-}
-
 function getExternalTargetHint(target) {
     const controlId = String(target?.control?.id ?? '').trim();
     const controlName = String(target?.control?.name ?? target?.control?.getAttribute?.('name') ?? '').trim();
     return controlId ? `#${controlId}` : (controlName ? `[name="${controlName}"]` : target.targetId);
 }
 
+function humanizeExternalContext(value) {
+    const translatedTokens = {
+        caption: 'Caption',
+        memory: '메모리',
+        summary: '요약',
+        summarizer: '요약',
+        translate: '번역',
+        translation: '번역',
+        translator: '번역',
+        vision: '이미지 설명',
+    };
+    const ignoredTokens = new Set([
+        'block', 'container', 'content', 'control', 'drawer', 'ext', 'extension', 'field',
+        'form', 'generic', 'id', 'input', 'main', 'model', 'panel', 'primary', 'root',
+        'select', 'selector', 'setting', 'settings', 'wrapper',
+    ]);
+    const tokens = String(value ?? '')
+        .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+        .split(/[^\p{L}\p{N}]+/u)
+        .map(token => token.trim())
+        .filter(Boolean)
+        .filter(token => !ignoredTokens.has(token.toLowerCase()))
+        .slice(0, 4)
+        .map(token => translatedTokens[token.toLowerCase()] ?? token);
+    return tokens.join(' · ');
+}
+
+function getExternalContextName(target) {
+    const control = target?.control;
+    const explicitName = [
+        control?.getAttribute?.('data-extension-name'),
+        control?.getAttribute?.('data-extension-id'),
+    ].map(humanizeExternalContext).find(Boolean) ?? '';
+
+    let ancestorName = '';
+    for (let ancestor = control?.parentElement, depth = 0; ancestor && depth < 6; ancestor = ancestor.parentElement, depth += 1) {
+        const heading = [...(ancestor.children ?? [])].find(child => (
+            child.matches?.('h1,h2,h3,h4,h5,h6,legend,.inline-drawer-header')
+        ));
+        const candidates = [
+            ancestor.getAttribute?.('data-extension-name'),
+            ancestor.getAttribute?.('data-extension-id'),
+            heading?.textContent,
+            ancestor.getAttribute?.('aria-label'),
+            ancestor.id,
+        ];
+        for (const candidate of candidates) {
+            const name = humanizeExternalContext(candidate);
+            if (name) {
+                ancestorName = name;
+                break;
+            }
+        }
+        if (ancestorName) {
+            break;
+        }
+    }
+
+    const controlName = [control?.id, control?.name, control?.getAttribute?.('name')]
+        .map(humanizeExternalContext)
+        .find(Boolean) ?? '';
+    return [...new Set([explicitName || ancestorName, controlName].filter(Boolean))].join(' · ');
+}
+
+function getExternalTargetDisplayName(target, fallbackIndex = 0) {
+    const controlId = String(target?.control?.id ?? '').trim().toLowerCase();
+    const knownNames = {
+        caption_multimodal_model: 'Caption · 이미지 설명 모델',
+        caption_custom_model: 'Caption · 사용자 지정 모델',
+    };
+    if (knownNames[controlId]) {
+        return knownNames[controlId];
+    }
+    const label = String(target?.label ?? '').trim();
+    if (label && !/^(?:model(?: id)?|모델(?: id)?)$/i.test(label)) {
+        return label;
+    }
+    const contextName = getExternalContextName(target);
+    return contextName
+        ? `${contextName} · 모델 입력란`
+        : `다른 확장의 모델 입력란 ${fallbackIndex + 1}`;
+}
+
+function getExternalResolutionCopy(target) {
+    const source = target?.resolution?.source ?? 'unresolved';
+    const provider = getProvider(target?.resolution?.providerId);
+    if (source === 'manual') {
+        return {
+            badge: '사용 가능',
+            badgeKind: 'saved',
+            summary: `${provider?.label ?? '선택한 제공업체'} · 직접 지정`,
+            explanation: `${provider?.label ?? '선택한 제공업체'}의 등록 모델을 이 입력란에 표시합니다.`,
+        };
+    }
+    if (source.startsWith('auto:')) {
+        return {
+            badge: '사용 가능',
+            badgeKind: 'selected',
+            summary: `${provider?.label ?? '제공업체'} · 자동으로 연결됨`,
+            explanation: `CMR이 ${provider?.label ?? '제공업체'} 연결을 찾았습니다. 등록 모델을 이 입력란에 표시합니다.`,
+        };
+    }
+    if (source === 'manual-disabled') {
+        return {
+            badge: '연결 안 함',
+            badgeKind: '',
+            summary: 'CMR 모델을 표시하지 않음',
+            explanation: '사용자 설정에 따라 CMR이 이 모델 입력란을 변경하지 않습니다.',
+        };
+    }
+    return {
+        badge: '설정 필요',
+        badgeKind: '',
+        summary: '제공업체를 확인하지 못함',
+        explanation: '제공업체를 자동으로 판단하지 못했습니다. 아래 연결 방식에서 사용할 제공업체를 직접 선택하세요.',
+    };
+}
+
+function populateExternalModeSelect(select, target) {
+    const mapping = externalSettings?.mappings?.[target.targetId];
+    const unresolved = target?.resolution?.source === 'unresolved'
+        && mapping !== EXTERNAL_MAPPING_DISABLED
+        && !getProvider(mapping);
+    const options = [];
+    if (unresolved) {
+        const chooseOption = document.createElement('option');
+        chooseOption.value = EXTERNAL_MODE_CHOOSE;
+        chooseOption.textContent = '제공업체를 선택하세요';
+        chooseOption.disabled = true;
+        options.push(chooseOption);
+    }
+
+    const autoOption = document.createElement('option');
+    autoOption.value = '';
+    autoOption.textContent = unresolved ? '자동 감지 다시 시도' : '자동으로 찾기 (권장)';
+
+    const providerGroup = document.createElement('optgroup');
+    providerGroup.label = '제공업체 직접 지정';
+    for (const provider of getProviders()) {
+        providerGroup.append(createOption(provider));
+    }
+
+    const disabledOption = document.createElement('option');
+    disabledOption.value = EXTERNAL_MAPPING_DISABLED;
+    disabledOption.textContent = '이 입력란에서는 연결 안 함';
+
+    select.replaceChildren(...options, autoOption, providerGroup, disabledOption);
+    select.value = mapping === EXTERNAL_MAPPING_DISABLED || getProvider(mapping)
+        ? mapping
+        : (unresolved ? EXTERNAL_MODE_CHOOSE : '');
+}
+
 function renderExternalIntegrations() {
     const list = settingsRoot?.querySelector('#cmr_external_list');
     const count = settingsRoot?.querySelector('#cmr_external_count');
+    const skipped = settingsRoot?.querySelector('#cmr_external_skipped');
     if (!list || !count) {
         return;
     }
 
     const targets = externalIntegrationController?.getTargets?.() ?? [];
     const actionable = targets.filter(target => target.resolution?.source !== 'risk-blocked');
-    const excludedCount = targets.length - actionable.length;
+    const skippedCount = targets.length - actionable.length;
     const connectedCount = actionable.filter(target => Boolean(target.resolution?.providerId)).length;
     const unresolvedCount = actionable.filter(target => !target.resolution?.providerId
         && target.resolution?.source !== 'manual-disabled').length;
-    count.textContent = `감지 ${actionable.length}개 · 연결 ${connectedCount}개`;
-    count.title = excludedCount ? `Chat Completion 이외 모델 컨트롤 ${excludedCount}개 자동 제외` : '';
+    const disabledCount = actionable.filter(target => target.resolution?.source === 'manual-disabled').length;
+    count.textContent = `사용 가능 ${connectedCount}개${unresolvedCount ? ` · 설정 필요 ${unresolvedCount}개` : ''}${disabledCount ? ` · 연결 안 함 ${disabledCount}개` : ''}`;
+    count.removeAttribute?.('title');
+    if (skipped) {
+        skipped.textContent = skippedCount
+            ? `지원하지 않는 입력란 ${skippedCount}개는 안전을 위해 건드리지 않았습니다.`
+            : '현재 건너뛴 비채팅 모델 입력란은 없습니다.';
+    }
     list.replaceChildren();
 
     if (!actionable.length) {
         const empty = document.createElement('li');
         empty.className = 'cmr-empty';
-        empty.textContent = excludedCount
-            ? `연결 가능한 Chat Completion 모델 컨트롤이 없습니다. 비대상 ${excludedCount}개는 자동 제외했습니다.`
-            : '다른 확장의 모델 선택기나 입력란을 찾지 못했습니다.';
+        empty.textContent = '다른 확장에서 연결할 수 있는 Chat Completion 모델 입력란을 찾지 못했습니다.';
         list.append(empty);
     }
 
-    for (const target of actionable) {
+    for (const [targetIndex, target] of actionable.entries()) {
         const row = document.createElement('li');
         row.className = 'cmr-external-row';
         row.dataset.targetId = target.targetId;
+        row.dataset.needsAttention = target.resolution?.source === 'unresolved' ? 'true' : 'false';
+
+        const details = document.createElement('details');
+        details.className = 'cmr-external-details';
+        details.open = target.resolution?.source === 'unresolved';
+
+        const summary = document.createElement('summary');
+        const copy = getExternalResolutionCopy(target);
 
         const heading = document.createElement('div');
         heading.className = 'cmr-external-heading';
         const name = document.createElement('span');
         name.className = 'cmr-external-name';
-        name.textContent = target.label;
-        name.title = target.label;
-        const badgeKind = target.resolution?.source === 'manual'
-            ? 'saved'
-            : (target.resolution?.source?.startsWith('auto:') ? 'selected' : '');
-        const badgeText = target.resolution?.source === 'manual'
-            ? '수동 연결'
-            : (target.resolution?.source?.startsWith('auto:')
-                ? '자동 연결'
-                : (target.resolution?.source === 'manual-disabled' ? '사용 안 함' : '확인 필요'));
-        const badge = createBadge(badgeText, badgeKind);
+        name.textContent = getExternalTargetDisplayName(target, targetIndex);
+        name.title = name.textContent;
+        const badge = createBadge(copy.badge, copy.badgeKind);
+        heading.append(name);
+
+        const summaryDetail = document.createElement('span');
+        summaryDetail.className = 'cmr-external-summary-detail';
+        summaryDetail.textContent = copy.summary;
+        summary.append(heading, badge, summaryDetail);
+
+        const body = document.createElement('div');
+        body.className = 'cmr-external-body';
+        const explanation = document.createElement('p');
+        explanation.className = 'cmr-external-explanation';
+        explanation.id = `${target.targetId}_description`;
+        explanation.textContent = copy.explanation;
+
+        const modeField = document.createElement('div');
+        modeField.className = 'cmr-external-mode-field';
+        const modeLabel = document.createElement('label');
+        const modeSelect = document.createElement('select');
+        modeSelect.id = `${target.targetId}_mode`;
+        modeSelect.className = 'text_pole';
+        modeSelect.dataset.cmrExternalMode = 'true';
+        modeSelect.setAttribute('aria-describedby', explanation.id);
+        modeLabel.htmlFor = modeSelect.id;
+        modeLabel.setAttribute('for', modeSelect.id);
+        modeLabel.textContent = '연결 방식';
+        populateExternalModeSelect(modeSelect, target);
+        modeField.append(modeLabel, modeSelect);
+
+        const technical = document.createElement('details');
+        technical.className = 'cmr-external-technical';
+        const technicalLabel = document.createElement('summary');
+        technicalLabel.textContent = '문제 해결용 정보';
+        const technicalBody = document.createElement('div');
+        technicalBody.className = 'cmr-external-technical-body';
+        const technicalName = document.createElement('span');
+        technicalName.textContent = '기술 식별자';
         const hint = document.createElement('code');
         hint.className = 'cmr-external-hint';
         hint.textContent = getExternalTargetHint(target);
-        heading.append(name, badge, hint);
+        technicalBody.append(technicalName, hint);
+        technical.append(technicalLabel, technicalBody);
 
-        const actions = document.createElement('div');
-        actions.className = 'cmr-external-actions';
-        const providerSelect = document.createElement('select');
-        providerSelect.className = 'text_pole';
-        providerSelect.dataset.cmrExternalProvider = 'true';
-        providerSelect.setAttribute('aria-label', `${target.label}에 연결할 제공업체`);
-        const suggestedProvider = target.resolution?.providerId ?? target.inference?.providerId ?? '';
-        populateExternalProviderSelect(providerSelect, suggestedProvider);
-
-        const bindButton = document.createElement('button');
-        bindButton.type = 'button';
-        bindButton.className = 'menu_button';
-        bindButton.dataset.cmrExternalAction = 'bind';
-        bindButton.textContent = '연결';
-        bindButton.setAttribute('aria-label', `${target.label} 제공업체 연결 저장`);
-
-        const autoButton = document.createElement('button');
-        autoButton.type = 'button';
-        autoButton.className = 'menu_button';
-        autoButton.dataset.cmrExternalAction = 'auto';
-        autoButton.textContent = '자동';
-        autoButton.disabled = !Object.hasOwn(externalSettings?.mappings ?? {}, target.targetId);
-        autoButton.setAttribute('aria-label', `${target.label} 자동 판별 사용`);
-
-        const disableButton = document.createElement('button');
-        disableButton.type = 'button';
-        disableButton.className = 'menu_button';
-        disableButton.dataset.cmrExternalAction = 'disable';
-        disableButton.textContent = '제외';
-        disableButton.disabled = target.resolution?.source === 'manual-disabled';
-        disableButton.setAttribute('aria-label', `${target.label} 범용 연결에서 제외`);
-
-        actions.append(providerSelect, bindButton, autoButton, disableButton);
-        row.append(heading, actions);
+        body.append(explanation, modeField, technical);
+        details.append(summary, body);
+        row.append(details);
         list.append(row);
-    }
-
-    if (!settingsRoot?.querySelector('#cmr_external_status')?.textContent) {
-        announceExternal(
-            `자동·수동 연결 ${connectedCount}개 · 확인 필요 ${unresolvedCount}개${excludedCount ? ` · 비대상 ${excludedCount}개 제외` : ''}`,
-            unresolvedCount ? 'warning' : 'ok',
-        );
     }
 }
 
@@ -1331,47 +1477,65 @@ function onExternalRefresh() {
     const targets = externalIntegrationController?.rescan?.() ?? [];
     renderExternalIntegrations();
     const connected = targets.filter(target => Boolean(target.resolution?.providerId)).length;
-    announceExternal(`외부 모델 컨트롤 ${targets.length}개를 다시 탐지했고 ${connected}개를 연결했습니다.`);
+    announceExternal(`다른 확장의 모델 입력란을 다시 확인했습니다. 현재 ${connected}개에서 등록 모델을 사용할 수 있습니다.`);
 }
 
-function onExternalListClick(event) {
-    const button = event.target?.closest?.('[data-cmr-external-action]');
-    if (!button || !settingsRoot?.contains(button) || !externalSettings) {
+function focusExternalTargetSummary(targetId) {
+    settingsRoot
+        ?.querySelector(`[data-target-id="${targetId}"]`)
+        ?.querySelector('summary')
+        ?.focus?.();
+}
+
+function onExternalModeChange(event) {
+    const select = event.target?.closest?.('[data-cmr-external-mode]');
+    if (!select || !settingsRoot?.contains(select) || !externalSettings) {
         return;
     }
-    const row = button.closest?.('[data-target-id]');
+    const row = select.closest?.('[data-target-id]');
     const targetId = row?.dataset.targetId;
-    const action = button.dataset.cmrExternalAction;
     if (!targetId) {
         return;
     }
 
     try {
-        if (action === 'bind') {
-            const providerId = row.querySelector?.('[data-cmr-external-provider]')?.value;
-            const provider = getProvider(providerId);
-            if (!provider) {
-                throw new ExternalSettingsError('mapping_provider_missing', '연결할 제공업체를 선택해 주세요.');
-            }
-            externalSettings = setExternalMapping(externalSettings, targetId, provider.id);
-            persistExternalSettings();
-            announceExternal(`${provider.label}로 수동 연결했습니다.`);
+        const selectedValue = String(select.value ?? '');
+        if (selectedValue === EXTERNAL_MODE_CHOOSE) {
+            announceExternal('사용할 제공업체를 선택해 주세요.', 'warning');
             return;
         }
-        if (action === 'auto') {
+        if (!selectedValue) {
+            const wasUnresolved = row.dataset.needsAttention === 'true';
             externalSettings = removeExternalMapping(externalSettings, targetId);
             persistExternalSettings();
-            announceExternal('수동 연결을 해제하고 자동 판별을 사용합니다.');
+            focusExternalTargetSummary(targetId);
+            announceExternal(wasUnresolved
+                ? '자동 감지를 다시 실행했습니다. 계속 설정 필요로 표시되면 제공업체를 직접 선택하세요.'
+                : '이 입력란은 이제 제공업체를 자동으로 찾습니다.', wasUnresolved ? 'warning' : 'ok');
             return;
         }
-        if (action === 'disable') {
+        if (selectedValue === EXTERNAL_MAPPING_DISABLED) {
             externalSettings = setExternalMapping(externalSettings, targetId, EXTERNAL_MAPPING_DISABLED);
             persistExternalSettings();
-            announceExternal('이 모델 컨트롤을 범용 연결에서 제외했습니다.', 'warning');
+            focusExternalTargetSummary(targetId);
+            announceExternal('이 모델 입력란에서는 CMR 연결을 사용하지 않습니다.', 'warning');
+            return;
         }
+        const provider = getProvider(selectedValue);
+        if (!provider) {
+            throw new ExternalSettingsError('mapping_provider_missing', '사용할 제공업체를 선택해 주세요.');
+        }
+        externalSettings = setExternalMapping(externalSettings, targetId, provider.id);
+        persistExternalSettings();
+        focusExternalTargetSummary(targetId);
+        announceExternal(`${provider.label}로 직접 지정했습니다.`);
     } catch (error) {
         announceExternal(error instanceof ExternalSettingsError ? error.message : '외부 확장 연결을 저장하지 못했습니다.', 'error');
     }
+}
+
+function onImportBackupButton() {
+    settingsRoot?.querySelector('#cmr_import_backup')?.click?.();
 }
 
 function createDiagnosticReport() {
@@ -1396,19 +1560,23 @@ function createDiagnosticReport() {
     const externalUnresolvedCount = externalTargets.filter(target => (
         target.resolution?.source === 'unresolved'
     )).length;
-    const externalExcludedCount = externalTargets.filter(target => (
+    const externalDisabledCount = externalTargets.filter(target => (
+        target.resolution?.source === 'manual-disabled'
+    )).length;
+    const externalSafetySkippedCount = externalTargets.filter(target => (
         target.resolution?.source === 'risk-blocked'
-        || target.resolution?.source === 'manual-disabled'
     )).length;
     const externalStatus = externalUnresolvedCount ? 'warning' : 'passed';
     const externalCheck = {
         id: 'external-model-controls',
         status: externalStatus,
-        message: `외부 모델 컨트롤 ${externalMetrics.targetCount}개 감지 · ${externalMetrics.boundCount}개 연결 · ${externalUnresolvedCount}개 확인 필요 · ${externalExcludedCount}개 제외`,
+        message: `외부 확장 모델 입력란 ${externalMetrics.targetCount}개 확인 · ${externalMetrics.boundCount}개 사용 가능 · ${externalUnresolvedCount}개 설정 필요 · ${externalDisabledCount}개 연결 안 함 · ${externalSafetySkippedCount}개 안전상 건너뜀`,
         details: {
             ...externalMetrics,
             unresolvedCount: externalUnresolvedCount,
-            excludedCount: externalExcludedCount,
+            disabledCount: externalDisabledCount,
+            safetySkippedCount: externalSafetySkippedCount,
+            excludedCount: externalDisabledCount + externalSafetySkippedCount,
         },
     };
     const stability = stabilityMonitor?.analyze() ?? null;
@@ -1514,7 +1682,7 @@ function onExportBackup() {
         anchor.click();
         anchor.remove();
         URLApi.revokeObjectURL(url);
-        announce('Registry, 용도별 경로와 외부 확장 연결 백업을 내보냈습니다.');
+        announce('등록 모델, 기능별 지정과 다른 확장 연결 설정을 백업 파일로 저장했습니다.');
     } catch {
         announce('이 브라우저에서는 백업 파일을 내보내지 못했습니다.', 'error');
     }
@@ -1564,7 +1732,7 @@ async function onImportBackup(event) {
             return;
         }
         if (confirmation !== true) {
-            announce('백업 가져오기를 취소했습니다.', 'error');
+            announce('백업 불러오기를 취소했습니다.', 'error');
             return;
         }
         settings = normalizeSettings(parsed.registrySettings);
@@ -1577,8 +1745,8 @@ async function onImportBackup(event) {
         persistSettings('backup-import');
         synchronize();
         announce(parsed.report.status === 'warning'
-            ? `백업을 가져왔습니다. ${parsed.report.summary}`
-            : '백업에서 Registry, 용도별 경로와 외부 확장 연결을 복구했습니다.');
+            ? `백업을 불러왔습니다. ${parsed.report.summary}`
+            : '백업에서 등록 모델, 기능별 지정과 다른 확장 연결 설정을 복구했습니다.');
     } catch (error) {
         if (isCurrentImportOperation(operation)) {
             const message = error instanceof PortableSettingsError
@@ -1607,7 +1775,7 @@ function createSettingsPanel() {
     settingsRoot.querySelector('#cmr_add_form')?.addEventListener('submit', onAddModel);
     settingsRoot.querySelector('#cmr_model_list')?.addEventListener('click', onModelListClick);
     settingsRoot.querySelector('#cmr_external_refresh')?.addEventListener('click', onExternalRefresh);
-    settingsRoot.querySelector('#cmr_external_list')?.addEventListener('click', onExternalListClick);
+    settingsRoot.querySelector('#cmr_external_list')?.addEventListener('change', onExternalModeChange);
     settingsRoot.querySelector('#cmr_route_purpose')?.addEventListener('change', onRoutePurposeChange);
     settingsRoot.querySelector('#cmr_route_model')?.addEventListener('change', onRouteModelChange);
     settingsRoot.querySelector('#cmr_route_form')?.addEventListener('submit', onRouteSubmit);
@@ -1616,6 +1784,7 @@ function createSettingsPanel() {
     settingsRoot.querySelector('#cmr_run_diagnostics')?.addEventListener('click', onRunDiagnostics);
     settingsRoot.querySelector('#cmr_copy_diagnostics')?.addEventListener('click', onCopyDiagnostics);
     settingsRoot.querySelector('#cmr_export_backup')?.addEventListener('click', onExportBackup);
+    settingsRoot.querySelector('#cmr_import_backup_button')?.addEventListener('click', onImportBackupButton);
     settingsRoot.querySelector('#cmr_import_backup')?.addEventListener('change', onImportBackup);
     settingsRoot.addEventListener('keydown', onPanelKeyDown);
     return root;

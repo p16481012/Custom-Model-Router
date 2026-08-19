@@ -4,117 +4,198 @@
             <h2 id="cmr_panel_title">사용자 모델 관리</h2>
             <span class="cmr-product-name">Custom Model Router</span>
         </div>
-        <span class="cmr-version">v0.6.0</span>
+        <span class="cmr-version">v0.6.1</span>
     </header>
 
     <p class="cmr-description">
-        기존 인증·엔드포인트 설정은 바꾸지 않고, 선택한 제공업체에 사용자 모델 ID만 등록하고 적용합니다.
+        기존 API 연결은 그대로 두고, 목록에 없는 모델 ID를 등록해 SillyTavern과 호환되는 다른 확장에서 선택할 수 있게 합니다.
     </p>
 
-    <div class="cmr-provider-field">
-        <label for="cmr_provider">제공업체 또는 연결 방식</label>
-        <select id="cmr_provider" class="text_pole wide100p" aria-describedby="cmr_provider_help"></select>
-        <small id="cmr_provider_help">모델을 등록할 연결을 먼저 선택하세요.</small>
-    </div>
-
-    <div id="cmr_compatibility" class="cmr-status" role="status" aria-live="polite" aria-atomic="true"></div>
-
-    <form id="cmr_add_form" class="cmr-add-form">
-        <label id="cmr_model_label" for="cmr_model_id">모델 ID</label>
-        <div class="cmr-input-row">
-            <input
-                id="cmr_model_id"
-                class="text_pole flex1"
-                type="text"
-                maxlength="256"
-                autocomplete="off"
-                autocapitalize="none"
-                spellcheck="false"
-                placeholder="모델 ID"
-                aria-describedby="cmr_provider_help cmr_model_help cmr_feedback"
-                autofocus
-                required
-            >
-            <button class="menu_button menu_button_icon" type="submit">
-                <i class="fa-solid fa-plus" aria-hidden="true"></i>
-                <span>추가</span>
-            </button>
+    <section class="cmr-surface cmr-primary-section" aria-labelledby="cmr_registration_title">
+        <div class="cmr-section-intro">
+            <span class="cmr-eyebrow">모델 등록</span>
+            <h3 id="cmr_registration_title">제공업체에 모델 추가</h3>
+            <p>먼저 연결 방식을 고른 다음, 제공업체가 안내하는 정확한 모델 ID를 입력하세요.</p>
         </div>
-        <small id="cmr_model_help">제공업체를 선택하면 해당 모델 ID 규칙이 표시됩니다.</small>
-    </form>
 
-    <div id="cmr_feedback" class="cmr-feedback" role="status" aria-live="polite" aria-atomic="true"></div>
-
-    <section class="cmr-list-region" aria-labelledby="cmr_list_title">
-        <div class="cmr-list-header">
-            <h3 id="cmr_list_title">등록한 모델</h3>
-            <span id="cmr_model_count" class="cmr-list-count">이 제공업체 0개 · 전체 0개</span>
+        <div class="cmr-provider-field">
+            <label for="cmr_provider">제공업체 또는 연결 방식</label>
+            <select id="cmr_provider" class="text_pole wide100p" aria-describedby="cmr_provider_help"></select>
+            <small id="cmr_provider_help">현재 SillyTavern에서 사용하는 API 연결 중 하나를 선택합니다.</small>
         </div>
-        <ul id="cmr_model_list" class="cmr-model-list"></ul>
+
+        <div id="cmr_compatibility" class="cmr-status" role="status" aria-live="polite" aria-atomic="true"></div>
+
+        <form id="cmr_add_form" class="cmr-add-form">
+            <label id="cmr_model_label" for="cmr_model_id">모델 ID</label>
+            <div class="cmr-input-row">
+                <input
+                    id="cmr_model_id"
+                    class="text_pole flex1"
+                    type="text"
+                    maxlength="256"
+                    autocomplete="off"
+                    autocapitalize="none"
+                    spellcheck="false"
+                    placeholder="모델 ID"
+                    aria-describedby="cmr_provider_help cmr_model_help cmr_feedback"
+                    autofocus
+                    required
+                >
+                <button class="menu_button menu_button_icon" type="submit">
+                    <i class="fa-solid fa-plus" aria-hidden="true"></i>
+                    <span>추가</span>
+                </button>
+            </div>
+            <small id="cmr_model_help">제공업체를 선택하면 사용할 수 있는 모델 ID 형식이 표시됩니다.</small>
+        </form>
+
+        <div id="cmr_feedback" class="cmr-feedback" role="status" aria-live="polite" aria-atomic="true"></div>
+
+        <div class="cmr-list-region" aria-labelledby="cmr_list_title">
+            <div class="cmr-list-header">
+                <h3 id="cmr_list_title">등록한 모델</h3>
+                <span id="cmr_model_count" class="cmr-list-count">이 제공업체 0개 · 전체 0개</span>
+            </div>
+            <ul id="cmr_model_list" class="cmr-model-list"></ul>
+        </div>
     </section>
 
-    <details class="cmr-tool-section" id="cmr_external_section">
-        <summary>
-            다른 확장 모델 연결
-            <span id="cmr_external_count" class="cmr-list-count">감지 0개</span>
-        </summary>
-        <p class="cmr-tool-description">
-            다른 확장의 Chat Completion 모델 선택기·입력란을 자동으로 찾아 CMR 등록 모델을 표시합니다.
-            자동 판별이 모호하면 제공업체를 한 번 지정할 수 있습니다.
-        </p>
-        <div class="cmr-external-toolbar">
-            <button id="cmr_external_refresh" type="button" class="menu_button">다시 탐지</button>
-            <span id="cmr_external_status" class="cmr-feedback" role="status" aria-live="polite" aria-atomic="true"></span>
+    <section class="cmr-tools-region" aria-labelledby="cmr_tools_title">
+        <div class="cmr-tools-heading">
+            <h3 id="cmr_tools_title">추가 기능</h3>
+            <p>필요한 항목만 열어 설정할 수 있습니다.</p>
         </div>
-        <ul id="cmr_external_list" class="cmr-external-list" aria-label="감지한 외부 확장 모델 컨트롤"></ul>
-        <small>
-            임베딩·TTS·이미지 생성 모델은 자동으로 제외합니다. 표준 select/input을 사용하지 않는 확장은 자동 연결되지 않을 수 있습니다.
-        </small>
-    </details>
 
-    <details class="cmr-tool-section" id="cmr_routing_section">
-        <summary>보조 기능별 모델 라우팅</summary>
-        <p class="cmr-tool-description">
-            등록 모델과 Connection Profile을 직접 연결합니다. 보조 요청은 메인 채팅 모델을 바꾸지 않습니다.
-        </p>
-        <form id="cmr_route_form" class="cmr-route-form">
-            <label for="cmr_route_purpose">용도</label>
-            <select id="cmr_route_purpose" class="text_pole wide100p"></select>
+        <details class="cmr-tool-section" id="cmr_external_section">
+            <summary>
+                <span class="cmr-summary-copy">
+                    <span class="cmr-summary-title">다른 확장에서도 모델 사용</span>
+                    <span class="cmr-summary-description">캡션 등 다른 기능의 모델 메뉴에 등록 모델을 표시합니다.</span>
+                </span>
+                <span id="cmr_external_count" class="cmr-list-count">사용 가능 0개</span>
+            </summary>
+            <div class="cmr-tool-body">
+                <p class="cmr-tool-description">
+                    CMR이 다른 확장의 Chat Completion 모델 입력란을 찾습니다. 대부분 자동으로 연결되며,
+                    <strong>설정 필요</strong> 항목만 열어 연결 방식을 선택하면 됩니다.
+                </p>
 
-            <label for="cmr_route_model">등록 모델</label>
-            <select id="cmr_route_model" class="text_pole wide100p" aria-describedby="cmr_route_help"></select>
+                <details class="cmr-guidance">
+                    <summary id="cmr_external_guide_title">연결 상태 설명 보기</summary>
+                    <dl class="cmr-status-legend" aria-labelledby="cmr_external_guide_title">
+                        <div>
+                            <dt>자동으로 연결됨</dt>
+                            <dd>CMR이 제공업체를 찾아 등록 모델을 표시하는 연결 방식입니다.</dd>
+                        </div>
+                        <div>
+                            <dt>직접 지정</dt>
+                            <dd>사용자가 고른 제공업체의 등록 모델을 표시하는 연결 방식입니다.</dd>
+                        </div>
+                        <div>
+                            <dt>설정 필요</dt>
+                            <dd>제공업체를 판단하지 못해 아직 해당 입력란을 변경하지 않은 상태입니다.</dd>
+                        </div>
+                        <div>
+                            <dt>연결 안 함</dt>
+                            <dd>사용자 설정에 따라 CMR이 해당 모델 입력란을 변경하지 않는 상태입니다.</dd>
+                        </div>
+                    </dl>
+                </details>
 
-            <label for="cmr_route_profile">SillyTavern Connection Profile</label>
-            <select id="cmr_route_profile" class="text_pole wide100p" aria-describedby="cmr_route_help"></select>
-
-            <small id="cmr_route_help">선택한 모델과 같은 제공업체의 Chat Completion 프로필만 사용할 수 있습니다.</small>
-            <div class="cmr-route-actions">
-                <button type="submit" class="menu_button">경로 저장</button>
-                <button id="cmr_route_clear" type="button" class="menu_button">경로 해제</button>
-                <button id="cmr_route_test" type="button" class="menu_button">테스트 요청</button>
+                <div class="cmr-external-toolbar">
+                    <button id="cmr_external_refresh" type="button" class="menu_button">다시 확인</button>
+                    <span id="cmr_external_status" class="cmr-feedback" role="status" aria-live="polite" aria-atomic="true"></span>
+                </div>
+                <ul id="cmr_external_list" class="cmr-external-list" aria-label="다른 확장에서 찾은 모델 입력란"></ul>
+                <p id="cmr_external_safety" class="cmr-safety-note">
+                    <strong>안전 안내</strong>
+                    채팅 모델이 아닌 임베딩·음성·이미지 생성용 입력란은 변경하지 않습니다.
+                    <span id="cmr_external_skipped">아직 확인하지 않았습니다.</span>
+                </p>
             </div>
-        </form>
-        <div id="cmr_route_status" class="cmr-feedback" role="status" aria-live="polite" aria-atomic="true"></div>
-    </details>
+        </details>
 
-    <details class="cmr-tool-section" id="cmr_operations_section">
-        <summary>호환성 진단 및 설정 복구</summary>
-        <p class="cmr-tool-description">
-            SillyTavern 공개 API·모델 컨트롤·중복 런타임 자원을 검사하고, 민감정보를 제외한 확장 설정만 백업합니다.
-        </p>
-        <div class="cmr-operation-actions">
-            <button id="cmr_run_diagnostics" type="button" class="menu_button">진단 실행</button>
-            <button id="cmr_copy_diagnostics" type="button" class="menu_button">진단 복사</button>
-            <button id="cmr_export_backup" type="button" class="menu_button">백업 내보내기</button>
-            <label for="cmr_import_backup" class="menu_button cmr-file-button">백업 가져오기</label>
-            <input id="cmr_import_backup" class="cmr-visually-hidden" type="file" accept="application/json,.json">
-        </div>
-        <div id="cmr_diagnostic_summary" class="cmr-feedback" role="status" aria-live="polite" aria-atomic="true"></div>
-        <ul id="cmr_diagnostic_list" class="cmr-diagnostic-list"></ul>
-    </details>
+        <details class="cmr-tool-section" id="cmr_routing_section">
+            <summary>
+                <span class="cmr-summary-copy">
+                    <span class="cmr-summary-title">기능별 모델 지정</span>
+                    <span class="cmr-summary-description">CMR 연동을 지원하는 보조 기능에 별도 모델을 지정합니다.</span>
+                </span>
+            </summary>
+            <div class="cmr-tool-body">
+                <p class="cmr-tool-description">
+                    CMR Registry/Routing API 연동을 지원하는 기능에서 등록 모델과 연결 프로필을 묶어 사용합니다.
+                    기존 번역·요약 확장에 자동 적용되지는 않으며, 기본 채팅 모델도 바뀌지 않습니다.
+                </p>
+                <form id="cmr_route_form" class="cmr-route-form">
+                    <label for="cmr_route_purpose">사용할 기능</label>
+                    <select id="cmr_route_purpose" class="text_pole wide100p"></select>
 
-    <details class="cmr-scope-note">
+                    <label for="cmr_route_model">사용할 모델</label>
+                    <select id="cmr_route_model" class="text_pole wide100p" aria-describedby="cmr_route_help"></select>
+
+                    <label for="cmr_route_profile">연결 프로필</label>
+                    <select id="cmr_route_profile" class="text_pole wide100p" aria-describedby="cmr_route_help"></select>
+
+                    <small id="cmr_route_help">선택한 모델과 같은 제공업체의 Chat Completion 프로필만 사용할 수 있습니다.</small>
+                    <div class="cmr-route-actions cmr-action-grid">
+                        <button type="submit" class="menu_button">저장</button>
+                        <button id="cmr_route_clear" type="button" class="menu_button">지정 해제</button>
+                        <button id="cmr_route_test" type="button" class="menu_button">연결 테스트</button>
+                    </div>
+                    <small class="cmr-cost-note">연결 테스트는 실제 API 사용량이 발생할 수 있습니다.</small>
+                </form>
+                <div id="cmr_route_status" class="cmr-feedback" role="status" aria-live="polite" aria-atomic="true"></div>
+            </div>
+        </details>
+
+        <details class="cmr-tool-section" id="cmr_operations_section">
+            <summary>
+                <span class="cmr-summary-copy">
+                    <span class="cmr-summary-title">문제 확인 및 설정 백업</span>
+                    <span class="cmr-summary-description">작동 상태를 확인하거나 CMR 설정만 백업·복원합니다.</span>
+                </span>
+            </summary>
+            <div class="cmr-tool-body">
+                <div class="cmr-operation-groups">
+                    <section class="cmr-operation-group" aria-labelledby="cmr_diagnostics_title">
+                        <div class="cmr-operation-copy">
+                            <h4 id="cmr_diagnostics_title">문제 확인</h4>
+                            <p>버전, 모델 메뉴 연결과 중복 실행 여부를 확인합니다.</p>
+                        </div>
+                        <div class="cmr-operation-actions cmr-action-grid">
+                            <button id="cmr_run_diagnostics" type="button" class="menu_button">상태 확인</button>
+                            <button id="cmr_copy_diagnostics" type="button" class="menu_button">결과 복사</button>
+                        </div>
+                    </section>
+
+                    <section class="cmr-operation-group" aria-labelledby="cmr_backup_title">
+                        <div class="cmr-operation-copy">
+                            <h4 id="cmr_backup_title">CMR 설정 백업</h4>
+                            <p>등록 모델, 기능별 지정과 다른 확장 연결 설정만 저장하며 API 키와 연결 주소는 포함하지 않습니다.</p>
+                        </div>
+                        <div class="cmr-operation-actions cmr-action-grid">
+                            <button id="cmr_export_backup" type="button" class="menu_button">백업 저장</button>
+                            <button id="cmr_import_backup_button" type="button" class="menu_button">백업 불러오기</button>
+                            <input id="cmr_import_backup" class="cmr-visually-hidden" type="file" accept="application/json,.json" hidden tabindex="-1" aria-hidden="true">
+                        </div>
+                    </section>
+                </div>
+                <div id="cmr_diagnostic_summary" class="cmr-feedback" role="status" aria-live="polite" aria-atomic="true"></div>
+                <ul id="cmr_diagnostic_list" class="cmr-diagnostic-list"></ul>
+            </div>
+        </details>
+    </section>
+
+    <details class="cmr-scope-note cmr-surface">
         <summary>지원 범위 및 개인정보</summary>
-        <p>v0.6은 SillyTavern과 외부 확장이 기존 Chat Completion 연결 및 요청 규격을 그대로 사용하는 모델 ID를 지원합니다. 범용 연결은 모델 컨트롤에 선택지를 추가하고 확장 자체의 저장 이벤트를 사용하며 전역 fetch를 가로채지 않습니다. 라우팅과 백업에는 모델 참조, 외부 컨트롤 식별자 및 Connection Profile ID만 저장하고 API 키, Service Account, 프로젝트 ID, 리전, 엔드포인트 URL은 읽거나 저장하지 않습니다.</p>
+        <ul class="cmr-scope-list">
+            <li><strong>지원:</strong> 기존 Chat Completion 연결과 요청 규격을 그대로 사용하는 모델 ID</li>
+            <li><strong>외부 확장:</strong> 모델 입력란에 선택지를 추가하고 해당 확장의 저장 이벤트를 사용</li>
+            <li><strong>저장:</strong> 모델 참조, 외부 입력란 식별자, 연결 방식과 Connection Profile ID</li>
+            <li><strong>저장하지 않음:</strong> API 키, Service Account, 프로젝트 ID, 리전, 엔드포인트 URL</li>
+            <li><strong>별도 지원 필요:</strong> 표준 모델 입력란이 없거나 기존 Chat Completion 규격과 다른 확장</li>
+        </ul>
     </details>
 </section>

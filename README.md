@@ -2,7 +2,7 @@
 
 SillyTavern 코어 파일을 수정하지 않고 기존 Chat Completion 연결에 사용자 모델 ID를 등록하는 UI 확장입니다. CMR이 직접 지원하는 기본 선택기와 Connection Profile 라우팅에서는 API 키·엔드포인트·프로젝트·리전을 그대로 두고 모델 ID만 지정합니다. 범용 외부 확장 브리지는 모델 선택지만 추가하며 외부 요청 본문을 직접 바꾸지 않습니다.
 
-현재 버전은 **v0.6.0**이며, SillyTavern 1.18.0의 등록 가능한 Chat Completion 연결 24개, 공개 Registry API, Connection Profile 기반 보조 요청 라우팅, 범용 DOM 모델 브리지, 호환성 진단과 비밀정보를 제외한 설정 백업·복구를 제공합니다.
+현재 버전은 **v0.6.1**이며, SillyTavern 1.18.0의 등록 가능한 Chat Completion 연결 24개, 공개 Registry API, Connection Profile 기반 보조 요청 라우팅, 범용 DOM 모델 브리지, 호환성 진단과 비밀정보를 제외한 설정 백업·복구를 제공합니다. v0.6.1은 관리 팝업을 카드형 정보 구조로 정리하고 좁은 화면의 버튼 정렬과 외부 연결 용어를 개선한 UI·UX 패치입니다.
 
 v0.5.0까지의 공개 API와 용도별 라우팅은 다른 확장이 스스로 연동해야 사용할 수 있었으며, 이미 설치된 다른 확장의 모델 선택기에 CMR 모델을 자동 표시하지는 않았습니다. v0.6.0은 이 누락을 보완해 표준 `select`, 텍스트 `input`, `datalist` 기반 Chat Completion 모델 컨트롤을 자동 탐지하고, 필요한 경우 사용자가 제공업체를 직접 연결할 수 있게 합니다.
 
@@ -10,7 +10,7 @@ v0.5.0까지의 공개 API와 용도별 라우팅은 다른 확장이 스스로 
 
 | 항목 | 상태 |
 |---|---|
-| 현재 릴리스 | `v0.6.0` |
+| 현재 릴리스 | `v0.6.1` |
 | v0.3 공개 Registry API | ✅ 구현·자동 검사 완료 |
 | v0.4 용도별 라우팅 | ✅ 구현·자동 검사 완료 |
 | v0.5 진단·복구·안정성 계측 | ✅ 구현·자동 검사 완료 |
@@ -26,7 +26,7 @@ v0.5.0까지의 공개 API와 용도별 라우팅은 다른 확장이 스스로 
 - 한 관리 팝업에서 24개 제공업체의 사용자 모델을 등록·선택·삭제합니다.
 - 등록 모델을 SillyTavern 기본 모델 선택기의 `사용자 지정 모델 · Custom Model Router` 그룹에 표시합니다.
 - 다른 확장의 표준 Chat Completion 모델 컨트롤을 자동 탐지해 제공업체별 CMR 모델을 추가합니다.
-- 자동 판별이 모호한 컨트롤은 관리 팝업에서 제공업체를 수동 연결하거나 자동 연결을 끌 수 있습니다.
+- 자동 판별이 모호한 입력란은 `설정 필요`로 표시하고, 관리 팝업의 한 개짜리 `연결 방식` 메뉴에서 제공업체 직접 지정, 자동 감지 재시도 또는 연결 안 함을 선택할 수 있습니다.
 - 외부 확장이 선택기를 다시 렌더링하면 CMR 옵션을 다시 추가하고, 동일 target의 새 컨트롤 값이 비어 있을 때만 provider별 마지막 CMR 선택을 복원합니다. 외부 확장이 둔 유효한 현재값은 덮어쓰지 않습니다.
 - 원격 모델 목록 재생성, source 변경, 새로고침과 Connection Profile 전환 뒤 옵션과 선택을 복원합니다.
 - v0.1의 Vertex 설정을 제공업체별 schema v2로 자동 이관합니다.
@@ -112,9 +112,9 @@ const unsubscribe = registry.subscribe('registry:changed', event => {
 
 `selectModel()`은 Registry 선택 상태만 변경하며 SillyTavern의 현재 source나 메인 모델을 전환하지 않습니다. 전체 계약은 [공개 API 문서](./API.md), 예제는 [Registry 연동](./examples/registry-integration.js)과 [라우팅 연동](./examples/routing-integration.js)을 참고하세요.
 
-## 다른 확장 모델 연결
+## 다른 확장에서도 모델 사용
 
-관리 팝업의 **다른 확장 모델 연결**은 페이지에 나타난 표준 Chat Completion 모델 `select`, 텍스트 `input`, `datalist`를 탐지합니다. 제공업체를 충분히 확실하게 판별하면 해당 Registry 모델만 추가하고, 모호하면 사용자가 제공업체를 지정할 때까지 변경하지 않습니다. Caption처럼 provider 선택기와 model 선택기, option의 `data-type`을 사용하는 확장은 그 값을 보존한 채 연결합니다.
+관리 팝업의 **다른 확장에서도 모델 사용**은 페이지에 나타난 표준 Chat Completion 모델 `select`, 텍스트 `input`, `datalist`를 탐지합니다. 제공업체를 충분히 확실하게 판별하면 해당 Registry 모델만 추가하고, 모호하면 사용자가 `연결 방식`에서 제공업체를 지정할 때까지 변경하지 않습니다. `자동으로 연결됨`, `직접 지정`, `설정 필요`, `연결 안 함`의 의미는 패널 안에서 바로 설명합니다. Caption처럼 provider 선택기와 model 선택기, option의 `data-type`을 사용하는 확장은 그 값을 보존한 채 연결합니다.
 
 외부 확장이 모델 컨트롤을 다시 만들면 CMR 옵션을 다시 추가합니다. 저장된 provider별 CMR 선택은 동일 target으로 다시 감지된 새 컨트롤의 값이 비어 있을 때만 복원하고, 외부 확장이 이미 설정한 유효한 현재값은 덮어쓰지 않습니다. 외부 확장 업데이트로 control의 ID·name·label 또는 상위 확장 구조가 바뀌면 새 target으로 인식될 수 있어 수동 provider 연결을 다시 지정해야 할 수 있습니다.
 
@@ -128,11 +128,11 @@ const unsubscribe = registry.subscribe('registry:changed', event => {
 - 제공업체를 안전하게 판별할 수 없는 컨트롤
 - React 등에서 표준 컨트롤을 노출하지 않는 사용자 위젯, iframe 내부, 닫힌 Shadow DOM
 
-표준 모델 컨트롤이 없는 확장은 CMR의 Registry 또는 Routing API를 사용하는 전용 opt-in 연동이 필요합니다. 자동 탐지와 비대상 판별은 DOM의 이름·레이블·속성·상위 확장 표식을 사용하는 best-effort 호환 기능이며 모든 외부 확장의 요청 규격을 보증하지 않습니다. 용도를 드러내지 않는 일반적인 `Model` 컨트롤이 잘못 감지되면 관리 팝업에서 **사용 안 함**으로 지정합니다.
+표준 모델 컨트롤이 없는 확장은 CMR의 Registry 또는 Routing API를 사용하는 전용 opt-in 연동이 필요합니다. 자동 탐지와 비대상 판별은 DOM의 이름·레이블·속성·상위 확장 표식을 사용하는 best-effort 호환 기능이며 모든 외부 확장의 요청 규격을 보증하지 않습니다. 용도를 드러내지 않는 일반적인 `Model` 컨트롤이 잘못 감지되면 `연결 방식`에서 **이 입력란에서는 연결 안 함**으로 지정합니다.
 
 ## 용도별 보조 요청 라우팅
 
-관리 팝업의 **보조 기능별 모델 라우팅**에서 용도, 등록 모델과 같은 제공업체의 Connection Profile을 고릅니다. 저장 경로에는 provider·model ID·adapter ID·profile ID만 들어가며 프로필 본문이나 인증정보는 복제하지 않습니다.
+관리 팝업의 **기능별 모델 지정**은 CMR Registry/Routing API 연동을 지원하는 보조 기능에서만 사용됩니다. 기존 번역·요약 확장에 자동 적용되지는 않습니다. 용도, 등록 모델과 같은 제공업체의 Connection Profile을 고르며, 저장 경로에는 provider·model ID·adapter ID·profile ID만 들어가고 프로필 본문이나 인증정보는 복제하지 않습니다.
 
 ```js
 const result = await CustomModelRouter.routing.execute('translation', {
@@ -147,20 +147,20 @@ console.log(result.content);
 
 ## 호환성 진단
 
-관리 팝업에서 **호환성 진단 및 설정 복구 → 진단 실행**을 누르면 다음을 확인합니다.
+관리 팝업에서 **문제 확인 및 설정 백업 → 상태 확인**을 누르면 다음을 확인합니다.
 
 - SillyTavern 최소·검증 기준 버전
 - 공개 context와 이벤트 계약
 - 24개 provider 컨트롤과 런타임 바인딩 상태
-- 외부 모델 컨트롤 감지·자동/수동 연결·확인 필요·제외 개수
+- 외부 확장 모델 입력란의 사용 가능·설정 필요·연결 안 함·안전을 위해 건너뜀 개수
 - 런처, MutationObserver, 이벤트 구독과 사용자 모델 그룹 중복
 - source·profile 전환 표본에서 자원이 증가하는지 여부
 
-**진단 복사**는 코드·상태·개수로 구성된 JSON을 복사합니다. API 키, endpoint URL, project ID, Service Account와 Connection Profile 본문은 포함하지 않습니다. 오류를 보고할 때도 복사한 내용을 검토한 뒤 민감정보가 없는지 한 번 더 확인하세요.
+**결과 복사**는 코드·상태·개수로 구성된 JSON을 복사합니다. API 키, endpoint URL, project ID, Service Account와 Connection Profile 본문은 포함하지 않습니다. 오류를 보고할 때도 복사한 내용을 검토한 뒤 민감정보가 없는지 한 번 더 확인하세요.
 
 ## 설정 백업과 복구
 
-**백업 내보내기**는 다음 세 항목만 portable schema v2 JSON으로 저장합니다.
+**백업 저장**은 다음 세 항목만 portable schema v2 JSON으로 저장합니다.
 
 - Registry의 제공업체·모델 ID·선택 상태
 - 용도별 route의 provider·model ID·adapter ID·Connection Profile ID
@@ -168,7 +168,7 @@ console.log(result.content);
 
 API 키, endpoint, 리전, project/account ID, Service Account, 프로필 본문과 생성 설정은 저장하지 않습니다.
 
-**백업 가져오기**는 적용 전에 JSON 형식, 최대 크기, 알려진 필드, provider·모델 ID, route와 schema 버전을 검사하고 사용자 확인을 받습니다. v0.5의 portable schema v1 백업은 외부 연결이 비어 있는 schema v2로 이관합니다. 알 수 없는 필드나 미래 schema가 있으면 기존 설정을 바꾸지 않고 거부합니다. 가져온 profile ID가 현재 존재하지 않으면 route는 보존되지만 실행 시 명시 오류가 발생합니다.
+**백업 불러오기**는 적용 전에 JSON 형식, 최대 크기, 알려진 필드, provider·모델 ID, route와 schema 버전을 검사하고 사용자 확인을 받습니다. v0.5의 portable schema v1 백업은 외부 연결이 비어 있는 schema v2로 이관합니다. 알 수 없는 필드나 미래 schema가 있으면 기존 설정을 바꾸지 않고 거부합니다. 가져온 profile ID가 현재 존재하지 않으면 route는 보존되지만 실행 시 명시 오류가 발생합니다.
 
 ## 호환성 제한
 
@@ -200,7 +200,7 @@ select형 연결에서 현재 사용 중인 모델은 기본 모델로 먼저 �
 
 모델이 Registry에 남아 있는지, Connection Profile이 존재하는지, profile source와 route provider가 같은지 확인하세요. 실패 시 다른 모델이나 메인 연결로 자동 대체하지 않습니다.
 
-### 백업 가져오기가 거부됨
+### 백업 불러오기가 거부됨
 
 파일을 직접 편집했다면 알 수 없는 필드, 잘못된 model ID, 중복 모델, 미래 schema 또는 크기 제한 오류를 확인하세요. 거부 시 현재 설정은 유지됩니다.
 
@@ -213,7 +213,7 @@ npm test
 npm run check
 ```
 
-현재 자동 검사 127개는 24개 provider 회계, schema 이관, 동적 옵션 복원, 팝업 수명주기, 공개 API, 라우팅 격리, 외부 select/input/datalist 탐지·주입·재렌더·정리, 비대상 제외, 호환성 진단, 자원 누적 판정, portable schema v1→v2 이관과 버전·문서 일치를 검증합니다. 실제 계정과 브라우저 조작이 필요한 결과는 [통합 사용자 체크리스트](./USER_CHECKLIST.md)에서 별도로 확인합니다.
+현재 자동 검사 131개는 24개 provider 회계, schema 이관, 동적 옵션 복원, 팝업 수명주기, 공개 API, 라우팅 격리, 외부 select/input/datalist 탐지·주입·재렌더·정리, 비대상 제외, 관리 팝업 정보 구조와 반응형 CSS 계약, 호환성 진단, 자원 누적 판정, portable schema v1→v2 이관과 버전·문서 일치를 검증합니다. 실제 글자 폭과 정렬을 포함한 브라우저 화면, 실제 계정 결과는 [통합 사용자 체크리스트](./USER_CHECKLIST.md)에서 별도로 확인합니다.
 
 추가로 실제 브라우저 DOM 샌드박스에서 24개 컨트롤 감지, GLM 등록·적용, Connection Profile 라우팅, source/profile 이벤트 60회, 375px 폭, 비활성화·재활성화, 초점 복귀와 오류 로그 0건을 확인했습니다. 이 결과는 실제 제공업체 자격 증명과 네트워크 요청 성공을 대신하지 않습니다.
 
@@ -233,6 +233,7 @@ npm run check
 | `v0.3.0` | 공개 Registry API | ✅ 완료 |
 | `v0.4.0` | Connection Profile 어댑터와 용도별 직접 라우팅 | ✅ 완료 |
 | `v0.5.0` | 호환성 진단·비밀정보 제외 백업·운영 안정성 계측 | ✅ 완료; 기존 외부 확장 자동 표시는 미구현이었음 |
-| `v0.6.0` | 범용 DOM 모델 브리지와 외부 연결 portable backup | ✅ 현재 구현·자동 검사 완료, 사용자 검증 대기 |
+| `v0.6.0` | 범용 DOM 모델 브리지와 외부 연결 portable backup | ✅ 구현 완료 |
+| `v0.6.1` | 관리 팝업 정보 구조·반응형 버튼·외부 연결 용어 개선 | ✅ 현재 구현·자동 검사 완료, 사용자 검증 대기 |
 
 문제가 있으면 [GitHub Issues](https://github.com/p16481012/Custom-Model-Router/issues)에 SillyTavern 버전, 제공업체, 체크리스트 항목 ID와 민감정보를 제거한 오류를 남겨 주세요.

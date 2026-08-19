@@ -387,8 +387,13 @@ class FakeDocument {
         copyDiagnostics.id = 'cmr_copy_diagnostics';
         const exportBackup = this.createElement('button');
         exportBackup.id = 'cmr_export_backup';
+        const importBackupButton = this.createElement('button');
+        importBackupButton.id = 'cmr_import_backup_button';
         const importBackup = this.createElement('input');
         importBackup.id = 'cmr_import_backup';
+        importBackup.hidden = true;
+        importBackup.setAttribute('tabindex', '-1');
+        importBackup.setAttribute('aria-hidden', 'true');
         const diagnosticSummary = this.createElement('div');
         diagnosticSummary.id = 'cmr_diagnostic_summary';
         const diagnosticList = this.createElement('ul');
@@ -403,9 +408,11 @@ class FakeDocument {
         externalRefresh.id = 'cmr_external_refresh';
         const externalStatus = this.createElement('span');
         externalStatus.id = 'cmr_external_status';
+        const externalSkipped = this.createElement('span');
+        externalSkipped.id = 'cmr_external_skipped';
         const externalList = this.createElement('div');
         externalList.id = 'cmr_external_list';
-        externalSection.append(externalSummary, externalCount, externalRefresh, externalStatus, externalList);
+        externalSection.append(externalSummary, externalCount, externalRefresh, externalStatus, externalList, externalSkipped);
 
         root.append(
             provider,
@@ -421,6 +428,7 @@ class FakeDocument {
             runDiagnostics,
             copyDiagnostics,
             exportBackup,
+            importBackupButton,
             importBackup,
             diagnosticSummary,
             diagnosticList,
@@ -959,7 +967,7 @@ test('init은 24개 제공업체를 연결하고 API Connections Popup을 한 �
         assert.ok(harness.observers.some(observer => observer.target === harness.observerRoot));
         assert.ok(harness.observers.some(observer => observer.target === harness.documentRef.body));
         assert.equal(globalThis.CustomModelRouter.apiVersion, '1.1.0');
-        assert.equal(globalThis.CustomModelRouter.extensionVersion, '0.6.0');
+        assert.equal(globalThis.CustomModelRouter.extensionVersion, '0.6.1');
         assert.equal(globalThis.CustomModelRouter.routing.apiVersion, '1.0.0');
         assert.equal(globalThis.CustomModelRouter.getSnapshot().models.length, 1);
 
@@ -1757,6 +1765,8 @@ test('백업 schema v2는 외부 mapping·선택을 내보내고 가져와 targe
         });
         external.select.value = '';
         const input = panel.querySelector('#cmr_import_backup');
+        panel.querySelector('#cmr_import_backup_button').dispatchEvent(new FakeEvent('click'));
+        assert.equal(input.clickCallCount, 1);
         input.files = [{ size: content.length, text: async () => content }];
         input.value = 'cmr-v2-backup.json';
         input.dispatchEvent(new FakeEvent('change'));
@@ -2016,8 +2026,9 @@ test('init 범용 자동 연결은 패널 상태와 옵션을 표시하고 trust
         const row = list.querySelector(`[data-target-id="${targetId}"]`);
         assert.equal(list.children.length, 1);
         assert.ok(row);
-        assert.equal(panel.querySelector('#cmr_external_count').textContent, '감지 1개 · 연결 1개');
-        assert.equal(row.querySelector('.cmr-badge').textContent, '자동 연결');
+        assert.equal(panel.querySelector('#cmr_external_count').textContent, '사용 가능 1개');
+        assert.equal(row.querySelector('.cmr-badge').textContent, '사용 가능');
+        assert.match(row.querySelector('.cmr-external-summary-detail').textContent, /자동으로 연결됨/);
         assert.deepEqual(
             external.select.querySelector('[data-cmr-external-group="true"]').children.map(option => option.value),
             [modelId],
@@ -2057,7 +2068,7 @@ test('init 범용 자동 연결은 패널 상태와 옵션을 표시하고 trust
     }
 });
 
-test('init 범용 수동 UI는 unresolved target을 연결·자동 복귀·제외하고 새로 탐지한다', async () => {
+test('init 범용 연결 방식 UI는 설정 필요 target을 직접 지정·자동 복귀·연결 안 함으로 전환한다', async () => {
     const modelId = 'glm-5-air';
     const harness = createHarness({
         models: [createModelRecord('zai', modelId)],
@@ -2066,7 +2077,7 @@ test('init 범용 수동 UI는 unresolved target을 연결·자동 복귀·제�
     const external = appendExternalModelSelect(harness, {
         containerId: 'generic_summary_extension',
         selectId: 'summary_model',
-        label: '요약 모델',
+        label: 'Model',
     });
     const targetId = createExternalTargetId(external.select, { documentRef: harness.documentRef });
     const restoreGlobals = installBrowserGlobals(harness);
@@ -2076,13 +2087,16 @@ test('init 범용 수동 UI는 unresolved target을 연결·자동 복귀·제�
         const list = panel.querySelector('#cmr_external_list');
         let row = list.querySelector(`[data-target-id="${targetId}"]`);
         assert.ok(row);
-        assert.equal(row.querySelector('.cmr-badge').textContent, '확인 필요');
+        assert.equal(row.querySelector('.cmr-badge').textContent, '설정 필요');
+        assert.equal(row.querySelector('.cmr-external-name').textContent, '요약 · 모델 입력란');
         assert.equal(external.select.querySelector('[data-cmr-external-group="true"]'), null);
 
-        let providerSelect = row.querySelector('[data-cmr-external-provider]');
-        providerSelect.value = 'zai';
-        row.querySelector('[data-cmr-external-action="bind"]')
-            .dispatchEvent(new FakeEvent('click', { bubbles: true }));
+        let modeSelect = row.querySelector('[data-cmr-external-mode]');
+        assert.equal(modeSelect.value, '__choose_provider__');
+        assert.equal(modeSelect.children[0].textContent, '제공업체를 선택하세요');
+        assert.equal(modeSelect.children[0].disabled, true);
+        modeSelect.value = 'zai';
+        modeSelect.dispatchEvent(new FakeEvent('change', { bubbles: true }));
         assert.equal(
             harness.context.extensionSettings.customModelRouterExternalIntegrations.mappings[targetId],
             'zai',
@@ -2092,36 +2106,76 @@ test('init 범용 수동 UI는 unresolved target을 연결·자동 복귀·제�
             [modelId],
         );
         row = list.querySelector(`[data-target-id="${targetId}"]`);
-        assert.equal(row.querySelector('.cmr-badge').textContent, '수동 연결');
+        assert.equal(row.querySelector('.cmr-badge').textContent, '사용 가능');
+        assert.match(row.querySelector('.cmr-external-summary-detail').textContent, /직접 지정/);
+        assert.equal(harness.documentRef.activeElement, row.querySelector('summary'));
 
-        row.querySelector('[data-cmr-external-action="auto"]')
-            .dispatchEvent(new FakeEvent('click', { bubbles: true }));
+        modeSelect = row.querySelector('[data-cmr-external-mode]');
+        modeSelect.value = '';
+        modeSelect.dispatchEvent(new FakeEvent('change', { bubbles: true }));
         assert.equal(
             Object.hasOwn(harness.context.extensionSettings.customModelRouterExternalIntegrations.mappings, targetId),
             false,
         );
         assert.equal(external.select.querySelector('[data-cmr-external-group="true"]'), null);
         row = list.querySelector(`[data-target-id="${targetId}"]`);
-        assert.equal(row.querySelector('.cmr-badge').textContent, '확인 필요');
+        assert.equal(row.querySelector('.cmr-badge').textContent, '설정 필요');
+        assert.equal(row.querySelector('[data-cmr-external-mode]').value, '__choose_provider__');
+        assert.equal(harness.documentRef.activeElement, row.querySelector('summary'));
 
-        providerSelect = row.querySelector('[data-cmr-external-provider]');
-        providerSelect.value = 'zai';
-        row.querySelector('[data-cmr-external-action="bind"]')
-            .dispatchEvent(new FakeEvent('click', { bubbles: true }));
+        modeSelect = row.querySelector('[data-cmr-external-mode]');
+        modeSelect.value = 'zai';
+        modeSelect.dispatchEvent(new FakeEvent('change', { bubbles: true }));
         row = list.querySelector(`[data-target-id="${targetId}"]`);
-        row.querySelector('[data-cmr-external-action="disable"]')
-            .dispatchEvent(new FakeEvent('click', { bubbles: true }));
+        modeSelect = row.querySelector('[data-cmr-external-mode]');
+        modeSelect.value = EXTERNAL_MAPPING_DISABLED;
+        modeSelect.dispatchEvent(new FakeEvent('change', { bubbles: true }));
         assert.equal(
             harness.context.extensionSettings.customModelRouterExternalIntegrations.mappings[targetId],
             EXTERNAL_MAPPING_DISABLED,
         );
         assert.equal(external.select.querySelector('[data-cmr-external-group="true"]'), null);
         row = list.querySelector(`[data-target-id="${targetId}"]`);
-        assert.equal(row.querySelector('.cmr-badge').textContent, '사용 안 함');
+        assert.equal(row.querySelector('.cmr-badge').textContent, '연결 안 함');
 
         panel.querySelector('#cmr_external_refresh').dispatchEvent(new FakeEvent('click'));
-        assert.match(panel.querySelector('#cmr_external_status').textContent, /1개를 다시 탐지/);
-        assert.equal(panel.querySelector('#cmr_external_count').textContent, '감지 1개 · 연결 0개');
+        assert.match(panel.querySelector('#cmr_external_status').textContent, /다시 확인/);
+        assert.equal(panel.querySelector('#cmr_external_count').textContent, '사용 가능 0개 · 연결 안 함 1개');
+    } finally {
+        await destroy();
+        restoreGlobals();
+    }
+});
+
+test('일반적인 Model 레이블이 여러 개여도 확장과 control 표식으로 서로 구분해 표시한다', async () => {
+    const harness = createHarness();
+    const translation = appendExternalModelSelect(harness, {
+        containerId: 'translation_extension',
+        selectId: 'main_model',
+        label: 'Model',
+    });
+    const summary = appendExternalModelSelect(harness, {
+        containerId: 'summary_extension',
+        selectId: 'secondary_model',
+        label: 'Model',
+    });
+    const translationId = createExternalTargetId(translation.select, { documentRef: harness.documentRef });
+    const summaryId = createExternalTargetId(summary.select, { documentRef: harness.documentRef });
+    const restoreGlobals = installBrowserGlobals(harness);
+    try {
+        await init();
+        const panel = openPanel(harness);
+        const translationName = panel
+            .querySelector(`[data-target-id="${translationId}"]`)
+            .querySelector('.cmr-external-name')
+            .textContent;
+        const summaryName = panel
+            .querySelector(`[data-target-id="${summaryId}"]`)
+            .querySelector('.cmr-external-name')
+            .textContent;
+        assert.match(translationName, /번역/);
+        assert.match(summaryName, /요약/);
+        assert.notEqual(translationName, summaryName);
     } finally {
         await destroy();
         restoreGlobals();
@@ -2135,7 +2189,7 @@ test('외부 target 0개·모호·비대상 UI는 안전한 텍스트로 구분�
     try {
         await init();
         let panel = openPanel(harness);
-        assert.equal(panel.querySelector('#cmr_external_count').textContent, '감지 0개 · 연결 0개');
+        assert.equal(panel.querySelector('#cmr_external_count').textContent, '사용 가능 0개');
         assert.equal(panel.querySelector('#cmr_external_list').children.length, 1);
         assert.match(panel.querySelector('#cmr_external_list').children[0].textContent, /찾지 못했습니다/);
         assert.equal(harness.eventSource.listenerCount, 7);
@@ -2170,12 +2224,12 @@ test('외부 target 0개·모호·비대상 UI는 안전한 텍스트로 구분�
         await init();
         panel = openPanel(harness);
         const list = panel.querySelector('#cmr_external_list');
-        assert.equal(panel.querySelector('#cmr_external_count').textContent, '감지 2개 · 연결 1개');
-        assert.match(panel.querySelector('#cmr_external_count').title, /1개 자동 제외/);
+        assert.equal(panel.querySelector('#cmr_external_count').textContent, '사용 가능 1개 · 설정 필요 1개');
+        assert.match(panel.querySelector('#cmr_external_skipped').textContent, /지원하지 않는 입력란 1개/);
         assert.equal(list.children.length, 2);
-        assert.equal(list.querySelector(`[data-target-id="${autoTargetId}"]`).querySelector('.cmr-badge').textContent, '자동 연결');
+        assert.equal(list.querySelector(`[data-target-id="${autoTargetId}"]`).querySelector('.cmr-badge').textContent, '사용 가능');
         const ambiguousRow = list.querySelector(`[data-target-id="${ambiguousTargetId}"]`);
-        assert.equal(ambiguousRow.querySelector('.cmr-badge').textContent, '확인 필요');
+        assert.equal(ambiguousRow.querySelector('.cmr-badge').textContent, '설정 필요');
         assert.equal(ambiguousRow.querySelector('.cmr-external-name').textContent, ambiguousText);
         assert.equal(ambiguousRow.querySelector('img'), null);
         assert.equal(list.querySelector(`[data-target-id="${excludedTargetId}"]`), null);
