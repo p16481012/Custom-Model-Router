@@ -16,6 +16,7 @@ import {
     validatePurposeRoute,
 } from './purpose-router.js';
 import {
+    EXTERNAL_MAPPING_MANUAL,
     EXTERNAL_SETTINGS_SCHEMA_VERSION,
     normalizeExternalSettings,
 } from './external-settings.js';
@@ -503,7 +504,11 @@ function validateExternalIntegrations(value, issues) {
     }
     const mappingsCanonical = isRecord(value.mappings)
         && Object.keys(value.mappings).length === Object.keys(normalized.mappings).length
-        && Object.entries(normalized.mappings).every(([targetId, providerId]) => value.mappings[targetId] === providerId);
+        && Object.entries(normalized.mappings).every(([targetId, mode]) => {
+            const sourceMode = normalizeProviderId(value.mappings[targetId]);
+            return sourceMode === mode
+                || (mode === EXTERNAL_MAPPING_MANUAL && isSupportedProvider(sourceMode));
+        });
     const selectedCanonical = isRecord(value.selectedModels)
         && Object.keys(value.selectedModels).length === Object.keys(normalized.selectedModels).length
         && Object.entries(normalized.selectedModels).every(([targetId, selections]) => (

@@ -63,7 +63,7 @@ test('Registry·용도별 경로·외부 연결만 결정적 백업으로 만들
         adapterId: 'sillytavern.connection-profile',
         connectionProfileId: 'profile-summary',
     });
-    assert.equal(backup.externalIntegrations.mappings['cmr-ext-1234abcd'], 'openai');
+    assert.equal(backup.externalIntegrations.mappings['cmr-ext-1234abcd'], 'manual');
     assert.doesNotMatch(
         serialized,
         /REGISTRY_SECRET|ROUTES_SECRET|ROUTE_SECRET|PROFILE_SECRET|secret\.invalid/,
@@ -103,6 +103,24 @@ test('정상 백업을 검사하고 원본 설정을 변경하지 않는 값으�
     assert.equal(parsed.externalSettings.selectedModels['cmr-ext-1234abcd'].openai, 'gpt-future');
     parsed.registrySettings.models[0].id = 'changed';
     assert.equal(source.registrySettings.models[0].id, 'gpt-future');
+});
+
+test('v0.6.0~v0.6.2 제공업체 고정 mapping 백업은 직접 연결로 이관한다', () => {
+    const source = createSettings();
+    const backup = createPortableSettings({
+        ...source,
+        now: '2026-08-18T01:02:03.000Z',
+    });
+    backup.externalIntegrations.mappings['cmr-ext-1234abcd'] = 'openai';
+
+    const inspection = inspectPortableSettings(backup);
+    assert.equal(inspection.ok, true);
+    const parsed = parsePortableSettings(backup);
+    assert.equal(parsed.externalSettings.mappings['cmr-ext-1234abcd'], 'manual');
+    assert.equal(
+        parsed.externalSettings.selectedModels['cmr-ext-1234abcd'].openai,
+        'gpt-future',
+    );
 });
 
 test('알 수 없는 필드와 그 값은 가져오기를 거부하되 진단에 비밀 값을 싣지 않는다', () => {

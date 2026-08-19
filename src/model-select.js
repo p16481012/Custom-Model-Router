@@ -6,7 +6,7 @@ import {
     validateProviderModelId,
 } from './providers.js';
 
-export const CUSTOM_GROUP_LABEL = '사용자 지정 모델 · Custom Model Router';
+export const CUSTOM_GROUP_LABEL = '사용자 모델';
 
 function getDirectChildren(element) {
     return Array.from(element?.children ?? []);

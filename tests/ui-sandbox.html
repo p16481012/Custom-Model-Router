@@ -1,0 +1,413 @@
+<!doctype html>
+<html lang="ko">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta
+        http-equiv="Content-Security-Policy"
+        content="default-src 'none'; style-src 'self' 'unsafe-inline'; script-src 'unsafe-inline'; img-src 'none'; font-src 'none'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"
+    >
+    <title>Custom Model Router DOM/CSS 수동 샌드박스</title>
+    <link rel="stylesheet" href="../style.css">
+    <style>
+        :root {
+            color-scheme: dark;
+            --SmartThemeBodyColor: #ececf1;
+            --SmartThemeBorderColor: #6f7079;
+            --SmartThemeBlurTintColor: #2c2d35;
+            --SmartThemeQuoteColor: #89b4fa;
+            --warning-color: #ff8c8c;
+            --golden: #f2c94c;
+            --success-color: #65d17b;
+            background: #18191f;
+            color: var(--SmartThemeBodyColor);
+            font-family: system-ui, sans-serif;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-width: 320px;
+        }
+
+        button,
+        input,
+        select {
+            color: inherit;
+            font: inherit;
+        }
+
+        /* SillyTavern 전역 충돌 재현: 확장 스타일의 #cmr_settings 규칙이 이를 방어해야 한다. */
+        .menu_button {
+            align-items: flex-start;
+            background: #292b34;
+            border: 1px solid #797b86;
+            border-radius: 0.3rem;
+            display: flex;
+            justify-content: flex-start;
+            min-height: 2rem;
+            padding: 0.35rem 0.55rem;
+            text-align: start;
+            width: min-content;
+        }
+
+        .text_pole {
+            background: #202129;
+            border: 1px solid #797b86;
+            border-radius: 0.3rem;
+            min-height: 2.2rem;
+            padding: 0.35rem 0.5rem;
+        }
+
+        .wide100p {
+            width: 100%;
+        }
+
+        .sandbox-shell {
+            display: grid;
+            gap: 1rem;
+            margin-inline: auto;
+            max-width: 78rem;
+            padding: 1rem;
+        }
+
+        .sandbox-notice {
+            background: #252833;
+            border: 1px solid #65708b;
+            border-radius: 0.5rem;
+            line-height: 1.5;
+            margin: 0;
+            padding: 0.75rem 0.9rem;
+            word-break: keep-all;
+        }
+
+        .sandbox-toolbar {
+            align-items: center;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+
+        .sandbox-toolbar button {
+            background: #30323d;
+            border: 1px solid #7d8191;
+            border-radius: 0.35rem;
+            cursor: pointer;
+            min-height: 2.2rem;
+            padding: 0.35rem 0.7rem;
+        }
+
+        .sandbox-toolbar button[aria-pressed="true"] {
+            border-color: var(--SmartThemeQuoteColor);
+            box-shadow: 0 0 0 1px var(--SmartThemeQuoteColor);
+        }
+
+        .sandbox-viewport {
+            background: #111218;
+            border: 1px dashed #797b86;
+            inline-size: 420px;
+            margin-inline: auto;
+            max-inline-size: 100%;
+            min-inline-size: 0;
+            padding: 0.65rem;
+            transition: inline-size 120ms ease;
+        }
+
+        .cmr-manager-dialog {
+            background: #202129;
+            border: 1px solid #858794;
+            border-radius: 0.55rem;
+            box-shadow: 0 1rem 2.5rem rgb(0 0 0 / 35%);
+            max-block-size: 88vh;
+            overflow-y: auto;
+            padding: 0.85rem;
+        }
+
+        .sandbox-metrics {
+            background: #111218;
+            border: 1px solid #51535e;
+            border-radius: 0.4rem;
+            margin: 0;
+            max-height: 15rem;
+            overflow: auto;
+            padding: 0.75rem;
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+<body>
+    <main class="sandbox-shell">
+        <h1>Custom Model Router UI 수동 샌드박스</h1>
+        <p class="sandbox-notice">
+            이 페이지는 패널의 DOM과 CSS 배치만 눈으로 확인하는 수동 샌드박스입니다.
+            SillyTavern Popup, 실제 확장 초기화, 설정 저장 또는 API 요청의 성공을 검증하거나 주장하지 않습니다.
+            스크립트는 로컬 DOM만 변경하며 네트워크 요청을 만들지 않습니다.
+        </p>
+
+        <nav class="sandbox-toolbar" aria-label="샌드박스 보기 조절">
+            <strong>컨테이너 폭</strong>
+            <button type="button" data-sandbox-width="320" aria-pressed="false">320px</button>
+            <button type="button" data-sandbox-width="360" aria-pressed="false">360px</button>
+            <button type="button" data-sandbox-width="420" aria-pressed="true">420px</button>
+            <button type="button" data-sandbox-width="720" aria-pressed="false">720px</button>
+            <button id="sandbox_reopen" type="button" hidden>패널 다시 열기</button>
+            <button id="sandbox_show_metrics" type="button">getMetrics() 보기</button>
+        </nav>
+
+        <div id="sandbox_viewport" class="sandbox-viewport" data-width="420">
+            <div class="cmr-manager-dialog" role="dialog" aria-modal="false" aria-labelledby="cmr_panel_title">
+                <button class="popup-button-close" type="button">Popup 기본 닫기</button>
+                <div class="popup-content">
+                    <section id="cmr_settings" class="cmr-panel" aria-labelledby="cmr_panel_title">
+                        <header class="cmr-panel-header">
+                            <div class="cmr-panel-heading">
+                                <h2 id="cmr_panel_title">사용자 모델 관리</h2>
+                                <span class="cmr-product-name">Custom Model Router</span>
+                            </div>
+                            <div class="cmr-panel-header-actions">
+                                <button
+                                    id="cmr_panel_close"
+                                    class="menu_button cmr-panel-close"
+                                    type="button"
+                                    title="닫기"
+                                    aria-label="사용자 모델 관리 닫기"
+                                >×</button>
+                            </div>
+                        </header>
+
+                        <p class="cmr-description">
+                            <span class="cmr-sentence">SillyTavern 목록에 없는 모델 ID를 등록합니다.</span>
+                            <span class="cmr-sentence">실제 선택과 요청 성공은 이 샌드박스에서 검증하지 않습니다.</span>
+                        </p>
+
+                        <div class="cmr-provider-field">
+                            <label for="cmr_provider">등록할 제공업체</label>
+                            <select id="cmr_provider" class="text_pole wide100p">
+                                <optgroup label="모델 개발사 API">
+                                    <option>Google Vertex AI</option>
+                                    <option>Z.AI (GLM)</option>
+                                </optgroup>
+                                <optgroup label="라우터·호스팅 플랫폼">
+                                    <option>OpenRouter</option>
+                                </optgroup>
+                            </select>
+                            <small>
+                                <span class="cmr-sentence">모델을 등록할 제공업체를 선택합니다.</span>
+                                <span class="cmr-sentence">여기서 현재 모델은 바뀌지 않습니다.</span>
+                            </small>
+                        </div>
+
+                        <form class="cmr-add-form">
+                            <label for="cmr_model_id">Google Vertex AI 모델 ID</label>
+                            <div class="cmr-input-row">
+                                <input id="cmr_model_id" class="text_pole" type="text" value="gemini-next-preview" aria-label="모델 ID 예시">
+                                <button class="menu_button menu_button_icon" type="button">＋ 추가</button>
+                            </div>
+                            <small>Google 모델 경로 한 구간만 입력합니다.</small>
+                        </form>
+
+                        <section class="cmr-list-region" data-cmr-list-scope="all" aria-labelledby="cmr_list_title">
+                            <div class="cmr-list-header">
+                                <h3 id="cmr_list_title">전체 등록 모델</h3>
+                                <span id="cmr_model_count" class="cmr-list-count">제공업체 3곳 · 모델 7개</span>
+                            </div>
+                            <ul id="cmr_model_list" class="cmr-model-list" data-scrollable="true">
+                                <li class="cmr-provider-group">
+                                    <div class="cmr-provider-group-header">
+                                        <span class="cmr-provider-group-label">Google Vertex AI</span>
+                                        <span class="cmr-provider-group-count">3개</span>
+                                    </div>
+                                    <ul class="cmr-provider-model-list">
+                                        <li class="cmr-model-row" data-provider="vertexai">
+                                            <div class="cmr-model-summary"><code class="cmr-model-id">gemini-3.7-flash</code></div>
+                                            <div class="cmr-model-actions"><button class="menu_button cmr-icon-button cmr-delete-button" type="button" aria-label="gemini-3.7-flash 삭제">⌫</button></div>
+                                        </li>
+                                        <li class="cmr-model-row" data-provider="vertexai">
+                                            <div class="cmr-model-summary"><code class="cmr-model-id">gemini-3.6-pro-preview</code></div>
+                                            <div class="cmr-model-actions"><button class="menu_button cmr-icon-button cmr-delete-button" type="button" aria-label="gemini-3.6-pro-preview 삭제">⌫</button></div>
+                                        </li>
+                                        <li class="cmr-model-row" data-provider="vertexai">
+                                            <div class="cmr-model-summary"><code class="cmr-model-id">gemini-experimental-long-model-id</code></div>
+                                            <div class="cmr-model-actions"><button class="menu_button cmr-icon-button cmr-delete-button" type="button" aria-label="gemini-experimental-long-model-id 삭제">⌫</button></div>
+                                        </li>
+                                    </ul>
+                                </li>
+                                <li class="cmr-provider-group">
+                                    <div class="cmr-provider-group-header">
+                                        <span class="cmr-provider-group-label">OpenRouter</span>
+                                        <span class="cmr-provider-group-count">2개</span>
+                                    </div>
+                                    <ul class="cmr-provider-model-list">
+                                        <li class="cmr-model-row" data-provider="openrouter">
+                                            <div class="cmr-model-summary"><code class="cmr-model-id">openai/gpt-future</code></div>
+                                            <div class="cmr-model-actions"><button class="menu_button cmr-icon-button cmr-delete-button" type="button" aria-label="openai/gpt-future 삭제">⌫</button></div>
+                                        </li>
+                                        <li class="cmr-model-row" data-provider="openrouter">
+                                            <div class="cmr-model-summary"><code class="cmr-model-id">anthropic/claude-future</code></div>
+                                            <div class="cmr-model-actions"><button class="menu_button cmr-icon-button cmr-delete-button" type="button" aria-label="anthropic/claude-future 삭제">⌫</button></div>
+                                        </li>
+                                    </ul>
+                                </li>
+                                <li class="cmr-provider-group">
+                                    <div class="cmr-provider-group-header">
+                                        <span class="cmr-provider-group-label">Z.AI (GLM)</span>
+                                        <span class="cmr-provider-group-count">2개</span>
+                                    </div>
+                                    <ul class="cmr-provider-model-list">
+                                        <li class="cmr-model-row" data-provider="zai">
+                                            <div class="cmr-model-summary"><code class="cmr-model-id">glm-5-air</code></div>
+                                            <div class="cmr-model-actions"><button class="menu_button cmr-icon-button cmr-delete-button" type="button" aria-label="glm-5-air 삭제">⌫</button></div>
+                                        </li>
+                                        <li class="cmr-model-row" data-provider="zai">
+                                            <div class="cmr-model-summary"><code class="cmr-model-id">glm-5-plus</code></div>
+                                            <div class="cmr-model-actions"><button class="menu_button cmr-icon-button cmr-delete-button" type="button" aria-label="glm-5-plus 삭제">⌫</button></div>
+                                        </li>
+                                    </ul>
+                                </li>
+                            </ul>
+                            <small>모델 7개 예시를 제공업체별로 표시합니다.</small>
+                        </section>
+
+                        <details id="cmr_external_section" class="cmr-tool-section" open>
+                            <summary>
+                                <span>다른 확장 모델 연결</span>
+                                <span class="cmr-list-count">연결 대상 3개</span>
+                            </summary>
+                            <div class="cmr-tool-body">
+                                <p class="cmr-tool-description">행과 연결 방식 선택기의 반응형 배치를 확인합니다.</p>
+                                <ul id="cmr_external_list" class="cmr-external-list" tabindex="0" aria-label="감지한 외부 확장 모델 컨트롤">
+                                    <li class="cmr-model-row cmr-external-row">
+                                        <div class="cmr-model-summary"><span class="cmr-external-heading"><strong class="cmr-external-name">번역 확장 모델</strong><br><small>OpenRouter 제공업체를 자동으로 찾았습니다.</small></span></div>
+                                        <select class="text_pole" data-cmr-external-mode="true" aria-label="번역 확장 연결 방식">
+                                            <option value="auto" selected>자동 연결</option><option value="manual">직접 연결</option><option value="disabled">연결 안 함</option>
+                                        </select>
+                                    </li>
+                                    <li class="cmr-model-row cmr-external-row">
+                                        <div class="cmr-model-summary"><span class="cmr-external-heading"><strong class="cmr-external-name">공백없이아주긴외부확장모델선택기이름말줄임검증</strong><br><small>등록된 모든 제공업체 모델을 표시합니다.</small></span></div>
+                                        <select class="text_pole" data-cmr-external-mode="true" aria-label="요약 도우미 연결 방식">
+                                            <option value="auto">자동 연결</option><option value="manual" selected>직접 연결</option><option value="disabled">연결 안 함</option>
+                                        </select>
+                                    </li>
+                                    <li class="cmr-model-row cmr-external-row">
+                                        <div class="cmr-model-summary"><span class="cmr-external-heading"><strong class="cmr-external-name">장문 분석 모델 입력란</strong><br><small>CMR 모델 선택지를 표시하지 않습니다.</small></span></div>
+                                        <select class="text_pole" data-cmr-external-mode="true" aria-label="장문 분석 연결 방식">
+                                            <option value="auto">자동 연결</option><option value="manual">직접 연결</option><option value="disabled" selected>연결 안 함</option>
+                                        </select>
+                                    </li>
+                                </ul>
+                                <button id="cmr_external_refresh" type="button" class="menu_button">목록 새로고침</button>
+                                <div id="cmr_external_status" class="cmr-feedback" role="status" aria-live="polite"></div>
+                            </div>
+                        </details>
+
+                        <details class="cmr-tool-section">
+                            <summary>호환성 진단 및 설정 복구</summary>
+                            <div class="cmr-tool-body">
+                                <p class="cmr-tool-description">버튼 중앙 정렬과 두 열 배치를 확인하는 정적 예시입니다.</p>
+                                <div class="cmr-operation-actions">
+                                    <button type="button" class="menu_button">진단 실행</button>
+                                    <button type="button" class="menu_button">진단 복사</button>
+                                    <button type="button" class="menu_button">백업 내보내기</button>
+                                    <button type="button" class="menu_button">백업 가져오기</button>
+                                </div>
+                                <ul id="cmr_diagnostic_list" class="cmr-diagnostic-list" tabindex="0" aria-label="호환성 진단 결과">
+                                    <li data-status="warning">수동 샌드박스이므로 실제 호환성 진단은 실행하지 않습니다.</li>
+                                </ul>
+                            </div>
+                        </details>
+
+                        <details class="cmr-scope-note">
+                            <summary>지원 범위 및 개인정보</summary>
+                            <div class="cmr-tool-body">
+                                <p><span class="cmr-sentence">이 문장은 한국어 글자 단위가 아닌 공백에서 줄바꿈되는지 확인합니다.</span></p>
+                                <p><span class="cmr-sentence">이 샌드박스는 API 키나 연결 설정을 읽거나 저장하지 않습니다.</span></p>
+                            </div>
+                        </details>
+                    </section>
+                </div>
+            </div>
+        </div>
+
+        <pre id="sandbox_metrics" class="sandbox-metrics" aria-live="polite">getMetrics() 버튼을 누르면 현재 DOM/CSS 측정값을 표시합니다.</pre>
+    </main>
+
+    <script>
+        (() => {
+            'use strict';
+
+            const viewport = document.getElementById('sandbox_viewport');
+            const panel = document.getElementById('cmr_settings');
+            const reopenButton = document.getElementById('sandbox_reopen');
+            const metricsOutput = document.getElementById('sandbox_metrics');
+
+            function setWidth(width) {
+                const safeWidth = [320, 360, 420, 720].includes(width) ? width : 420;
+                viewport.style.inlineSize = `${safeWidth}px`;
+                viewport.dataset.width = String(safeWidth);
+                for (const button of document.querySelectorAll('[data-sandbox-width]')) {
+                    button.setAttribute('aria-pressed', String(Number(button.dataset.sandboxWidth) === safeWidth));
+                }
+            }
+
+            function getMetrics() {
+                const modelList = document.getElementById('cmr_model_list');
+                const deleteButton = document.querySelector('.cmr-delete-button');
+                const operationButton = document.querySelector('.cmr-operation-actions .menu_button');
+                const listStyle = getComputedStyle(modelList);
+                const deleteStyle = deleteButton ? getComputedStyle(deleteButton) : null;
+                const operationStyle = operationButton ? getComputedStyle(operationButton) : null;
+                return Object.freeze({
+                    kind: 'DOM/CSS 수동 샌드박스 측정값',
+                    actualRuntimeVerified: false,
+                    networkRequestsCreatedByScript: 0,
+                    containerWidth: viewport.getBoundingClientRect().width,
+                    requestedWidth: Number(viewport.dataset.width),
+                    panelVisible: !panel.hidden,
+                    providerGroupCount: document.querySelectorAll('.cmr-provider-group').length,
+                    modelRowCount: document.querySelectorAll('#cmr_model_list .cmr-model-row').length,
+                    externalRowCount: document.querySelectorAll('#cmr_external_list .cmr-external-row').length,
+                    modelListScrollableFlag: modelList.dataset.scrollable === 'true',
+                    modelListOverflowY: listStyle.overflowY,
+                    modelListClientHeight: modelList.clientHeight,
+                    modelListScrollHeight: modelList.scrollHeight,
+                    firstDeleteButtonWidth: deleteStyle?.width ?? null,
+                    firstOperationButtonWidth: operationStyle?.width ?? null,
+                    firstOperationButtonTextAlign: operationStyle?.textAlign ?? null,
+                });
+            }
+
+            globalThis.getMetrics = getMetrics;
+
+            for (const button of document.querySelectorAll('[data-sandbox-width]')) {
+                button.addEventListener('click', () => setWidth(Number(button.dataset.sandboxWidth)));
+            }
+
+            document.getElementById('cmr_panel_close').addEventListener('click', () => {
+                panel.hidden = true;
+                reopenButton.hidden = false;
+            });
+
+            reopenButton.addEventListener('click', () => {
+                panel.hidden = false;
+                reopenButton.hidden = true;
+                document.getElementById('cmr_panel_close').focus();
+            });
+
+            document.getElementById('cmr_external_refresh').addEventListener('click', () => {
+                const status = document.getElementById('cmr_external_status');
+                status.dataset.state = 'ok';
+                status.textContent = '정적 연결 대상 3개를 다시 표시했습니다. 실제 탐지는 실행하지 않았습니다.';
+            });
+
+            document.getElementById('sandbox_show_metrics').addEventListener('click', () => {
+                metricsOutput.textContent = JSON.stringify(getMetrics(), null, 2);
+            });
+
+            setWidth(420);
+        })();
+    </script>
+</body>
+</html>

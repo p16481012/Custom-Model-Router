@@ -6,8 +6,9 @@ import {
 } from './providers.js';
 
 export const EXTERNAL_AUTO_CONFIDENCE_THRESHOLD = 0.72;
+export const EXTERNAL_MAPPING_MANUAL = 'manual';
 export const EXTERNAL_MAPPING_DISABLED = 'disabled';
-export const EXTERNAL_GROUP_LABEL = '사용자 지정 모델 · Custom Model Router';
+export const EXTERNAL_GROUP_LABEL = '사용자 모델';
 export const EXTERNAL_MODEL_SELECTOR = '[data-cmr-external-model="true"]';
 export const EXTERNAL_GROUP_SELECTOR = '[data-cmr-external-group="true"]';
 export const EXTERNAL_TARGET_LIMIT = 512;
@@ -143,8 +144,11 @@ function getOptions(host) {
 }
 
 function getSelectedOption(select) {
-    return Array.from(select?.selectedOptions ?? []).at(0)
-        ?? getOptions(select).find(option => option.selected || String(option.value) === String(select?.value))
+    const options = getOptions(select);
+    return options.find(option => option.selected && String(option.value) === String(select?.value))
+        ?? Array.from(select?.selectedOptions ?? [])
+            .find(option => String(option.value) === String(select?.value))
+        ?? options.find(option => String(option.value) === String(select?.value))
         ?? null;
 }
 
@@ -634,8 +638,11 @@ export function normalizeExternalMappings(value) {
             continue;
         }
         const providerId = normalizeProviderId(provider);
-        if (providerId === EXTERNAL_MAPPING_DISABLED || isSupportedProvider(providerId)) {
+        if (providerId === EXTERNAL_MAPPING_MANUAL || providerId === EXTERNAL_MAPPING_DISABLED) {
             result[targetId] = providerId;
+        } else if (isSupportedProvider(providerId)) {
+            // v0.6.0~v0.6.2의 제공업체 고정 mapping은 전체 제공업체 직접 연결로 이관한다.
+            result[targetId] = EXTERNAL_MAPPING_MANUAL;
         }
     }
     return result;
@@ -645,7 +652,7 @@ export function resolveExternalTargetProvider(target, mappings, options = {}) {
     const normalizedMappings = normalizeExternalMappings(mappings);
     const isRiskBlocked = target?.risk?.level === 'blocked';
     if (Object.hasOwn(normalizedMappings, target?.targetId)) {
-        const providerId = normalizedMappings[target.targetId];
+        const mode = normalizedMappings[target.targetId];
         if (isRiskBlocked && options.allowRiskyManualMappings !== true) {
             return {
                 providerId: null,
@@ -655,9 +662,9 @@ export function resolveExternalTargetProvider(target, mappings, options = {}) {
             };
         }
         return {
-            providerId: providerId === EXTERNAL_MAPPING_DISABLED ? null : providerId,
+            providerId: null,
             confidence: 1,
-            source: providerId === EXTERNAL_MAPPING_DISABLED ? 'manual-disabled' : 'manual',
+            source: mode === EXTERNAL_MAPPING_DISABLED ? 'manual-disabled' : 'manual',
         };
     }
 
@@ -797,10 +804,14 @@ function nativeOptionMatchesProvider(option, providerId, externalAttributes) {
     return !hasProviderMetadata;
 }
 
-function createManagedOption(documentRef, providerId, modelId, externalAttributes = {}) {
+function createManagedOption(documentRef, providerId, modelId, externalAttributes = {}, label = '') {
     const option = documentRef.createElement('option');
     option.value = modelId;
-    option.textContent = modelId;
+    option.textContent = label || modelId;
+    if (label) {
+        option.label = label;
+        option.setAttribute?.('label', label);
+    }
     option.dataset.cmrExternalModel = 'true';
     option.dataset.cmrProvider = providerId;
     for (const [attribute, value] of Object.entries(externalAttributes)) {
@@ -813,18 +824,16 @@ function createManagedOption(documentRef, providerId, modelId, externalAttribute
     return option;
 }
 
-export function syncExternalTarget(target, providerId, models, options = {}) {
-    const normalizedProviderId = normalizeProviderId(providerId);
+function ensureExternalOptionHost(target, providerMarker, documentRef) {
     let host = target?.optionHost;
     const control = target?.control;
-    const documentRef = options.documentRef ?? host?.ownerDocument ?? control?.ownerDocument ?? globalThis.document;
     if (!host && tagName(control) === 'INPUT' && documentRef?.createElement) {
         const previousList = getAttribute(control, 'list');
         const hadList = control.hasAttribute?.('list') ?? Boolean(previousList);
         const datalist = documentRef.createElement('datalist');
         datalist.id = `cmr_external_models_${String(target?.targetId ?? '').replace(/^cmr-ext-/, '')}`;
         datalist.dataset.cmrExternalGroup = 'true';
-        datalist.dataset.cmrProvider = normalizedProviderId;
+        datalist.dataset.cmrProvider = providerMarker;
         datalist.setAttribute?.(EXTERNAL_DATALIST_ATTRIBUTE, 'true');
         datalist.setAttribute?.(EXTERNAL_DATALIST_PREVIOUS_LIST_ATTRIBUTE, previousList);
         datalist.setAttribute?.(EXTERNAL_DATALIST_HAD_LIST_ATTRIBUTE, hadList ? 'true' : 'false');
@@ -834,12 +843,30 @@ export function syncExternalTarget(target, providerId, models, options = {}) {
         target.optionHost = datalist;
         host = datalist;
     }
+    if (host && getAttribute(host, EXTERNAL_DATALIST_ATTRIBUTE) === 'true') {
+        host.dataset.cmrProvider = providerMarker;
+    }
+    return host;
+}
+
+export function syncExternalTarget(target, providerId, models, options = {}) {
+    const normalizedProviderId = normalizeProviderId(providerId);
+    const control = target?.control;
+    const documentRef = options.documentRef
+        ?? target?.optionHost?.ownerDocument
+        ?? control?.ownerDocument
+        ?? globalThis.document;
+    const host = ensureExternalOptionHost(target, normalizedProviderId, documentRef);
     if (!host || !documentRef?.createElement || !isSupportedProvider(normalizedProviderId)) {
         return { providerId: normalizedProviderId || null, injectedIds: [], nativeIds: [], reason: 'no-option-host' };
     }
 
     const externalAttributes = getExternalProviderAttributes(target, normalizedProviderId, options);
     const previousValue = String(control?.value ?? '');
+    const previousSelectedOption = tagName(host) === 'SELECT' ? getSelectedOption(control) : null;
+    const previousProviderId = isManagedOption(previousSelectedOption)
+        ? normalizeProviderId(getAttribute(previousSelectedOption, 'data-cmr-provider'))
+        : null;
     const nativeIds = new Set(getOptions(host)
         .filter(option => !isManagedOption(option) && !isManagedGroup(option?.parentElement))
         .filter(option => nativeOptionMatchesProvider(option, normalizedProviderId, externalAttributes))
@@ -861,8 +888,22 @@ export function syncExternalTarget(target, providerId, models, options = {}) {
     }
 
     // 옵션 목록 동기화는 외부 확장이 가진 현재 선택/입력값을 변경하지 않는다.
-    if (control && String(control.value ?? '') !== previousValue) {
-        control.value = previousValue;
+    if (control) {
+        const previousManagedOption = previousProviderId
+            ? getOptions(host).find(option => (
+                isManagedOption(option)
+                && normalizeProviderId(getAttribute(option, 'data-cmr-provider')) === previousProviderId
+                && String(option.value) === previousValue
+            ))
+            : null;
+        if (String(control.value ?? '') !== previousValue) {
+            control.value = previousValue;
+        }
+        if (previousManagedOption) {
+            for (const option of getOptions(host)) {
+                option.selected = option === previousManagedOption;
+            }
+        }
     }
     return {
         providerId: normalizedProviderId,
@@ -870,6 +911,112 @@ export function syncExternalTarget(target, providerId, models, options = {}) {
         nativeIds: [...nativeIds],
         reason: null,
     };
+}
+
+/**
+ * 직접 연결 대상에는 Registry의 모든 제공업체 모델을 함께 표시한다.
+ * select는 제공업체별 optgroup을 사용하고, input/datalist는 실제 입력값을 바꾸지 않도록
+ * 모델 ID를 value로 유지하면서 provider가 드러나는 label을 붙인다.
+ */
+export function syncExternalTargetProviders(target, providerEntries, options = {}) {
+    const control = target?.control;
+    const documentRef = options.documentRef
+        ?? target?.optionHost?.ownerDocument
+        ?? control?.ownerDocument
+        ?? globalThis.document;
+    const host = ensureExternalOptionHost(target, EXTERNAL_MAPPING_MANUAL, documentRef);
+    if (!host || !documentRef?.createElement) {
+        return { injectedModels: [], nativeModels: [], reason: 'no-option-host' };
+    }
+
+    const providerById = new Map(getProviders().map(provider => [provider.id, provider]));
+    const entries = (Array.isArray(providerEntries) ? providerEntries : [])
+        .map(entry => {
+            const providerId = normalizeProviderId(entry?.providerId ?? entry?.id);
+            return {
+                providerId,
+                label: normalizeText(entry?.label) || providerById.get(providerId)?.label || providerId,
+                models: Array.isArray(entry?.models) ? entry.models : [],
+            };
+        })
+        .filter(entry => isSupportedProvider(entry.providerId));
+    const previousValue = String(control?.value ?? '');
+    const previousManagedOption = tagName(host) === 'SELECT'
+        ? getOptions(host).find(option => (
+            option.selected
+            && isManagedOption(option)
+            && String(option.value) === previousValue
+        )) ?? null
+        : null;
+    const previousProviderId = previousManagedOption
+        ? normalizeProviderId(getAttribute(previousManagedOption, 'data-cmr-provider'))
+        : null;
+    const nativeOptions = getOptions(host)
+        .filter(option => !isManagedOption(option) && !isManagedGroup(option?.parentElement));
+    const injectedModels = [];
+    const nativeModels = [];
+    removeExternalTargetModels(target);
+
+    let remaining = EXTERNAL_INJECTED_OPTION_LIMIT;
+    for (const entry of entries) {
+        if (remaining <= 0) {
+            break;
+        }
+        const externalAttributes = getExternalProviderAttributes(target, entry.providerId, options);
+        const nativeIds = new Set(nativeOptions
+            .filter(option => nativeOptionMatchesProvider(option, entry.providerId, externalAttributes))
+            .map(option => String(option.value)));
+        nativeModels.push(...[...nativeIds].map(modelId => ({ providerId: entry.providerId, modelId })));
+        const ids = enabledModelIds(entry.providerId, entry.models)
+            .filter(id => !nativeIds.has(id))
+            .slice(0, remaining);
+        remaining -= ids.length;
+        if (!ids.length) {
+            continue;
+        }
+
+        if (tagName(host) === 'SELECT') {
+            const group = documentRef.createElement('optgroup');
+            group.label = `${entry.label} · ${EXTERNAL_GROUP_LABEL}`;
+            group.dataset.cmrExternalGroup = 'true';
+            group.dataset.cmrProvider = entry.providerId;
+            group.append(...ids.map(id => createManagedOption(
+                documentRef,
+                entry.providerId,
+                id,
+                externalAttributes,
+            )));
+            host.append(group);
+        } else if (tagName(host) === 'DATALIST') {
+            host.append(...ids.map(id => createManagedOption(
+                documentRef,
+                entry.providerId,
+                id,
+                externalAttributes,
+                `${entry.label} · ${id}`,
+            )));
+        }
+        injectedModels.push(...ids.map(modelId => ({ providerId: entry.providerId, modelId })));
+    }
+
+    if (control) {
+        if (String(control.value ?? '') !== previousValue) {
+            control.value = previousValue;
+        }
+        const restoredManagedOption = previousProviderId
+            ? getOptions(host).find(option => (
+                isManagedOption(option)
+                && normalizeProviderId(getAttribute(option, 'data-cmr-provider')) === previousProviderId
+                && String(option.value) === previousValue
+            ))
+            : null;
+        if (restoredManagedOption) {
+            for (const option of getOptions(host)) {
+                option.selected = option === restoredManagedOption;
+            }
+        }
+    }
+    return { injectedModels, nativeModels, reason: null };
 }
 
 function mutationOnlyTouchesManagedNodes(record) {
@@ -996,6 +1143,14 @@ export function createExternalIntegrationController(options = {}) {
         }
     }
 
+    function getProviderEntries() {
+        return getProviders().map(provider => ({
+            providerId: provider.id,
+            label: provider.label,
+            models: getModels(provider.id),
+        }));
+    }
+
     function unbindElement(element) {
         const entries = bindings.get(element) ?? [];
         for (const { eventName, handler } of entries) {
@@ -1028,9 +1183,95 @@ export function createExternalIntegrationController(options = {}) {
         control?.dispatchEvent?.(event);
     }
 
+    function getManagedSelectionIdentity(target) {
+        const control = target?.control;
+        if (tagName(control) !== 'SELECT') {
+            return null;
+        }
+        const selectedOption = getSelectedOption(control);
+        if (!isManagedOption(selectedOption)) {
+            return null;
+        }
+        return {
+            providerId: normalizeProviderId(getAttribute(selectedOption, 'data-cmr-provider')),
+            modelId: String(selectedOption.value),
+        };
+    }
+
+    function selectNativeFallbackAndNotify(target) {
+        const control = target?.control;
+        if (tagName(control) !== 'SELECT') {
+            return false;
+        }
+        const remainingOptions = getOptions(control).filter(option => (
+            !isManagedOption(option)
+            && !isManagedGroup(option?.parentElement)
+            && option.disabled !== true
+        ));
+        const currentOption = remainingOptions.find(option => (
+            String(option.value) === String(control.value ?? '')
+        ));
+        const fallbackOption = currentOption ?? remainingOptions[0] ?? null;
+        for (const option of getOptions(control)) {
+            option.selected = option === fallbackOption;
+        }
+        control.value = fallbackOption ? String(fallbackOption.value) : '';
+        dispatchSelectionEvent(control);
+        return true;
+    }
+
+    function notifySelectionInvalidated(target, selection, reason) {
+        if (!selection) {
+            return;
+        }
+        try {
+            options.onSelectionInvalidated?.({
+                targetId: target.targetId,
+                providerId: selection.providerId,
+                modelId: selection.modelId,
+                reason,
+            });
+        } catch {
+            // 저장 콜백 실패가 외부 확장 control 정리를 막지 않게 격리한다.
+        }
+    }
+
+    function syncManagedTarget(target, synchronizeTarget) {
+        const previousSelection = getManagedSelectionIdentity(target);
+        const result = synchronizeTarget();
+        if (!previousSelection) {
+            return result;
+        }
+        const currentSelection = getManagedSelectionIdentity(target);
+        const preserved = currentSelection
+            && currentSelection.providerId === previousSelection.providerId
+            && currentSelection.modelId === previousSelection.modelId;
+        if (!preserved) {
+            selectNativeFallbackAndNotify(target);
+            notifySelectionInvalidated(target, previousSelection, 'models-updated');
+        }
+        return result;
+    }
+
+    function removeManagedModelsAndNotify(target, cleanupOptions = {}, reason = 'disconnected') {
+        const removedSelection = getManagedSelectionIdentity(target);
+        const removed = removeExternalTargetModels(target, null, cleanupOptions);
+        if (!removedSelection) {
+            return removed;
+        }
+        selectNativeFallbackAndNotify(target);
+        notifySelectionInvalidated(target, removedSelection, reason);
+        return removed;
+    }
+
     function bindTarget(target) {
         const resolution = target.resolution;
-        if (!resolution?.providerId) {
+        const isManual = resolution?.source === 'manual';
+        if (target.providerControl && target.providerControl !== target.control) {
+            bindElement(target.providerControl, 'change', () => requestSync(), `provider:${target.targetId}`);
+            bindElement(target.providerControl, 'input', () => requestSync(), `provider-input:${target.targetId}`);
+        }
+        if (!resolution?.providerId && !isManual) {
             return;
         }
         const providerId = resolution.providerId;
@@ -1039,38 +1280,72 @@ export function createExternalIntegrationController(options = {}) {
                 return;
             }
             const value = normalizeText(target.control?.value);
-            const isCmrModel = getOptions(target.optionHost).some(option => (
+            const selectedOption = tagName(target.control) === 'SELECT'
+                ? getSelectedOption(target.control)
+                : null;
+            const matchingOptions = getOptions(target.optionHost).filter(option => (
                 isManagedOption(option)
-                && normalizeProviderId(getAttribute(option, 'data-cmr-provider')) === providerId
                 && String(option.value) === value
             ));
-            options.onSelectionChanged?.({
+            const isSelectControl = tagName(target.control) === 'SELECT';
+            const managedOption = selectedOption && isManagedOption(selectedOption)
+                ? selectedOption
+                : (!isSelectControl && matchingOptions.length === 1 ? matchingOptions[0] : null);
+            const matchingProviderIds = [...new Set((managedOption ? [managedOption] : matchingOptions)
+                .filter(() => !isSelectControl || Boolean(managedOption))
+                .map(option => normalizeProviderId(getAttribute(option, 'data-cmr-provider')))
+                .filter(isSupportedProvider))];
+            const selectedProviderId = matchingProviderIds.length === 1 ? matchingProviderIds[0] : null;
+            const isCmrModel = Boolean(managedOption && (
+                isManual
+                    ? isSupportedProvider(selectedProviderId)
+                    : selectedProviderId === providerId
+            )) || Boolean(isManual && matchingProviderIds.length);
+            const selection = {
                 targetId: target.targetId,
-                providerId,
+                providerId: isManual ? (isCmrModel ? selectedProviderId : null) : providerId,
                 modelId: isCmrModel ? value : null,
+                mode: isManual ? EXTERNAL_MAPPING_MANUAL : 'auto',
                 userInitiated: true,
-            });
-        }, `model:${target.targetId}:${providerId}`);
+            };
+            if (isManual && matchingProviderIds.length > 1) {
+                selection.providerIds = matchingProviderIds;
+            }
+            options.onSelectionChanged?.(selection);
+        }, `model:${target.targetId}:${isManual ? EXTERNAL_MAPPING_MANUAL : providerId}`);
 
-        if (target.providerControl && target.providerControl !== target.control) {
-            bindElement(target.providerControl, 'change', () => requestSync(), `provider:${target.targetId}`);
-            bindElement(target.providerControl, 'input', () => requestSync(), `provider-input:${target.targetId}`);
-        }
     }
 
     function restorePreferredModel(target) {
+        const isManual = target.resolution?.source === 'manual';
         const providerId = target.resolution?.providerId;
-        if (!providerId || normalizeText(target.control?.value)) {
+        if ((!providerId && !isManual) || normalizeText(target.control?.value)) {
             return null;
         }
-        const preferred = normalizeText(options.getPreferredModel?.(target.targetId, providerId));
-        const isInjected = preferred && getOptions(target.optionHost).some(option => (
-            isManagedOption(option)
-            && normalizeProviderId(getAttribute(option, 'data-cmr-provider')) === providerId
-            && String(option.value) === preferred
-        ));
-        if (!isInjected) {
+        const preferredEntries = isManual
+            ? Object.entries(options.getPreferredModels?.(target.targetId) ?? {})
+            : [[providerId, options.getPreferredModel?.(target.targetId, providerId)]];
+        let preferredOption = null;
+        for (const [candidateProvider, candidateModel] of preferredEntries) {
+            const normalizedCandidateProvider = normalizeProviderId(candidateProvider);
+            const normalizedCandidateModel = normalizeText(candidateModel);
+            preferredOption = getOptions(target.optionHost).find(option => (
+                isManagedOption(option)
+                && normalizeProviderId(getAttribute(option, 'data-cmr-provider')) === normalizedCandidateProvider
+                && String(option.value) === normalizedCandidateModel
+            )) ?? null;
+            if (preferredOption) {
+                break;
+            }
+        }
+        if (!preferredOption) {
             return null;
+        }
+        const preferred = String(preferredOption.value);
+        if (tagName(target.control) === 'SELECT') {
+            for (const option of getOptions(target.optionHost)) {
+                option.selected = option === preferredOption;
+            }
         }
         target.control.value = preferred;
         if (String(target.control.value) !== preferred) {
@@ -1101,18 +1376,26 @@ export function createExternalIntegrationController(options = {}) {
                 // 외부 확장이 plain input의 list를 자기 datalist로 바꾼 경우 이전 CMR host를 남기지 않는다.
                 removeExternalTargetModels(previous, null, { removeOwnedHost: true });
             }
-            if (previous && previous.resolution?.providerId !== resolution.providerId) {
-                removeExternalTargetModels(previous);
-            }
             target.resolution = resolution;
-            if (resolution.providerId) {
-                syncExternalTarget(target, resolution.providerId, getModels(resolution.providerId), options);
+            if (resolution.source === 'manual') {
+                syncManagedTarget(target, () => (
+                    syncExternalTargetProviders(target, getProviderEntries(), options)
+                ));
+                managedTargets.set(target.control, target);
+                bindTarget(target);
+                target.restoredModelId = restorePreferredModel(target);
+            } else if (resolution.providerId) {
+                syncManagedTarget(target, () => (
+                    syncExternalTarget(target, resolution.providerId, getModels(resolution.providerId), options)
+                ));
                 managedTargets.set(target.control, target);
                 bindTarget(target);
                 target.restoredModelId = restorePreferredModel(target);
             } else {
-                removeExternalTargetModels(target, null, { removeOwnedHost: true });
+                removeManagedModelsAndNotify(target, { removeOwnedHost: true }, resolution.source);
                 managedTargets.delete(target.control);
+                // 현재 provider가 비어 있거나 안전상 제외되어도 provider 변경은 계속 감지한다.
+                bindTarget(target);
             }
         }
         targets = nextTargets;
@@ -1178,7 +1461,7 @@ export function createExternalIntegrationController(options = {}) {
         pending = false;
         if (options.cleanup !== false) {
             for (const target of managedTargets.values()) {
-                removeExternalTargetModels(target, null, { removeOwnedHost: true });
+                removeManagedModelsAndNotify(target, { removeOwnedHost: true }, 'destroy');
             }
             managedTargets.clear();
         }

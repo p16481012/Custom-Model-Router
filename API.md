@@ -1,8 +1,8 @@
 # 공개 Registry API
 
-Custom Model Router v0.6.4는 다른 SillyTavern 확장이 내부 파일 경로에 의존하지 않고 등록 모델과 용도별 라우팅을 사용할 수 있도록 `globalThis.CustomModelRouter`를 제공합니다. Registry API 계약 버전은 `1.1.0`, Routing API 계약 버전은 `1.0.0`이며 v0.5.0과 동일합니다.
+Custom Model Router v0.6.5는 다른 SillyTavern 확장이 내부 파일 경로에 의존하지 않고 등록 모델과 용도별 라우팅을 사용할 수 있도록 `globalThis.CustomModelRouter`를 제공합니다. Registry API 계약 버전은 `1.1.0`, Routing API 계약 버전은 `1.0.0`이며 v0.5.0과 동일합니다.
 
-v0.6.0의 범용 DOM 모델 브리지, 호환성 진단과 설정 백업·복구는 이 전역 API 계약에 포함되지 않습니다. v0.6.3 이후 일반 관리 UI는 모델 등록·삭제만 제공하며, Routing API는 개발자 또는 연동 확장이 명시적으로 사용하는 opt-in 계약입니다. 용도별 경로에는 Connection Profile ID만 저장되고 프로필 본문·API 키·endpoint는 복제되지 않습니다.
+v0.6.0의 범용 DOM 모델 브리지, 호환성 진단과 설정 백업·복구는 이 전역 API 계약에 포함되지 않습니다. v0.6.5 일반 UI의 모델 목록은 등록·삭제만 담당하고, 외부 대상 목록은 자동·직접 연결·연결 안 함만 설정합니다. Routing API는 개발자 또는 연동 확장이 명시적으로 사용하는 opt-in 계약이며 일반 라우팅 UI는 없습니다. 용도별 경로에는 Connection Profile ID만 저장되고 프로필 본문·API 키·endpoint는 복제되지 않습니다.
 
 ## 호환성 확인
 
@@ -76,10 +76,11 @@ v0.5.0의 Registry/Routing API는 소비 확장이 직접 호출해야 하는 op
 
 1. 표준 `select`, 텍스트 `input`, `datalist` 중 model/LLM 의미를 가진 외부 컨트롤을 찾습니다.
 2. 명시 provider attribute, 연결된 provider/source select, ID·name·label, option의 `data-type`과 provider alias를 조합해 제공업체를 추론합니다.
-3. 신뢰도가 충분한 대상에는 해당 provider의 Registry 모델만 CMR 소유 option으로 추가합니다.
-4. provider를 충분히 확실하게 판별할 수 없는 대상은 CMR option을 추가하지 않고 그대로 둡니다.
-5. 외부 확장이 컨트롤을 다시 렌더링하면 CMR option을 다시 추가합니다. 동일 target의 새 컨트롤 값이 비어 있을 때만 provider별 마지막 CMR 선택을 복원하며, 외부 확장이 둔 유효한 현재값은 덮어쓰지 않습니다.
-6. 비활성화 시 CMR이 추가한 option, observer와 listener만 제거합니다.
+3. 대상별 모드는 `auto`, `manual`, `disabled`입니다. `auto`는 mapping을 저장하지 않고, `manual`과 `disabled`만 저장합니다.
+4. `auto`에서 신뢰도가 충분하면 해당 provider의 Registry 모델만 CMR 소유 option으로 추가합니다. 제공업체를 판별하지 못하면 그대로 둡니다.
+5. `manual`은 특정 provider를 고정하지 않고 Registry의 모든 provider 모델을 provider별 optgroup으로 추가합니다. `disabled`는 해당 모델 칸에 CMR option을 표시하지 않습니다. 현재 선택 중인 CMR option을 제거하면 외부 확장 또는 브라우저의 native 기본값으로 전환될 수 있습니다.
+6. 외부 확장이 컨트롤을 다시 렌더링하면 현재 모드에 맞는 CMR option을 다시 추가합니다. 동일 target의 새 컨트롤 값이 비어 있을 때만 provider별 마지막 CMR 선택을 복원하며, 외부 확장이 둔 유효한 현재값은 덮어쓰지 않습니다.
+7. 비활성화 시 CMR이 추가한 option, observer와 listener만 제거합니다.
 
 대표 provider alias는 다음과 같습니다.
 
@@ -92,7 +93,7 @@ v0.5.0의 Registry/Routing API는 소비 확장이 직접 호출해야 하는 op
 | `zai`, `Z.AI`, `GLM` | `zai` |
 | `openai-compatible`, `LM Studio`, `Ollama`, `local api` | `custom` |
 
-Caption처럼 하나의 model select에 provider별 option이 함께 들어 있고 `data-type`으로 구분하는 경우에는 외부 provider 값을 CMR option에도 보존합니다. 단, CMR Registry는 모델의 vision 능력을 저장하지 않으므로 실제 Caption 호환성은 모델과 계정에서 확인해야 합니다.
+Caption처럼 하나의 model select에 provider별 option이 함께 들어 있고 `data-type`으로 구분하는 경우에는 외부 provider 값을 CMR option에도 보존합니다. 자동 연결에서는 추론한 provider만, 직접 연결에서는 모든 provider의 모델을 `제공업체 이름 · 사용자 모델` optgroup으로 구분합니다. 단, CMR Registry는 모델의 vision 능력을 저장하지 않으므로 실제 Caption 호환성은 모델과 계정에서 확인해야 합니다.
 
 ### 네트워크 경계
 
@@ -103,20 +104,23 @@ DOM 브리지는 전역 `fetch` 또는 `XMLHttpRequest`를 monkey patch하지 �
 - Vectors·embedding·rerank 모델
 - TTS·voice·speech 모델
 - Stable Diffusion·이미지 생성 모델
-- 제공업체를 확정할 수 없는 모델 컨트롤
+- 제공업체를 확정할 수 없고 직접 연결하지 않은 모델 컨트롤
 - React 등 자체 위젯만 있는 확장, iframe 내부, 닫힌 Shadow DOM
 - 모델 컨트롤 없이 직접 요청하는 확장
 
-마지막 세 유형은 자동 연결할 수 없으며 이 문서의 Registry 또는 Routing API를 사용하는 전용 opt-in 연동이 필요합니다. 비대상 판별도 DOM의 이름·레이블·속성·상위 확장 표식에 의존하는 best-effort입니다. v0.6.3에는 대상별 수동 mapping·자동·확인 필요·`disabled` UI가 없으며, provider를 확실하게 판별하지 못한 일반적인 모델 컨트롤은 변경하지 않습니다.
+자체 위젯, iframe, 닫힌 Shadow DOM 또는 모델 컨트롤 없는 요청은 자동·직접 연결 모두 사용할 수 없으며 이 문서의 Registry 또는 Routing API를 사용하는 전용 opt-in 연동이 필요합니다. 비대상 판별도 DOM의 이름·레이블·속성·상위 확장 표식에 의존하는 best-effort입니다. 제공업체를 확실하게 판별하지 못한 표준 Chat Completion 컨트롤은 자동 모드에서 변경하지 않으며, 사용자가 대상과 용도를 확인한 경우에만 직접 연결할 수 있습니다.
 
 ## 외부 연결 저장 계약
 
-DOM 브리지 내부 저장 schema v1은 다음 구조입니다. target ID는 외부 컨트롤의 ID·name·label과 상위 확장 구조 등 DOM 표식을 조합해 만든 식별자이며 endpoint나 비밀값을 포함하지 않습니다. v0.6.3 이후에는 provider를 런타임에서 자동 추론하므로 `mappings`는 호환성을 위해 빈 객체로만 유지하고, target별 provider별 마지막 CMR 선택만 저장합니다.
+DOM 브리지 내부 저장 schema v1은 다음 구조입니다. target ID는 외부 컨트롤의 ID·name·label과 상위 확장 구조 등 DOM 표식을 조합해 만든 식별자이며 endpoint나 비밀값을 포함하지 않습니다. 자동 연결은 mapping이 없는 기본 상태입니다. `mappings`에는 `manual` 직접 연결 또는 `disabled` 연결 안 함만 저장하고, `selectedModels`에는 target별 provider별 마지막 CMR 선택을 저장합니다.
 
 ```json
 {
   "schemaVersion": 1,
-  "mappings": {},
+  "mappings": {
+    "cmr-ext-1234abcd": "manual",
+    "cmr-ext-2345bcde": "disabled"
+  },
   "selectedModels": {
     "cmr-ext-1234abcd": {
       "vertexai": "gemini-새로운-모델"
@@ -125,10 +129,10 @@ DOM 브리지 내부 저장 schema v1은 다음 구조입니다. target ID는 �
 }
 ```
 
-v0.6.2 이하 설정·백업에 남은 수동 provider 값 또는 `disabled` mapping은 v0.6.3 이후 초기화·설정 갱신·백업 가져오기에서 자동으로 제거합니다. `selectedModels`는 같은 target을 provider별로 전환해도 마지막 CMR 선택을 기억할 수 있게 실제 모델 ID를 저장합니다. v0.6.4는 SillyTavern에 저장된 실행 설정을 자동 모드로 이관할 때 legacy mapping 512개가 target 한도를 먼저 채우지 못하게 mapping을 제외한 뒤 `selectedModels`를 정규화합니다. 또한 stale 선택 512개로 새 선택 저장이 막히면 현재 DOM에서 감지되지 않은 가장 오래된 target 기록 하나를 제거한 뒤 저장을 다시 시도합니다. 재렌더된 동일 target의 새 컨트롤이 빈 값일 때만 이 선택을 복원하고 유효한 외부 현재값은 유지합니다. 손상된 값과 알 수 없는 필드는 정규화 과정에서 제거하며, 미래 schema는 명시 오류로 거부합니다. target은 최대 512개입니다.
+v0.6.0~v0.6.2 설정·백업에 남은 provider 고정 mapping은 v0.6.5에서 `manual`로 이관합니다. 이 모드는 예전 provider 하나에 고정하지 않고 모든 provider의 등록 모델을 노출합니다. 기존 `disabled`는 그대로 보존합니다. v0.6.3~v0.6.4의 빈 mapping도 자동 연결 상태로 정상 처리합니다. `selectedModels`는 같은 target을 provider별로 전환해도 마지막 CMR 선택을 기억할 수 있게 실제 모델 ID를 저장합니다. 정규화는 mapping보다 `selectedModels`를 먼저 512개 target 한도에 반영합니다. stale 선택 또는 mapping 512개로 새 선택·연결 저장이 막히면 현재 DOM에서 감지되지 않은 target 기록 하나를 제거한 뒤 저장을 다시 시도하며, mapping만 있는 기록을 선택 기록보다 먼저 정리합니다. 재렌더된 동일 target의 새 컨트롤이 빈 값일 때만 이 선택을 복원하고 유효한 외부 현재값은 유지합니다. 손상된 값과 알 수 없는 필드는 정규화 과정에서 제거하며, 미래 schema는 명시 오류로 거부합니다.
 
 ## Portable backup schema v2
 
-portable backup 최상위는 `format`, `schemaVersion`, `createdAt`, `registry`, `purposeRoutes`, `externalIntegrations`만 가집니다. v0.6.3 이후의 `externalIntegrations.mappings`는 빈 객체이며 `selectedModels`에는 provider별 마지막 CMR 선택만 포함됩니다. 개발자용 `purposeRoutes`는 일반 라우팅 UI가 없어도 보존됩니다. API 키, endpoint, provider 계정 설정, 외부 요청 본문과 Connection Profile 본문은 포함되지 않습니다.
+portable backup 최상위는 `format`, `schemaVersion`, `createdAt`, `registry`, `purposeRoutes`, `externalIntegrations`만 가집니다. `externalIntegrations.mappings`에는 `manual` 또는 `disabled`만 들어가며 자동 연결은 별도 값을 저장하지 않습니다. `selectedModels`에는 provider별 마지막 CMR 선택이 포함됩니다. 개발자용 `purposeRoutes`는 일반 라우팅 UI가 없어도 보존됩니다. API 키, endpoint, provider 계정 설정, 외부 요청 본문과 Connection Profile 본문은 포함되지 않습니다.
 
-v0.5.0에서 내보낸 portable schema v1 백업은 `registry`와 `purposeRoutes`를 보존하고 빈 `externalIntegrations`를 추가해 schema v2로 이관합니다. v0.6.0~v0.6.2 백업은 Registry·route·정상 형식의 `selectedModels`를 보존하고 legacy mapping을 제거합니다. mapping과 선택을 합친 고유 target이 schema 한도 512개를 넘는 백업은 일부 기록을 조용히 버리지 않고 가져오기를 거부합니다. 알 수 없는 필드나 미래 portable/Registry/route/external schema는 기존 설정을 변경하지 않고 거부합니다.
+v0.5.0에서 내보낸 portable schema v1 백업은 `registry`와 `purposeRoutes`를 보존하고 빈 `externalIntegrations`를 추가해 schema v2로 이관합니다. v0.6.0~v0.6.2 백업은 Registry·route·정상 형식의 `selectedModels`를 보존하고 legacy provider mapping을 `manual`로 이관하며 `disabled`를 보존합니다. v0.6.3~v0.6.4의 빈 mapping은 자동 연결 상태로 읽습니다. mapping과 선택을 합친 고유 target이 schema 한도 512개를 넘는 백업은 일부 기록을 조용히 버리지 않고 가져오기를 거부합니다. 알 수 없는 필드나 미래 portable/Registry/route/external schema는 기존 설정을 변경하지 않고 거부합니다.

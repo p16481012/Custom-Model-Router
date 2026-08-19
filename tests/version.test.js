@@ -49,7 +49,7 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
     assert.match(packageJson.scripts.check, /src\/portable-settings\.js/);
     assert.match(packageJson.scripts.check, /src\/external-integrations\.js/);
     assert.match(packageJson.scripts.check, /src\/external-settings\.js/);
-    assert.match(settingsHtml, new RegExp(`cmr-version[^>]*>v${version}<`));
+    assert.doesNotMatch(settingsHtml, /cmr-version|>\s*v0\.\d+\.\d+\s*</, '관리 UI에는 버전 배지를 표시하지 않는다');
     assert.match(readme, new RegExp(`현재 버전은 \\*\\*v${version.replaceAll('.', '\\.')}`));
     assert.match(entrypoint, new RegExp(`EXTENSION_VERSION = '${version.replaceAll('.', '\\.')}'`));
     assert.match(entrypoint, /초기화 완료/);
@@ -68,6 +68,7 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
     assert.match(roadmap, /## v0\.5\.0 — 호환성과 운영 안정화/);
     assert.match(roadmap, /## v0\.6\.0 — 범용 외부 확장 모델 브리지/);
     assert.match(roadmap, /## v0\.6\.4 — 삭제 안전성·외부 선택 저장 회복/);
+    assert.match(roadmap, /## v0\.6\.5 — UI 정리와 직접 연결 회귀 복구/);
     assert.match(entrypoint, /new context\.Popup/);
     assert.match(entrypoint, /#cmr_open_manager/);
     assert.doesNotMatch(entrypoint, /#extensions_settings2|#extensions_settings/);
@@ -81,7 +82,7 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
     assert.match(entrypoint, /normalizeAutomaticExternalSettings/);
     assert.match(settingsHtml, /cmr_run_diagnostics/);
     assert.match(settingsHtml, /cmr_export_backup/);
-    assert.doesNotMatch(settingsHtml, /cmr_external_(?:section|list|refresh|status|count)/);
+    assert.match(settingsHtml, /cmr_external_(?:section|list|refresh|status|count)/);
     assert.doesNotMatch(settingsHtml, /cmr_rout(?:ing_section|e_(?:form|purpose|model|profile|clear|test|status))/);
     assert.match(portableSettings, /PORTABLE_SETTINGS_SCHEMA_VERSION = 2/);
     assert.match(portableSettings, /externalIntegrations/);

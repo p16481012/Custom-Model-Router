@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
     EXTERNAL_INJECTED_OPTION_LIMIT,
     EXTERNAL_MAPPING_DISABLED,
+    EXTERNAL_MAPPING_MANUAL,
     EXTERNAL_TARGET_LIMIT,
     assessExternalTargetRisk,
     createExternalIntegrationController,
@@ -16,6 +17,7 @@ import {
     removeExternalTargetModels,
     resolveExternalTargetProvider,
     syncExternalTarget,
+    syncExternalTargetProviders,
 } from '../src/external-integrations.js';
 
 function dataKey(name) {
@@ -366,7 +368,7 @@ test('target ID는 동일한 extension 구조의 DOM 재생성 후에도 안정�
     assert.match(createExternalTargetId(first), /^cmr-ext-[a-f0-9]{8}$/);
 });
 
-test('수동 mapping은 안전한 target/provider만 정규화하며 수동 설정이 자동 추론보다 우선한다', () => {
+test('legacy provider mapping은 안전한 직접 연결로 이관하고 자동 추론보다 우선한다', () => {
     const target = {
         targetId: 'cmr-ext-deadbeef',
         inference: { providerId: 'openai', confidence: 0.9, source: 'id-name-label' },
@@ -379,11 +381,11 @@ test('수동 mapping은 안전한 target/provider만 정규화하며 수동 설�
         'cmr-ext-aaaaaaaa': 'not-real',
     });
     assert.deepEqual(mappings, {
-        'cmr-ext-deadbeef': 'claude',
+        'cmr-ext-deadbeef': EXTERNAL_MAPPING_MANUAL,
         'cmr-ext-12345678': 'disabled',
     });
     assert.deepEqual(resolveExternalTargetProvider(target, mappings), {
-        providerId: 'claude', confidence: 1, source: 'manual',
+        providerId: null, confidence: 1, source: 'manual',
     });
 });
 
@@ -418,12 +420,95 @@ test('select에 provider별 CMR option을 멱등 주입하며 기존 값·option
     assert.deepEqual(select.options.map(item => item.value), ['native-claude', 'shared']);
 });
 
+test('직접 연결 select는 제공업체별 optgroup과 multiplex alias를 유지한다', () => {
+    const documentRef = new FakeDocument();
+    const select = labeledModelSelect(documentRef, 'helper_model');
+    select.append(
+        option(documentRef, 'native-openai', { 'data-type': 'openai' }),
+        option(documentRef, 'native-claude', { 'data-type': 'anthropic' }),
+    );
+    select.value = 'native-openai';
+    const target = { control: select, optionHost: select, inference: {} };
+
+    const result = syncExternalTargetProviders(target, [
+        { providerId: 'openai', label: 'OpenAI', models: [{ provider: 'openai', id: 'shared-next' }] },
+        { providerId: 'claude', label: 'Anthropic', models: [{ provider: 'claude', id: 'shared-next' }] },
+    ], { documentRef });
+
+    const groups = select.children.filter(child => child.tagName === 'OPTGROUP');
+    assert.deepEqual(groups.map(group => group.label), [
+        'OpenAI · 사용자 모델',
+        'Anthropic · 사용자 모델',
+    ]);
+    const managed = select.options.filter(item => item.dataset.cmrExternalModel === 'true');
+    assert.deepEqual(managed.map(item => [item.value, item.dataset.cmrProvider]), [
+        ['shared-next', 'openai'],
+        ['shared-next', 'claude'],
+    ]);
+    assert.deepEqual(managed.map(item => item.getAttribute('data-type')), ['openai', 'anthropic']);
+    assert.equal(result.injectedModels.length, 2);
+    assert.equal(select.value, 'native-openai');
+});
+
+test('직접 연결 input 제안은 실제 모델 ID와 제공업체가 보이는 label을 함께 보존한다', () => {
+    const documentRef = new FakeDocument();
+    const wrapper = documentRef.createElement('div');
+    const input = documentRef.createElement('input');
+    input.id = 'helper_model';
+    input.value = 'typed-value';
+    wrapper.append(input);
+    documentRef.append(wrapper);
+    const target = {
+        targetId: createExternalTargetId(input, { documentRef }),
+        control: input,
+        optionHost: null,
+        inference: {},
+    };
+
+    syncExternalTargetProviders(target, [
+        { providerId: 'openai', label: 'OpenAI', models: [{ provider: 'openai', id: 'gpt-next' }] },
+        { providerId: 'zai', label: 'Z.AI (GLM)', models: [{ provider: 'zai', id: 'glm-next' }] },
+    ], { documentRef });
+
+    assert.deepEqual(target.optionHost.options.map(item => [item.value, item.label]), [
+        ['gpt-next', 'OpenAI · gpt-next'],
+        ['glm-next', 'Z.AI (GLM) · glm-next'],
+    ]);
+    assert.equal(input.value, 'typed-value');
+    removeExternalTargetModels(target, null, { removeOwnedHost: true });
+    assert.equal(input.getAttribute('list'), null);
+
+    const selections = [];
+    const controller = createExternalIntegrationController({
+        root: documentRef,
+        documentRef,
+        mappings: { [target.targetId]: EXTERNAL_MAPPING_MANUAL },
+        getModels: providerId => ['openai', 'claude'].includes(providerId)
+            ? [{ provider: providerId, id: 'shared-model' }]
+            : [],
+        onSelectionChanged: selection => selections.push(selection),
+        observerFactory: () => ({ observe() {}, disconnect() {} }),
+    });
+    controller.start();
+    input.value = 'shared-model';
+    input.dispatchEvent({ type: 'input', isTrusted: true });
+    assert.deepEqual(selections.at(-1), {
+        targetId: target.targetId,
+        providerId: null,
+        providerIds: ['openai', 'claude'],
+        modelId: 'shared-model',
+        mode: EXTERNAL_MAPPING_MANUAL,
+        userInitiated: true,
+    });
+    controller.destroy();
+});
+
 test('multiplex select의 native 중복은 provider와 model ID가 모두 같은 경우에만 제외한다', () => {
     const documentRef = new FakeDocument();
     const provider = documentRef.createElement('select');
     provider.id = 'caption_multimodal_api';
     provider.setAttribute('aria-label', 'API provider');
-    provider.append(option(documentRef, 'anthropic'), option(documentRef, 'openai'));
+    provider.append(option(documentRef, 'anthropic'), option(documentRef, 'openai'), option(documentRef, 'custom'));
     provider.value = 'anthropic';
     const select = labeledModelSelect(documentRef, 'caption_multimodal_model', 'Caption multimodal model');
     select.setAttribute('data-provider-select', provider.id);
@@ -560,6 +645,24 @@ test('disabled·readonly·multiple control을 제외하고 target과 주입 opti
     }));
     const result = syncExternalTarget(target, 'openai', models, { documentRef });
     assert.equal(result.injectedIds.length, EXTERNAL_INJECTED_OPTION_LIMIT);
+
+    const manualSelect = labeledModelSelect(documentRef, 'manual_bounded_model');
+    const manualTarget = { control: manualSelect, optionHost: manualSelect, inference: {} };
+    const manualResult = syncExternalTargetProviders(manualTarget, [
+        {
+            providerId: 'openai',
+            label: 'OpenAI',
+            models: Array.from({ length: 300 }, (_, index) => ({ provider: 'openai', id: `gpt-${index}` })),
+        },
+        {
+            providerId: 'claude',
+            label: 'Anthropic',
+            models: Array.from({ length: 300 }, (_, index) => ({ provider: 'claude', id: `claude-${index}` })),
+        },
+    ], { documentRef });
+    assert.equal(manualResult.injectedModels.length, EXTERNAL_INJECTED_OPTION_LIMIT);
+    assert.equal(manualSelect.options.filter(item => item.dataset.cmrExternalModel === 'true').length,
+        EXTERNAL_INJECTED_OPTION_LIMIT);
 });
 
 test('datalist 동기화와 cleanup은 외부 option 및 input 값을 변경하지 않는다', () => {
@@ -834,12 +937,12 @@ test('controller는 재렌더 target에 선호 모델을 복원하고 provider �
     const provider = documentRef.createElement('select');
     provider.id = 'caption_api_provider';
     provider.setAttribute('aria-label', 'API provider');
-    provider.append(option(documentRef, 'anthropic'), option(documentRef, 'openai'));
-    provider.value = 'anthropic';
+    provider.append(option(documentRef, 'anthropic'), option(documentRef, 'openai'), option(documentRef, 'custom'));
+    provider.value = '';
     const model = documentRef.createElement('select');
     model.id = 'caption_multimodal_model';
     model.setAttribute('data-provider-select', provider.id);
-    model.append(option(documentRef, 'native', { 'data-type': 'anthropic' }));
+    model.append(option(documentRef, 'native'));
     wrapper.append(provider, model);
     documentRef.append(wrapper);
     const targetId = createExternalTargetId(model);
@@ -861,7 +964,18 @@ test('controller는 재렌더 target에 선호 모델을 복원하고 provider �
         eventFactory: type => ({ type, isTrusted: false }),
     });
 
-    const targets = controller.start();
+    let targets = controller.start();
+    assert.equal(targets[0].resolution.source, 'unresolved');
+    assert.equal(model.options.some(item => item.dataset.cmrExternalModel === 'true'), false);
+    assert.deepEqual(controller.getMetrics(), {
+        observerCount: 1, targetCount: 1, boundCount: 0, autoCount: 0, manualCount: 0, listenerCount: 2,
+    });
+
+    provider.value = 'anthropic';
+    provider.dispatchEvent({ type: 'change', isTrusted: true });
+    assert.equal(scheduled.length, 1);
+    scheduled.shift()();
+    targets = controller.getTargets();
     assert.equal(targets[0].restoredModelId, 'claude-next');
     assert.equal(model.value, 'claude-next');
     assert.deepEqual(controller.getMetrics(), {
@@ -871,6 +985,13 @@ test('controller는 재렌더 target에 선호 모델을 복원하고 provider �
     model.value = 'native';
     model.dispatchEvent({ type: 'change', isTrusted: true });
     assert.equal(selections.at(-1).modelId, null);
+
+    provider.value = 'custom';
+    provider.dispatchEvent({ type: 'change', isTrusted: true });
+    assert.equal(scheduled.length, 1);
+    scheduled.shift()();
+    assert.equal(controller.getTargets()[0].resolution.source, 'risk-blocked');
+    assert.equal(model.options.some(item => item.dataset.cmrExternalModel === 'true'), false);
 
     provider.value = 'openai';
     provider.dispatchEvent({ type: 'change', isTrusted: true });
@@ -891,4 +1012,134 @@ test('controller는 재렌더 target에 선호 모델을 복원하고 provider �
     assert.deepEqual(controller.getMetrics(), {
         observerCount: 0, targetCount: 0, boundCount: 0, autoCount: 0, manualCount: 0, listenerCount: 0,
     });
+});
+
+test('직접 연결 controller는 중복 모델 ID도 실제 selected option metadata로 제공업체를 구분한다', () => {
+    const documentRef = new FakeDocument();
+    const select = labeledModelSelect(documentRef, 'unknown_chat_model', 'Chat model');
+    select.setAttribute('data-provider', 'claude');
+    select.append(option(documentRef, 'native-model'));
+    select.value = 'native-model';
+    documentRef.append(select);
+    const targetId = createExternalTargetId(select, { documentRef });
+    const selections = [];
+    const externalSavedValues = [];
+    const invalidations = [];
+    let modelsAvailable = true;
+    select.addEventListener('change', event => {
+        if (event.isTrusted !== true) {
+            externalSavedValues.push(select.value);
+        }
+    });
+    const controller = createExternalIntegrationController({
+        root: documentRef,
+        documentRef,
+        mappings: { [targetId]: EXTERNAL_MAPPING_MANUAL },
+        getModels: providerId => modelsAvailable && ['openai', 'claude'].includes(providerId)
+            ? [{ provider: providerId, id: 'shared-model' }]
+            : [],
+        onSelectionChanged: selection => selections.push(selection),
+        onSelectionInvalidated: invalidation => invalidations.push(invalidation),
+        observerFactory: () => ({ observe() {}, disconnect() {} }),
+        eventFactory: type => ({ type, isTrusted: false }),
+    });
+
+    controller.start();
+    const managed = select.options.filter(item => item.dataset.cmrExternalModel === 'true');
+    assert.deepEqual(managed.map(item => item.dataset.cmrProvider), ['openai', 'claude']);
+    managed[0].selected = false;
+    managed[1].selected = true;
+    select.value = 'shared-model';
+    select.dispatchEvent({ type: 'change', isTrusted: true });
+
+    assert.deepEqual(selections.at(-1), {
+        targetId,
+        providerId: 'claude',
+        modelId: 'shared-model',
+        mode: EXTERNAL_MAPPING_MANUAL,
+        userInitiated: true,
+    });
+    controller.sync();
+    const selectedAfterSync = select.options.find(option => option.selected);
+    assert.equal(selectedAfterSync?.dataset.cmrProvider, 'claude');
+    assert.equal(select.value, 'shared-model');
+
+    controller.setMappings({});
+    assert.equal(controller.getMetrics().autoCount, 1);
+    assert.equal(select.options.find(option => option.selected)?.dataset.cmrProvider, 'claude');
+    assert.equal(select.value, 'shared-model');
+
+    controller.setMappings({ [targetId]: EXTERNAL_MAPPING_MANUAL });
+    assert.equal(select.options.find(option => option.selected)?.dataset.cmrProvider, 'claude');
+    assert.equal(select.value, 'shared-model');
+    assert.equal(controller.getMetrics().manualCount, 1);
+
+    modelsAvailable = false;
+    controller.sync();
+    assert.equal(select.value, 'native-model');
+    assert.equal(externalSavedValues.at(-1), 'native-model');
+    assert.equal(select.options.some(item => item.dataset.cmrExternalModel === 'true'), false);
+    assert.equal(invalidations.at(-1).reason, 'models-updated');
+
+    modelsAvailable = true;
+    controller.sync();
+    const selectedBeforeDisable = select.options.find(option => (
+        option.dataset.cmrExternalModel === 'true' && option.dataset.cmrProvider === 'claude'
+    ));
+    for (const optionItem of select.options) {
+        optionItem.selected = optionItem === selectedBeforeDisable;
+    }
+    select.value = 'shared-model';
+
+    controller.setMappings({ [targetId]: EXTERNAL_MAPPING_DISABLED });
+    assert.equal(select.value, 'native-model');
+    assert.equal(externalSavedValues.at(-1), 'native-model');
+    assert.equal(select.options.some(item => item.dataset.cmrExternalModel === 'true'), false);
+    assert.equal(invalidations.at(-1).reason, 'manual-disabled');
+
+    controller.setMappings({ [targetId]: EXTERNAL_MAPPING_MANUAL });
+    const selectedBeforeDestroy = select.options.find(option => (
+        option.dataset.cmrExternalModel === 'true' && option.dataset.cmrProvider === 'claude'
+    ));
+    for (const optionItem of select.options) {
+        optionItem.selected = optionItem === selectedBeforeDestroy;
+    }
+    select.value = 'shared-model';
+    controller.destroy();
+    assert.equal(select.value, 'native-model');
+    assert.equal(externalSavedValues.at(-1), 'native-model');
+    assert.equal(invalidations.at(-1).reason, 'destroy');
+    assert.equal(select.options.some(item => item.dataset.cmrExternalModel === 'true'), false);
+
+    const collisionSelect = labeledModelSelect(documentRef, 'collision_chat_model', 'Chat model');
+    collisionSelect.append(option(documentRef, 'shared-model', { 'data-type': 'openai' }));
+    collisionSelect.value = 'shared-model';
+    documentRef.append(collisionSelect);
+    const collisionTargetId = createExternalTargetId(collisionSelect, { documentRef });
+    const collisionSelections = [];
+    const collisionController = createExternalIntegrationController({
+        root: documentRef,
+        documentRef,
+        mappings: { [collisionTargetId]: EXTERNAL_MAPPING_MANUAL },
+        getModels: providerId => providerId === 'claude'
+            ? [{ provider: 'claude', id: 'shared-model' }]
+            : [],
+        onSelectionChanged: selection => collisionSelections.push(selection),
+        observerFactory: () => ({ observe() {}, disconnect() {} }),
+    });
+    collisionController.start();
+    const nativeCollision = collisionSelect.options.find(option => option.dataset.cmrExternalModel !== 'true');
+    const cmrCollision = collisionSelect.options.find(option => option.dataset.cmrExternalModel === 'true');
+    nativeCollision.selected = true;
+    cmrCollision.selected = false;
+    collisionSelect.value = 'shared-model';
+    collisionSelect.dispatchEvent({ type: 'change', isTrusted: true });
+    assert.deepEqual(collisionSelections.at(-1), {
+        targetId: collisionTargetId,
+        providerId: null,
+        modelId: null,
+        mode: EXTERNAL_MAPPING_MANUAL,
+        userInitiated: true,
+    });
+    collisionController.destroy();
 });

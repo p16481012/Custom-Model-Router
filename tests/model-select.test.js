@@ -102,6 +102,7 @@ test('제공업체가 일치하는 사용자 모델만 해당 select에 주입�
 
     assert.deepEqual(result.injectedIds, ['gpt-next']);
     assert.deepEqual(getCustomGroup(select, 'openai').children.map(option => option.value), ['gpt-next']);
+    assert.equal(getCustomGroup(select, 'openai').label, '사용자 모델');
     assert.equal(getCustomGroup(select, 'xai'), null);
 });
 
