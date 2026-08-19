@@ -155,6 +155,8 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
         2,
     );
     assert.match(uiRegressionWorkflow, /node-version:\s*24/);
+    assert.match(uiRegressionWorkflow, /npx playwright install chromium/);
+    assert.doesNotMatch(uiRegressionWorkflow, /playwright install --with-deps/);
     assert.match(uiRegressionWorkflow, /ui-regression-evidence-/);
     assert.match(uiRegressionWorkflow, /if: always\(\) && !cancelled\(\)/);
     assert.match(uiRegressionWorkflow, /retention-days: 14/);

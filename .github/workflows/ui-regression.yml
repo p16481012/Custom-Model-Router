@@ -45,7 +45,7 @@ jobs:
         run: npm ci
 
       - name: Chromium 설치
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install chromium
 
       - name: 정적·단위 검사
         run: npm run check
