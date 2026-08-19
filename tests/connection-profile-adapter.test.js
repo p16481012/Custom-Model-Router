@@ -102,9 +102,11 @@ test('Connection Profile 인증·엔드포인트를 재사용하고 model만 Reg
     assert.equal(profileId, 'profile-openai');
     assert.equal(prompt, messages);
     assert.equal(maxTokens, 321);
-    assert.deepEqual(custom, {
+    const { signal, ...customWithoutSignal } = custom;
+    assert.equal(signal.aborted, false);
+    assert.equal(typeof signal.addEventListener, 'function');
+    assert.deepEqual(customWithoutSignal, {
         stream: true,
-        signal: controller.signal,
         extractData: false,
         includePreset: false,
         includeInstruct: false,
