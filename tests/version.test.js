@@ -80,8 +80,8 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
     assert.match(entrypoint, /normalizeExternalSettings/);
     assert.match(settingsHtml, /cmr_run_diagnostics/);
     assert.match(settingsHtml, /cmr_export_backup/);
-    assert.match(settingsHtml, /cmr_external_section/);
-    assert.match(settingsHtml, /cmr_external_list/);
+    assert.doesNotMatch(settingsHtml, /cmr_external_(?:section|list|refresh|status|count)/);
+    assert.doesNotMatch(settingsHtml, /cmr_rout(?:ing_section|e_(?:form|purpose|model|profile|clear|test|status))/);
     assert.match(portableSettings, /PORTABLE_SETTINGS_SCHEMA_VERSION = 2/);
     assert.match(portableSettings, /externalIntegrations/);
     assert.match(apiDocument, /v0\.6 범용 DOM 모델 브리지/);

@@ -6,7 +6,6 @@ import { destroy, init } from '../index.js';
 import { getCustomGroup } from '../src/model-select.js';
 import { getProvider, getProviders } from '../src/providers.js';
 import {
-    EXTERNAL_MAPPING_DISABLED,
     createExternalIntegrationController,
     createExternalTargetId,
 } from '../src/external-integrations.js';
@@ -346,6 +345,7 @@ class FakeDocument {
         providerHelp.id = 'cmr_provider_help';
         const compatibility = this.createElement('div');
         compatibility.id = 'cmr_compatibility';
+        compatibility.hidden = true;
 
         const addForm = this.createElement('form');
         addForm.id = 'cmr_add_form';
@@ -366,21 +366,6 @@ class FakeDocument {
         const modelList = this.createElement('ul');
         modelList.id = 'cmr_model_list';
 
-        const routeForm = this.createElement('form');
-        routeForm.id = 'cmr_route_form';
-        const routePurpose = this.createElement('select');
-        routePurpose.id = 'cmr_route_purpose';
-        const routeModel = this.createElement('select');
-        routeModel.id = 'cmr_route_model';
-        const routeProfile = this.createElement('select');
-        routeProfile.id = 'cmr_route_profile';
-        const routeClear = this.createElement('button');
-        routeClear.id = 'cmr_route_clear';
-        const routeTest = this.createElement('button');
-        routeTest.id = 'cmr_route_test';
-        routeForm.append(routePurpose, routeModel, routeProfile, routeClear, routeTest);
-        const routeStatus = this.createElement('div');
-        routeStatus.id = 'cmr_route_status';
         const runDiagnostics = this.createElement('button');
         runDiagnostics.id = 'cmr_run_diagnostics';
         const copyDiagnostics = this.createElement('button');
@@ -393,20 +378,6 @@ class FakeDocument {
         diagnosticSummary.id = 'cmr_diagnostic_summary';
         const diagnosticList = this.createElement('ul');
         diagnosticList.id = 'cmr_diagnostic_list';
-        const externalSection = this.createElement('section');
-        externalSection.id = 'cmr_external_section';
-        const externalSummary = this.createElement('div');
-        externalSummary.id = 'cmr_external_summary';
-        const externalCount = this.createElement('span');
-        externalCount.id = 'cmr_external_count';
-        const externalRefresh = this.createElement('button');
-        externalRefresh.id = 'cmr_external_refresh';
-        const externalStatus = this.createElement('span');
-        externalStatus.id = 'cmr_external_status';
-        const externalList = this.createElement('div');
-        externalList.id = 'cmr_external_list';
-        externalSection.append(externalSummary, externalCount, externalRefresh, externalStatus, externalList);
-
         root.append(
             provider,
             providerHelp,
@@ -416,15 +387,12 @@ class FakeDocument {
             listTitle,
             count,
             modelList,
-            routeForm,
-            routeStatus,
             runDiagnostics,
             copyDiagnostics,
             exportBackup,
             importBackup,
             diagnosticSummary,
             diagnosticList,
-            externalSection,
         );
         return root;
     }
@@ -493,7 +461,12 @@ function createPortableBackup(modelId) {
     });
 }
 
-function createPortableV2Backup({ providerId, modelId, targetId }) {
+function createPortableV2Backup({
+    providerId,
+    modelId,
+    targetId,
+    purposeRoutes = { schemaVersion: 1, routes: {} },
+}) {
     return JSON.stringify({
         format: 'custom-model-router-portable-settings',
         schemaVersion: 2,
@@ -503,7 +476,7 @@ function createPortableV2Backup({ providerId, modelId, targetId }) {
             models: [createModelRecord(providerId, modelId)],
             selectedModels: { [providerId]: modelId },
         },
-        purposeRoutes: { schemaVersion: 1, routes: {} },
+        purposeRoutes,
         externalIntegrations: {
             schemaVersion: 1,
             mappings: { [targetId]: providerId },
@@ -959,7 +932,7 @@ test('init은 24개 제공업체를 연결하고 API Connections Popup을 한 �
         assert.ok(harness.observers.some(observer => observer.target === harness.observerRoot));
         assert.ok(harness.observers.some(observer => observer.target === harness.documentRef.body));
         assert.equal(globalThis.CustomModelRouter.apiVersion, '1.1.0');
-        assert.equal(globalThis.CustomModelRouter.extensionVersion, '0.6.2');
+        assert.equal(globalThis.CustomModelRouter.extensionVersion, '0.6.3');
         assert.equal(globalThis.CustomModelRouter.routing.apiVersion, '1.0.0');
         assert.equal(globalThis.CustomModelRouter.getSnapshot().models.length, 1);
 
@@ -981,11 +954,12 @@ test('init은 24개 제공업체를 연결하고 API Connections Popup을 한 �
         assert.equal(panel.querySelector('#cmr_list_title').textContent, 'Google Vertex AI 등록 모델');
         assert.equal(panel.querySelector('#cmr_model_list').children.length, 1);
         assert.equal(panel.querySelector('#cmr_model_count').textContent, '이 제공업체 1개 · 전체 1개');
-        assert.equal(panel.querySelector('#cmr_compatibility').dataset.state, 'ok');
-        assert.equal(
-            panel.querySelector('#cmr_compatibility').textContent,
-            'Google Vertex AI 모델 선택기 감지됨 · 현재 연결',
-        );
+        assert.equal(panel.querySelector('#cmr_compatibility').hidden, true);
+        assert.equal(panel.querySelector('#cmr_compatibility').textContent, '');
+        assert.equal(findActionButton(panel, 'select', VERTEX_MODEL_ID, 'vertexai'), null);
+        assert.ok(findActionButton(panel, 'delete', VERTEX_MODEL_ID, 'vertexai'));
+        assert.equal(panel.querySelector('#cmr_external_section'), null);
+        assert.equal(panel.querySelector('#cmr_routing_section'), null);
         assert.equal(launcher.getAttribute('aria-expanded'), 'true');
 
         launcher.dispatchEvent(new FakeEvent('click'));
@@ -1067,27 +1041,30 @@ test('런처 숫자 변경은 MutationObserver 자기 반복 없이 한 번만 �
     }
 });
 
-test('용도별 경로는 등록 모델과 같은 제공업체 프로필로 요청하고 메인 모델을 바꾸지 않는다', async () => {
+test('일반 라우팅 UI를 제거해도 저장 경로와 공개 API 실행은 보존되고 메인 모델을 바꾸지 않는다', async () => {
     const harness = createHarness();
+    harness.context.extensionSettings.customModelRouterRouting = {
+        schemaVersion: 1,
+        routes: {
+            translation: {
+                provider: 'vertexai',
+                modelId: VERTEX_MODEL_ID,
+                adapterId: 'sillytavern.connection-profile',
+                connectionProfileId: 'profile-vertex',
+            },
+        },
+    };
     const restoreGlobals = installBrowserGlobals(harness);
     try {
         await init();
         const panel = openPanel(harness);
-        const purpose = panel.querySelector('#cmr_route_purpose');
-        const model = panel.querySelector('#cmr_route_model');
-        const profile = panel.querySelector('#cmr_route_profile');
         const mainSettingsBefore = structuredClone(harness.context.chatCompletionSettings);
 
+        assert.equal(panel.querySelector('#cmr_routing_section'), null);
+        assert.equal(panel.querySelector('#cmr_route_form'), null);
         panel.querySelector('#cmr_run_diagnostics').dispatchEvent(new FakeEvent('click'));
         assert.ok(panel.querySelector('#cmr_diagnostic_list').children.length >= 5);
         assert.match(panel.querySelector('#cmr_diagnostic_summary').textContent, /호환성 검사/);
-
-        purpose.value = 'translation';
-        purpose.dispatchEvent(new FakeEvent('change'));
-        model.value = JSON.stringify(['vertexai', VERTEX_MODEL_ID]);
-        model.dispatchEvent(new FakeEvent('change'));
-        profile.value = 'profile-vertex';
-        panel.querySelector('#cmr_route_form').dispatchEvent(new FakeEvent('submit'));
 
         assert.deepEqual(globalThis.CustomModelRouter.routing.getRoute('translation'), {
             provider: 'vertexai',
@@ -1097,16 +1074,16 @@ test('용도별 경로는 등록 모델과 같은 제공업체 프로필로 요�
         });
         assert.equal(harness.context.extensionSettings.customModelRouterRouting.routes.translation.modelId, VERTEX_MODEL_ID);
 
-        panel.querySelector('#cmr_route_test').dispatchEvent(new FakeEvent('click'));
-        await flushMicrotasks(8);
+        assert.deepEqual(await globalThis.CustomModelRouter.routing.execute('translation', {
+            prompt: 'Reply with exactly CMR_OK.',
+            maxTokens: 24,
+            stream: false,
+        }), { content: 'CMR_OK' });
         assert.equal(harness.routingCalls.length, 1);
         assert.equal(harness.routingCalls[0][0], 'profile-vertex');
         assert.deepEqual(harness.routingCalls[0][4], { model: VERTEX_MODEL_ID });
         assert.deepEqual(harness.context.chatCompletionSettings, mainSettingsBefore);
-        assert.match(panel.querySelector('#cmr_route_status').textContent, /CMR_OK/);
-
-        panel.querySelector('#cmr_route_clear').dispatchEvent(new FakeEvent('click'));
-        assert.equal(globalThis.CustomModelRouter.routing.getRoute('translation'), null);
+        assert.equal(globalThis.CustomModelRouter.routing.getRoute('translation').modelId, VERTEX_MODEL_ID);
     } finally {
         await destroy();
         restoreGlobals();
@@ -1155,7 +1132,7 @@ test('Popup show 실패는 고아 dialog와 열린 상태를 남기지 않는다
     }
 });
 
-test('Vertex Popup 위임 이벤트는 모델 추가·선택·삭제와 열린 패널 destroy를 처리한다', async () => {
+test('Vertex 모델 카드는 등록과 삭제만 제공하며 등록만으로 현재 모델을 바꾸지 않는다', async () => {
     const harness = createHarness();
     const restoreGlobals = installBrowserGlobals(harness);
     const vertexSelect = harness.controls.get('vertexai');
@@ -1165,6 +1142,9 @@ test('Vertex Popup 위임 이벤트는 모델 추가·선택·삭제와 열린 �
         const input = panel.querySelector('#cmr_model_id');
         const feedback = panel.querySelector('#cmr_feedback');
         const addedModelId = 'gemini-4-flash-preview';
+        const currentModelBefore = vertexSelect.value;
+        const configuredModelBefore = harness.context.chatCompletionSettings.vertexai_model;
+        const selectedModelBefore = harness.context.extensionSettings.customModelRouter.selectedModels.vertexai;
 
         input.value = addedModelId;
         const submitEvent = new FakeEvent('submit');
@@ -1180,22 +1160,22 @@ test('Vertex Popup 위임 이벤트는 모델 추가·선택·삭제와 열린 �
         );
 
         let modelList = panel.querySelector('#cmr_model_list');
-        const selectButton = findActionButton(modelList, 'select', addedModelId, 'vertexai');
-        assert.equal(selectButton.getAttribute('aria-label'), `Google Vertex AI에 ${addedModelId} 모델 적용`);
-        selectButton.dispatchEvent(new FakeEvent('click', { bubbles: true }));
-        assert.equal(vertexSelect.value, addedModelId);
-        assert.equal(harness.context.chatCompletionSettings.vertexai_model, addedModelId);
-        assert.equal(harness.context.extensionSettings.customModelRouter.selectedModels.vertexai, addedModelId);
-        assert.match(feedback.textContent, /gemini-4-flash-preview 모델을 Google Vertex AI에 적용/);
+        assert.equal(findActionButton(modelList, 'select', addedModelId, 'vertexai'), null);
+        assert.ok(findActionButton(modelList, 'delete', addedModelId, 'vertexai'));
+        assert.equal(vertexSelect.value, currentModelBefore);
+        assert.equal(harness.context.chatCompletionSettings.vertexai_model, configuredModelBefore);
+        assert.equal(
+            harness.context.extensionSettings.customModelRouter.selectedModels.vertexai,
+            selectedModelBefore,
+        );
 
-        modelList = panel.querySelector('#cmr_model_list');
-        findActionButton(modelList, 'delete', VERTEX_MODEL_ID, 'vertexai')
+        findActionButton(modelList, 'delete', addedModelId, 'vertexai')
             .dispatchEvent(new FakeEvent('click', { bubbles: true }));
         assert.equal(panel.querySelector('#cmr_model_count').textContent, '이 제공업체 1개 · 전체 1개');
-        assert.equal(findActionButton(panel, 'delete', VERTEX_MODEL_ID, 'vertexai'), null);
+        assert.equal(findActionButton(panel, 'delete', addedModelId, 'vertexai'), null);
         assert.deepEqual(
             getCustomGroup(vertexSelect, 'vertexai').children.map(option => option.value),
-            [addedModelId],
+            [VERTEX_MODEL_ID],
         );
         assert.match(feedback.textContent, /Google Vertex AI에서 .* 모델 등록을 삭제/);
 
@@ -1211,7 +1191,7 @@ test('Vertex Popup 위임 이벤트는 모델 추가·선택·삭제와 열린 �
     }
 });
 
-test('비활성 제공업체의 모델 적용 버튼은 disabled이고 설정을 바꾸지 않는다', async () => {
+test('호환되는 현재·비활성 연결 안내는 숨기고 모델 컨트롤 누락 오류만 구분해 표시한다', async () => {
     const zaiModel = 'glm-5.3-preview';
     const harness = createHarness({
         models: [
@@ -1224,21 +1204,39 @@ test('비활성 제공업체의 모델 적용 버튼은 disabled이고 설정을
     try {
         await init();
         const panel = openPanel(harness);
+        const status = panel.querySelector('#cmr_compatibility');
+        assert.equal(status.hidden, true);
+        assert.equal(status.textContent, '');
+
         choosePanelProvider(panel, 'zai');
         assert.equal(panel.querySelector('#cmr_model_label').textContent, 'Z.AI (GLM) 모델 ID');
-        assert.match(panel.querySelector('#cmr_compatibility').textContent, /현재 연결로 선택하면 적용/);
-        const selectButton = findActionButton(panel, 'select', zaiModel, 'zai');
-        assert.equal(selectButton.disabled, true);
-        selectButton.dispatchEvent(new FakeEvent('click', { bubbles: true }));
+        assert.equal(status.hidden, true);
+        assert.equal(status.textContent, '');
+        assert.equal(findActionButton(panel, 'select', zaiModel, 'zai'), null);
         assert.equal(harness.context.chatCompletionSettings.zai_model, '');
-        assert.match(panel.querySelector('#cmr_feedback').textContent, /Z\.AI \(GLM\) 연결을 먼저 선택/);
+
+        harness.controls.get('zai').remove();
+        choosePanelProvider(panel, 'zai');
+        assert.equal(status.hidden, false);
+        assert.equal(status.dataset.state, 'error');
+        assert.match(status.textContent, /Z\.AI \(GLM\) 모델 선택기를 찾지 못했습니다\./);
+
+        harness.controls.get('custom').remove();
+        choosePanelProvider(panel, 'custom');
+        assert.equal(status.hidden, false);
+        assert.equal(status.dataset.state, 'error');
+        assert.match(status.textContent, /Custom OpenAI-compatible 모델 입력란을 찾지 못했습니다\./);
+
+        choosePanelProvider(panel, 'vertexai');
+        assert.equal(status.hidden, true);
+        assert.equal(status.textContent, '');
     } finally {
         await destroy();
         restoreGlobals();
     }
 });
 
-test('SillyTavern이 모델 변경을 거절하면 이전 설정과 selector 상태를 되살린다', async () => {
+test('등록 모델 카드는 활성 연결에서도 모델 적용 동작을 노출하지 않는다', async () => {
     const previousModel = 'vendor/not-present-in-selector';
     const rejectedModel = 'vendor/rejected-chat-model';
     const harness = createHarness({
@@ -1246,7 +1244,6 @@ test('SillyTavern이 모델 변경을 거절하면 이전 설정과 selector 상
         selectedModels: {},
         configuredModels: { openrouter: previousModel },
         activeSource: 'openrouter',
-        ignoredModelChangeProviders: ['openrouter'],
     });
     const restoreGlobals = installBrowserGlobals(harness);
     const select = harness.controls.get('openrouter');
@@ -1255,20 +1252,19 @@ test('SillyTavern이 모델 변경을 거절하면 이전 설정과 selector 상
         const panel = openPanel(harness);
         const previousControlValue = select.value;
         assert.equal(previousControlValue, '');
-        findActionButton(panel, 'select', rejectedModel, 'openrouter')
-            .dispatchEvent(new FakeEvent('click', { bubbles: true }));
+        assert.equal(findActionButton(panel, 'select', rejectedModel, 'openrouter'), null);
+        assert.ok(findActionButton(panel, 'delete', rejectedModel, 'openrouter'));
 
         assert.equal(select.value, previousControlValue);
         assert.equal(harness.context.chatCompletionSettings.openrouter_model, previousModel);
         assert.equal(harness.context.extensionSettings.customModelRouter.selectedModels.openrouter, undefined);
-        assert.match(panel.querySelector('#cmr_feedback').textContent, /모델 변경을 수락하지 않았습니다/);
     } finally {
         await destroy();
         restoreGlobals();
     }
 });
 
-test('Z.AI를 활성화하면 GLM 모델을 등록·선택하고 native 모델 전환 뒤 삭제한다', async () => {
+test('Z.AI 모델 등록은 native 선택을 바꾸지 않고 native 전환 추적과 삭제는 유지한다', async () => {
     const glmModel = 'glm-5.3-preview';
     const harness = createHarness({ models: [], selectedModels: {} });
     const restoreGlobals = installBrowserGlobals(harness);
@@ -1279,14 +1275,19 @@ test('Z.AI를 활성화하면 GLM 모델을 등록·선택하고 native 모델 �
         await flushMicrotasks();
         const panel = openPanel(harness);
         assert.equal(panel.querySelector('#cmr_provider').value, 'zai');
-        assert.equal(panel.querySelector('#cmr_compatibility').dataset.state, 'ok');
+        assert.equal(panel.querySelector('#cmr_compatibility').hidden, true);
 
         const input = panel.querySelector('#cmr_model_id');
         input.value = glmModel;
         panel.querySelector('#cmr_add_form').dispatchEvent(new FakeEvent('submit'));
-        const selectButton = findActionButton(panel, 'select', glmModel, 'zai');
-        assert.equal(selectButton.disabled, false);
-        selectButton.dispatchEvent(new FakeEvent('click', { bubbles: true }));
+        assert.equal(findActionButton(panel, 'select', glmModel, 'zai'), null);
+        assert.ok(findActionButton(panel, 'delete', glmModel, 'zai'));
+        assert.equal(zaiSelect.value, '');
+        assert.equal(harness.context.chatCompletionSettings.zai_model, '');
+        assert.equal(harness.context.extensionSettings.customModelRouter.selectedModels.zai, undefined);
+
+        zaiSelect.value = glmModel;
+        zaiSelect.dispatchEvent(new FakeEvent('change', { isTrusted: true }));
         assert.equal(zaiSelect.value, glmModel);
         assert.equal(harness.context.chatCompletionSettings.zai_model, glmModel);
         assert.equal(harness.context.extensionSettings.customModelRouter.selectedModels.zai, glmModel);
@@ -1305,7 +1306,7 @@ test('Z.AI를 활성화하면 GLM 모델을 등록·선택하고 native 모델 �
     }
 });
 
-test('Custom OpenAI-compatible 모델 적용은 native input 이벤트를 정확히 한 번 사용한다', async () => {
+test('Custom OpenAI-compatible 모델 등록은 native input 값과 이벤트를 건드리지 않는다', async () => {
     const customModel = 'vendor/glm-5:fast';
     const harness = createHarness({ models: [], selectedModels: {}, activeSource: 'custom' });
     const restoreGlobals = installBrowserGlobals(harness);
@@ -1315,23 +1316,21 @@ test('Custom OpenAI-compatible 모델 적용은 native input 이벤트를 정확
         assert.equal(panel.querySelector('#cmr_provider').value, 'custom');
         const input = panel.querySelector('#cmr_model_id');
         input.value = customModel;
-        panel.querySelector('#cmr_add_form').dispatchEvent(new FakeEvent('submit'));
-        const selectButton = findActionButton(panel, 'select', customModel, 'custom');
-        assert.equal(selectButton.disabled, false);
         const before = harness.nativeEventCounts.get('custom');
-        selectButton.dispatchEvent(new FakeEvent('click', { bubbles: true }));
-        assert.equal(harness.nativeEventCounts.get('custom'), before + 1);
-        assert.equal(harness.controls.get('custom').value, customModel);
-        assert.equal(harness.context.chatCompletionSettings.custom_model, customModel);
-        assert.equal(harness.context.extensionSettings.customModelRouter.selectedModels.custom, customModel);
-        assert.match(panel.querySelector('#cmr_feedback').textContent, /Custom OpenAI-compatible에 적용/);
+        panel.querySelector('#cmr_add_form').dispatchEvent(new FakeEvent('submit'));
+        assert.equal(findActionButton(panel, 'select', customModel, 'custom'), null);
+        assert.ok(findActionButton(panel, 'delete', customModel, 'custom'));
+        assert.equal(harness.nativeEventCounts.get('custom'), before);
+        assert.equal(harness.controls.get('custom').value, '');
+        assert.equal(harness.context.chatCompletionSettings.custom_model, '');
+        assert.equal(harness.context.extensionSettings.customModelRouter.selectedModels.custom, undefined);
 
         findActionButton(panel, 'delete', customModel, 'custom')
             .dispatchEvent(new FakeEvent('click', { bubbles: true }));
-        assert.equal(harness.controls.get('custom').value, customModel);
-        assert.equal(harness.context.chatCompletionSettings.custom_model, customModel);
+        assert.equal(harness.controls.get('custom').value, '');
+        assert.equal(harness.context.chatCompletionSettings.custom_model, '');
         assert.equal(harness.context.extensionSettings.customModelRouter.selectedModels.custom, undefined);
-        assert.match(panel.querySelector('#cmr_feedback').textContent, /등록만 삭제.*입력값은 유지/);
+        assert.match(panel.querySelector('#cmr_feedback').textContent, /등록을 삭제/);
     } finally {
         await destroy();
         restoreGlobals();
@@ -1553,6 +1552,7 @@ test('SETTINGS_UPDATED는 미래 외부 연결 스키마와 함께 온 변경을
         containerId: 'schema_external_extension',
         selectId: 'schema_external_model',
         label: '외부 모델',
+        attributes: { 'data-provider': 'vertexai' },
     });
     const targetId = createExternalTargetId(external.select, { documentRef: harness.documentRef });
     harness.context.extensionSettings.customModelRouterExternalIntegrations = {
@@ -1567,6 +1567,10 @@ test('SETTINGS_UPDATED는 미래 외부 연결 스키마와 함께 온 변경을
         await init();
         const panel = openPanel(harness);
         const initialSaveCallCount = harness.saveCallCount;
+        assert.deepEqual(
+            harness.context.extensionSettings.customModelRouterExternalIntegrations.mappings,
+            {},
+        );
         assert.ok(external.select.querySelector('[data-cmr-external-group="true"]'));
 
         const nextRegistry = {
@@ -1606,8 +1610,8 @@ test('SETTINGS_UPDATED는 미래 외부 연결 스키마와 함께 온 변경을
 
         const acceptedExternal = {
             schemaVersion: 1,
-            mappings: { [targetId]: EXTERNAL_MAPPING_DISABLED },
-            selectedModels: {},
+            mappings: { [targetId]: 'zai' },
+            selectedModels: { [targetId]: { vertexai: nextModelId } },
         };
         harness.context.extensionSettings.customModelRouterExternalIntegrations = acceptedExternal;
         harness.eventSource.emit(harness.context.eventTypes.SETTINGS_UPDATED);
@@ -1615,8 +1619,16 @@ test('SETTINGS_UPDATED는 미래 외부 연결 스키마와 함께 온 변경을
 
         assert.deepEqual(globalThis.CustomModelRouter.getSnapshot().models.map(model => model.id), [nextModelId]);
         assert.equal(globalThis.CustomModelRouter.routing.getRoute('summary').modelId, nextModelId);
-        assert.deepEqual(harness.context.extensionSettings.customModelRouterExternalIntegrations, acceptedExternal);
-        assert.equal(external.select.querySelector('[data-cmr-external-group="true"]'), null);
+        assert.deepEqual(harness.context.extensionSettings.customModelRouterExternalIntegrations, {
+            schemaVersion: 1,
+            mappings: {},
+            selectedModels: { [targetId]: { vertexai: nextModelId } },
+        });
+        assert.deepEqual(
+            external.select.querySelector('[data-cmr-external-group="true"]').children.map(option => option.value),
+            [nextModelId],
+        );
+        assert.ok(harness.saveCallCount > initialSaveCallCount);
     } finally {
         console.error = originalConsoleError;
         await destroy();
@@ -1709,7 +1721,7 @@ test('백업 확인창에서 비활성화하면 확인 뒤의 이전 작업이 �
     }
 });
 
-test('백업 schema v2는 외부 mapping·선택을 내보내고 가져와 target 옵션과 선택까지 복구한다', async () => {
+test('백업 schema v2는 routing·외부 선택을 보존하되 legacy mapping은 비우고 자동 추론으로 복구한다', async () => {
     const exportedModelId = 'openrouter/exported-helper';
     const importedModelId = 'glm-5-air';
     const harness = createHarness({
@@ -1723,6 +1735,7 @@ test('백업 schema v2는 외부 mapping·선택을 내보내고 가져와 targe
         containerId: 'backup_external_extension',
         selectId: 'backup_external_model',
         label: '외부 모델',
+        attributes: { 'data-provider': 'openrouter' },
     });
     external.select.value = '';
     const targetId = createExternalTargetId(external.select, { documentRef: harness.documentRef });
@@ -1744,7 +1757,7 @@ test('백업 schema v2는 외부 mapping·선택을 내보내고 가져와 targe
         assert.deepEqual(download.revokedUrls, ['blob:cmr-test-0']);
         const exported = JSON.parse(await download.blobs[0].text());
         assert.equal(exported.schemaVersion, 2);
-        assert.equal(exported.externalIntegrations.mappings[targetId], 'openrouter');
+        assert.deepEqual(exported.externalIntegrations.mappings, {});
         assert.equal(
             exported.externalIntegrations.selectedModels[targetId].openrouter,
             exportedModelId,
@@ -1754,8 +1767,20 @@ test('백업 schema v2는 외부 mapping·선택을 내보내고 가져와 targe
             providerId: 'zai',
             modelId: importedModelId,
             targetId,
+            purposeRoutes: {
+                schemaVersion: 1,
+                routes: {
+                    summary: {
+                        provider: 'zai',
+                        modelId: importedModelId,
+                        adapterId: 'example.summary',
+                        connectionProfileId: 'profile-zai',
+                    },
+                },
+            },
         });
         external.select.value = '';
+        external.select.setAttribute('data-provider', 'zai');
         const input = panel.querySelector('#cmr_import_backup');
         input.files = [{ size: content.length, text: async () => content }];
         input.value = 'cmr-v2-backup.json';
@@ -1763,7 +1788,7 @@ test('백업 schema v2는 외부 mapping·선택을 내보내고 가져와 targe
         await flushMicrotasks(16);
 
         const importedExternal = harness.context.extensionSettings.customModelRouterExternalIntegrations;
-        assert.equal(importedExternal.mappings[targetId], 'zai');
+        assert.deepEqual(importedExternal.mappings, {});
         assert.equal(importedExternal.selectedModels[targetId].zai, importedModelId);
         assert.deepEqual(
             globalThis.CustomModelRouter.getSnapshot().models.map(model => `${model.provider}:${model.id}`),
@@ -1773,6 +1798,12 @@ test('백업 schema v2는 외부 mapping·선택을 내보내고 가져와 targe
         const managedGroup = external.select.querySelector('[data-cmr-external-group="true"]');
         assert.equal(managedGroup.dataset.cmrProvider, 'zai');
         assert.deepEqual(managedGroup.children.map(option => option.value), [importedModelId]);
+        assert.deepEqual(globalThis.CustomModelRouter.routing.getRoute('summary'), {
+            provider: 'zai',
+            modelId: importedModelId,
+            adapterId: 'example.summary',
+            connectionProfileId: 'profile-zai',
+        });
         assert.equal(input.value, '');
         assert.match(panel.querySelector('#cmr_feedback').textContent, /복구했습니다/);
     } finally {
@@ -1838,6 +1869,11 @@ test('모델 100개는 런처에 99+로 축약하고 Popup의 provider별 압축
         assert.equal(modelList.children.length, 100);
         assert.equal(panel.querySelector('#cmr_model_count').textContent, '이 제공업체 100개 · 전체 100개');
         assert.ok(modelList.children.every(row => row.className === 'cmr-model-row'));
+        assert.ok(modelList.children.every(row => {
+            const actions = row.querySelector('.cmr-model-actions');
+            return actions?.children.length === 1
+                && actions.children[0].dataset.cmrAction === 'delete';
+        }));
 
         const css = await readFile(new URL('../style.css', import.meta.url), 'utf8');
         assert.match(css, /\.cmr-model-list\s*\{[\s\S]*?max-block-size:\s*min\(42dvh,\s*22rem\);/);
@@ -1900,21 +1936,19 @@ test('범용 연결은 외부 모델 select만 찾아 provider를 자동 추론�
     }
 });
 
-test('수동 provider 연결·해제는 자동 추론보다 우선하고 다른 provider의 관리 옵션을 남기지 않는다', () => {
+test('범용 연결은 별도 설정 UI 없이 추론한 provider 전환을 따라 관리 옵션을 교체한다', () => {
     const harness = createHarness();
     const external = appendExternalModelSelect(harness, {
         selectId: 'summarizer_model',
         label: 'OpenAI 요약 모델',
         attributes: { 'data-provider': 'openai' },
     });
-    const targetId = createExternalTargetId(external.select, { documentRef: harness.documentRef });
     const zaiModel = 'glm-5-plus';
     const openaiModel = 'gpt-6-mini';
     const controller = createExternalIntegrationController({
         root: harness.documentRef,
         documentRef: harness.documentRef,
         observerFactory: callback => new harness.MutationObserver(callback),
-        mappings: { [targetId]: 'zai' },
         getModels: providerId => ({
             zai: [createModelRecord('zai', zaiModel)],
             openai: [createModelRecord('openai', openaiModel)],
@@ -1923,14 +1957,6 @@ test('수동 provider 연결·해제는 자동 추론보다 우선하고 다른 
 
     try {
         let [target] = controller.start();
-        assert.equal(target.resolution.source, 'manual');
-        assert.equal(target.resolution.providerId, 'zai');
-        assert.deepEqual(
-            external.select.querySelector('[data-cmr-external-group="true"]').children.map(option => option.value),
-            [zaiModel],
-        );
-
-        [target] = controller.setMappings({});
         assert.equal(target.resolution.providerId, 'openai');
         assert.match(target.resolution.source, /^auto:/);
         assert.deepEqual(
@@ -1938,10 +1964,14 @@ test('수동 provider 연결·해제는 자동 추론보다 우선하고 다른 
             [openaiModel],
         );
 
-        [target] = controller.setMappings({ [targetId]: EXTERNAL_MAPPING_DISABLED });
-        assert.equal(target.resolution.providerId, null);
-        assert.equal(target.resolution.source, 'manual-disabled');
-        assert.equal(external.select.querySelector('[data-cmr-external-group="true"]'), null);
+        external.select.setAttribute('data-provider', 'zai');
+        [target] = controller.rescan();
+        assert.equal(target.resolution.providerId, 'zai');
+        assert.match(target.resolution.source, /^auto:/);
+        assert.deepEqual(
+            external.select.querySelector('[data-cmr-external-group="true"]').children.map(option => option.value),
+            [zaiModel],
+        );
     } finally {
         controller.destroy();
     }
@@ -1995,7 +2025,7 @@ test('범용 연결은 늦은 load와 외부 확장 재렌더를 복구하고 de
     assert.ok(harness.observers.every(observer => observer.target === null));
 });
 
-test('init 범용 자동 연결은 패널 상태와 옵션을 표시하고 trusted 선택을 저장해 재렌더 target에 복원한다', async () => {
+test('init 범용 자동 연결은 관리 UI 없이 옵션을 주입하고 trusted 선택을 재렌더 target에 복원한다', async () => {
     const modelId = 'openrouter/translator-latest';
     const harness = createHarness({
         models: [createModelRecord('openrouter', modelId)],
@@ -2012,12 +2042,8 @@ test('init 범용 자동 연결은 패널 상태와 옵션을 표시하고 trust
     try {
         await init();
         const panel = openPanel(harness);
-        const list = panel.querySelector('#cmr_external_list');
-        const row = list.querySelector(`[data-target-id="${targetId}"]`);
-        assert.equal(list.children.length, 1);
-        assert.ok(row);
-        assert.equal(panel.querySelector('#cmr_external_count').textContent, '감지 1개 · 연결 1개');
-        assert.equal(row.querySelector('.cmr-badge').textContent, '자동 연결');
+        assert.equal(panel.querySelector('#cmr_external_section'), null);
+        assert.equal(panel.querySelector('#cmr_external_list'), null);
         assert.deepEqual(
             external.select.querySelector('[data-cmr-external-group="true"]').children.map(option => option.value),
             [modelId],
@@ -2057,7 +2083,7 @@ test('init 범용 자동 연결은 패널 상태와 옵션을 표시하고 trust
     }
 });
 
-test('init 범용 수동 UI는 unresolved target을 연결·자동 복귀·제외하고 새로 탐지한다', async () => {
+test('init은 legacy 외부 mapping을 비우고 선택 기록은 보존하며 unknown target은 건너뛴다', async () => {
     const modelId = 'glm-5-air';
     const harness = createHarness({
         models: [createModelRecord('zai', modelId)],
@@ -2069,75 +2095,40 @@ test('init 범용 수동 UI는 unresolved target을 연결·자동 복귀·제�
         label: '요약 모델',
     });
     const targetId = createExternalTargetId(external.select, { documentRef: harness.documentRef });
+    harness.context.extensionSettings.customModelRouterExternalIntegrations = {
+        schemaVersion: 1,
+        mappings: { [targetId]: 'zai' },
+        selectedModels: { [targetId]: { zai: modelId } },
+    };
     const restoreGlobals = installBrowserGlobals(harness);
     try {
         await init();
         const panel = openPanel(harness);
-        const list = panel.querySelector('#cmr_external_list');
-        let row = list.querySelector(`[data-target-id="${targetId}"]`);
-        assert.ok(row);
-        assert.equal(row.querySelector('.cmr-badge').textContent, '확인 필요');
-        assert.equal(external.select.querySelector('[data-cmr-external-group="true"]'), null);
-
-        let providerSelect = row.querySelector('[data-cmr-external-provider]');
-        providerSelect.value = 'zai';
-        row.querySelector('[data-cmr-external-action="bind"]')
-            .dispatchEvent(new FakeEvent('click', { bubbles: true }));
-        assert.equal(
-            harness.context.extensionSettings.customModelRouterExternalIntegrations.mappings[targetId],
-            'zai',
-        );
+        assert.equal(panel.querySelector('#cmr_external_section'), null);
         assert.deepEqual(
-            external.select.querySelector('[data-cmr-external-group="true"]').children.map(option => option.value),
-            [modelId],
-        );
-        row = list.querySelector(`[data-target-id="${targetId}"]`);
-        assert.equal(row.querySelector('.cmr-badge').textContent, '수동 연결');
-
-        row.querySelector('[data-cmr-external-action="auto"]')
-            .dispatchEvent(new FakeEvent('click', { bubbles: true }));
-        assert.equal(
-            Object.hasOwn(harness.context.extensionSettings.customModelRouterExternalIntegrations.mappings, targetId),
-            false,
+            harness.context.extensionSettings.customModelRouterExternalIntegrations,
+            {
+                schemaVersion: 1,
+                mappings: {},
+                selectedModels: { [targetId]: { zai: modelId } },
+            },
         );
         assert.equal(external.select.querySelector('[data-cmr-external-group="true"]'), null);
-        row = list.querySelector(`[data-target-id="${targetId}"]`);
-        assert.equal(row.querySelector('.cmr-badge').textContent, '확인 필요');
-
-        providerSelect = row.querySelector('[data-cmr-external-provider]');
-        providerSelect.value = 'zai';
-        row.querySelector('[data-cmr-external-action="bind"]')
-            .dispatchEvent(new FakeEvent('click', { bubbles: true }));
-        row = list.querySelector(`[data-target-id="${targetId}"]`);
-        row.querySelector('[data-cmr-external-action="disable"]')
-            .dispatchEvent(new FakeEvent('click', { bubbles: true }));
-        assert.equal(
-            harness.context.extensionSettings.customModelRouterExternalIntegrations.mappings[targetId],
-            EXTERNAL_MAPPING_DISABLED,
-        );
-        assert.equal(external.select.querySelector('[data-cmr-external-group="true"]'), null);
-        row = list.querySelector(`[data-target-id="${targetId}"]`);
-        assert.equal(row.querySelector('.cmr-badge').textContent, '사용 안 함');
-
-        panel.querySelector('#cmr_external_refresh').dispatchEvent(new FakeEvent('click'));
-        assert.match(panel.querySelector('#cmr_external_status').textContent, /1개를 다시 탐지/);
-        assert.equal(panel.querySelector('#cmr_external_count').textContent, '감지 1개 · 연결 0개');
+        assert.ok(harness.saveCallCount >= 1);
     } finally {
         await destroy();
         restoreGlobals();
     }
 });
 
-test('외부 target 0개·모호·비대상 UI는 안전한 텍스트로 구분되고 destroy 재활성화 자원이 중복되지 않는다', async () => {
+test('unknown·비대상 target은 UI 없이 건너뛰고 inferred target과 재활성화 자원만 유지한다', async () => {
     const harness = createHarness();
     const restoreGlobals = installBrowserGlobals(harness);
     let autoTarget;
     try {
         await init();
         let panel = openPanel(harness);
-        assert.equal(panel.querySelector('#cmr_external_count').textContent, '감지 0개 · 연결 0개');
-        assert.equal(panel.querySelector('#cmr_external_list').children.length, 1);
-        assert.match(panel.querySelector('#cmr_external_list').children[0].textContent, /찾지 못했습니다/);
+        assert.equal(panel.querySelector('#cmr_external_section'), null);
         assert.equal(harness.eventSource.listenerCount, 7);
         assert.equal(harness.observers.filter(candidate => candidate.target).length, 2);
 
@@ -2163,27 +2154,16 @@ test('외부 target 0개·모호·비대상 UI는 안전한 텍스트로 구분�
             selectId: 'image_generation_model',
             label: 'Stable Diffusion 이미지 생성 모델',
         });
-        const autoTargetId = createExternalTargetId(autoTarget.select, { documentRef: harness.documentRef });
-        const ambiguousTargetId = createExternalTargetId(ambiguousTarget.select, { documentRef: harness.documentRef });
-        const excludedTargetId = createExternalTargetId(excludedTarget.select, { documentRef: harness.documentRef });
-
         await init();
         panel = openPanel(harness);
-        const list = panel.querySelector('#cmr_external_list');
-        assert.equal(panel.querySelector('#cmr_external_count').textContent, '감지 2개 · 연결 1개');
-        assert.match(panel.querySelector('#cmr_external_count').title, /1개 자동 제외/);
-        assert.equal(list.children.length, 2);
-        assert.equal(list.querySelector(`[data-target-id="${autoTargetId}"]`).querySelector('.cmr-badge').textContent, '자동 연결');
-        const ambiguousRow = list.querySelector(`[data-target-id="${ambiguousTargetId}"]`);
-        assert.equal(ambiguousRow.querySelector('.cmr-badge').textContent, '확인 필요');
-        assert.equal(ambiguousRow.querySelector('.cmr-external-name').textContent, ambiguousText);
-        assert.equal(ambiguousRow.querySelector('img'), null);
-        assert.equal(list.querySelector(`[data-target-id="${excludedTargetId}"]`), null);
+        assert.equal(panel.querySelector('#cmr_external_section'), null);
         assert.equal(globalThis.pwned, undefined);
         assert.equal(harness.eventSource.listenerCount, 7);
         assert.equal(harness.observers.filter(candidate => candidate.target).length, 2);
         assert.equal(autoTarget.select.listeners.get('change').length, 2);
         assert.ok(autoTarget.select.querySelector('[data-cmr-external-group="true"]'));
+        assert.equal(ambiguousTarget.select.querySelector('[data-cmr-external-group="true"]'), null);
+        assert.equal(excludedTarget.select.querySelector('[data-cmr-external-group="true"]'), null);
     } finally {
         await destroy();
         if (autoTarget) {

@@ -67,7 +67,7 @@
         </section>
 
         <section id="unknown_panel" data-extension-name="unknown helper">
-            <h2>수동 연결 대상</h2>
+            <h2>제공업체를 알 수 없어 건너뛸 대상</h2>
             <label for="helper_model">Model</label>
             <select id="helper_model">
                 <option value="native-default">native-default</option>
@@ -77,9 +77,7 @@
 
     <h2>검증 결과</h2>
     <p data-cmr-owned="true">
-        <button id="bind_unknown" type="button">모호한 대상 OpenAI 연결</button>
-        <button id="disable_unknown" type="button">모호한 대상 사용 안 함</button>
-        <button id="reset_unknown" type="button">모호한 대상 자동으로 복귀</button>
+        <button id="switch_caption_provider" type="button">Caption 제공업체 전환</button>
         <button id="recreate_caption" type="button">Caption 선택기 재생성</button>
         <button id="stop_bridge" type="button">브리지 정리</button>
         <button id="start_bridge" type="button">브리지 다시 시작</button>
@@ -89,7 +87,7 @@
     <script type="module">
         import {
             createExternalIntegrationController,
-        } from '../src/external-integrations.js?browser-sandbox=0.6.2';
+        } from '../src/external-integrations.js?browser-sandbox=0.6.3';
 
         const models = {
             openai: [{ provider: 'openai', id: 'gpt-5.9-preview', enabled: true }],
@@ -118,7 +116,6 @@
             const captionControl = document.querySelector('#caption_multimodal_model');
             const input = document.querySelector('#vendor_model_id');
             const unknownTarget = controller.getTargets().find(item => item.control.id === 'helper_model');
-            const mappings = controller.getMappings();
             const metrics = controller.getMetrics();
             const snapshot = {
                 targets: controller.getTargets().map(summarizeTarget),
@@ -137,7 +134,6 @@
                 ttsInjected: document.querySelectorAll('#tts_openai_model [data-cmr-external-model="true"]').length,
                 imageGenerationInjected: document.querySelectorAll('#sd_image_model [data-cmr-external-model="true"]').length,
                 ambiguousInjected: document.querySelectorAll('#helper_model [data-cmr-external-model="true"]').length,
-                unknownMapping: unknownTarget ? (mappings[unknownTarget.targetId] ?? 'auto') : null,
                 unknownResolution: unknownTarget?.resolution?.source ?? null,
                 changes: [...changes],
                 externalState: { ...externalState },
@@ -145,9 +141,7 @@
             };
             result.textContent = JSON.stringify(snapshot, null, 2);
             window.cmrSandboxSnapshot = snapshot;
-            document.querySelector('#bind_unknown').disabled = !snapshot.bridgeActive;
-            document.querySelector('#disable_unknown').disabled = !snapshot.bridgeActive;
-            document.querySelector('#reset_unknown').disabled = !snapshot.bridgeActive;
+            document.querySelector('#switch_caption_provider').disabled = !snapshot.bridgeActive;
             document.querySelector('#recreate_caption').disabled = !snapshot.bridgeActive;
             document.querySelector('#stop_bridge').disabled = !snapshot.bridgeActive;
             document.querySelector('#start_bridge').disabled = snapshot.bridgeActive;
@@ -187,35 +181,17 @@
         attachCaptionExternalListener(document.querySelector('#caption_multimodal_model'));
         controller.start();
 
-        const updateUnknownMapping = mapping => {
-            const target = controller.getTargets().find(item => item.control.id === 'helper_model');
-            if (!target) {
-                return collect();
-            }
-            const mappings = controller.getMappings();
-            if (mapping === null) {
-                delete mappings[target.targetId];
-            } else {
-                mappings[target.targetId] = mapping;
-            }
-            controller.setMappings(mappings);
-            return collect();
-        };
-
         window.cmrSandbox = {
             controller,
             collect,
             changes,
             models,
             selectedModels,
-            bindUnknown(providerId = 'openai') {
-                return updateUnknownMapping(providerId);
-            },
-            disableUnknown() {
-                return updateUnknownMapping('disabled');
-            },
-            resetUnknown() {
-                return updateUnknownMapping(null);
+            switchCaptionProvider() {
+                const provider = document.querySelector('#caption_multimodal_api');
+                provider.value = provider.value === 'openai' ? 'anthropic' : 'openai';
+                provider.dispatchEvent(new Event('change', { bubbles: true }));
+                return collect();
             },
             recreateCaptionModel() {
                 const previous = document.querySelector('#caption_multimodal_model');
@@ -235,9 +211,7 @@
                 return collect();
             },
         };
-        document.querySelector('#bind_unknown').addEventListener('click', () => window.cmrSandbox.bindUnknown());
-        document.querySelector('#disable_unknown').addEventListener('click', () => window.cmrSandbox.disableUnknown());
-        document.querySelector('#reset_unknown').addEventListener('click', () => window.cmrSandbox.resetUnknown());
+        document.querySelector('#switch_caption_provider').addEventListener('click', () => window.cmrSandbox.switchCaptionProvider());
         document.querySelector('#recreate_caption').addEventListener('click', () => window.cmrSandbox.recreateCaptionModel());
         document.querySelector('#stop_bridge').addEventListener('click', () => window.cmrSandbox.stop());
         document.querySelector('#start_bridge').addEventListener('click', () => window.cmrSandbox.start());
