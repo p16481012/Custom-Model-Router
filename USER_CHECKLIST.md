@@ -1,6 +1,6 @@
-# v0.6.3 통합 사용자 검증 체크리스트
+# v0.6.4 통합 사용자 검증 체크리스트
 
-대상 버전: **v0.6.3**
+대상 버전: **v0.6.4**
 
 이 문서는 v0.1~v0.6 기능을 한 번에 확인하는 최종 수동 검증 순서입니다. 위에서 아래로 진행하고, 사용하지 않는 제공업체·외부 확장·개발자 API 항목은 `해당 없음`으로 표시하세요.
 
@@ -20,7 +20,7 @@
 ```text
 검증 날짜:
 SillyTavern 버전:
-Custom Model Router 버전: v0.6.3
+Custom Model Router 버전: v0.6.4
 브라우저·OS:
 설치 방식: 신규 / 업데이트
 이전 확장 버전:
@@ -43,13 +43,14 @@ Connection Profile 사용 여부:
 ## 1. 버전·이관·초기화
 
 - [ ] **[필수][MIG-01] API Connections 도구행에 사용자 모델 관리 아이콘이 정확히 하나 표시된다.**
-- [ ] **[필수][MIG-02] 관리 팝업에 `v0.6.3` 배지가 표시된다.**
+- [ ] **[필수][MIG-02] 관리 팝업에 `v0.6.4` 배지가 표시된다.**
 - [ ] **[필수][MIG-03] Extensions 설정 영역에 이전의 큰 CMR inline 패널이 남지 않는다.**
 - [ ] **[조건부][MIG-04] v0.1.x의 Vertex 등록 모델이 Google Vertex AI 목록에 보존된다.**
 - [ ] **[조건부][MIG-05] v0.2.x의 여러 제공업체 등록 모델과 선택 상태가 모두 보존된다.**
 - [ ] **[조건부][MIG-06] v0.4.0의 용도별 route가 같은 모델과 profile ID를 가리킨다.**
 - [ ] **[조건부][MIG-06A] v0.5.0에서 업데이트했다면 Registry와 route가 보존되고 외부 연결 설정은 빈 상태로 안전하게 시작한다.**
 - [ ] **[조건부][MIG-06B] v0.6.0~v0.6.2에서 업데이트했다면 외부 target의 legacy 수동·disabled mapping은 제거되고 provider별 마지막 CMR 선택은 보존된다.**
+- [ ] **[조건부][MIG-06C] 저장 설정의 legacy mapping 512개가 한도를 채운 상태에서 업데이트해도 mapping은 제거되고 별도 target의 `selectedModels` 기록은 보존된다.**
 - [ ] **[필수][MIG-07] 새로고침을 두 번 반복해도 런처·팝업·사용자 모델 그룹이 중복되지 않는다.**
 - [ ] **[필수][MIG-08] 브라우저 콘솔에 처리되지 않은 CMR 초기화 오류가 없다.**
 
@@ -95,6 +96,7 @@ Connection Profile 사용 여부:
 - [ ] **[필수][EXT-04] 제공업체를 확정하지 못한 unknown 모델 컨트롤에는 CMR 옵션을 임의로 주입하지 않고 원래 값과 option을 그대로 둔다.**
 - [ ] **[조건부][EXT-05] v0.6.0~v0.6.2의 수동 provider 또는 `disabled` mapping이 남은 설정으로 업데이트해도 해당 mapping은 적용·복원되지 않고 자동 판별 결과만 사용한다.**
 - [ ] **[조건부][EXT-06] legacy mapping 정리 뒤에도 같은 target과 provider의 마지막 CMR 모델 선택 기록은 보존된다.**
+- [ ] **[조건부][EXT-06A] 제거된 확장의 stale 외부 선택 512개로 저장이 포화된 상태에서 현재 감지 target의 CMR 모델을 선택하면, 감지되지 않은 가장 오래된 target 기록 하나만 교체되고 나머지 기존 선택은 보존된다.**
 - [ ] **[조건부][EXT-07] Caption의 Multimodal provider/model control에서 `Anthropic→claude`, `Google AI Studio→makersuite`, `Mistral→mistralai` 같은 provider alias가 올바른 Registry와 자동 연결된다.**
 - [ ] **[조건부][EXT-08] Caption처럼 option `data-type`을 쓰는 확장에서 CMR option에도 외부 provider 값이 유지되고 다른 provider로 전환했을 때 잘못된 모델이 섞이지 않는다.**
 - [ ] **[조건부][EXT-09] 외부 확장에서 CMR 모델을 선택하면 그 확장의 기존 `input` 또는 `change` 저장 동작이 실행되고, 기능을 다시 열어도 선택이 남는다.**
@@ -162,6 +164,7 @@ CMR은 전역 `fetch`나 `XMLHttpRequest`를 monkey patch하지 않습니다. �
 - [ ] **[선택][API-04] 같은 model ID를 두 provider에 등록해도 `createModelKey()` 결과가 다르다.**
 - [ ] **[선택][API-05] `subscribe()`가 등록·선택·삭제 이벤트를 revision 순서로 받고 해제 뒤에는 받지 않는다.**
 - [ ] **[선택][API-06] `selectModel()`이 Registry 상태만 바꾸고 현재 메인 source·selector·모델은 바꾸지 않는다.**
+- [ ] **[선택][API-07] SillyTavern `select`에서 현재 사용 중인 custom-only 모델을 `unregisterModel()`로 지우면 `model_in_use`로 거부되고, native 모델로 전환한 뒤에는 등록 해제된다.**
 
 ## 7. 용도별 Routing API 1.0.0
 
@@ -204,7 +207,7 @@ CMR은 전역 `fetch`나 `XMLHttpRequest`를 monkey patch하지 않습니다. �
 
 ## 10. 확장 전용 백업·복구
 
-- [ ] **[필수][BKP-01] `백업 내보내기`로 `custom-model-router-backup-v0.6.3.json`을 저장한다.**
+- [ ] **[필수][BKP-01] `백업 내보내기`로 `custom-model-router-backup-v0.6.4.json`을 저장한다.**
 - [ ] **[필수][BKP-02] JSON 최상위에 `format`, `schemaVersion`, `createdAt`, `registry`, `purposeRoutes`, `externalIntegrations`만 있고 portable schemaVersion이 `2`인지 확인한다.**
 - [ ] **[필수][BKP-03] Registry에는 provider·model ID·protocol·enabled·선택 상태만 있는지 확인한다.**
 - [ ] **[필수][BKP-04] route에는 provider·model ID·adapter ID·Connection Profile ID만 있는지 확인한다.**
@@ -238,10 +241,10 @@ CMR은 전역 `fetch`나 `XMLHttpRequest`를 monkey patch하지 않습니다. �
 ## 결과 보고 양식
 
 ```text
-제목: [v0.6.3][제공업체 또는 기능][항목 ID] 짧은 증상
+제목: [v0.6.4][제공업체 또는 기능][항목 ID] 짧은 증상
 
 SillyTavern 버전:
-Custom Model Router 버전: v0.6.3
+Custom Model Router 버전: v0.6.4
 OS / 브라우저:
 신규 설치 또는 업데이트:
 이전 CMR 버전:
@@ -265,4 +268,4 @@ Caption /caption-image payload의 model 확인 결과:
 민감정보를 제거한 스크린샷:
 ```
 
-실패 항목이 있어도 데이터 손실·무한 반복·비밀 노출이 아니라면 나머지 독립 항목은 계속 확인해도 됩니다. 결과를 모으면 같은 v0.6 범위의 후속 수정은 `v0.6.4`, `v0.6.5`, ...로 반영합니다.
+실패 항목이 있어도 데이터 손실·무한 반복·비밀 노출이 아니라면 나머지 독립 항목은 계속 확인해도 됩니다. 결과를 모으면 같은 v0.6 범위의 후속 수정은 `v0.6.5`, `v0.6.6`, ...로 반영합니다.

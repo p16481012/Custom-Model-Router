@@ -67,6 +67,7 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
     assert.match(roadmap, /## v0\.4\.0 — 확장 어댑터와 용도별 라우팅/);
     assert.match(roadmap, /## v0\.5\.0 — 호환성과 운영 안정화/);
     assert.match(roadmap, /## v0\.6\.0 — 범용 외부 확장 모델 브리지/);
+    assert.match(roadmap, /## v0\.6\.4 — 삭제 안전성·외부 선택 저장 회복/);
     assert.match(entrypoint, /new context\.Popup/);
     assert.match(entrypoint, /#cmr_open_manager/);
     assert.doesNotMatch(entrypoint, /#extensions_settings2|#extensions_settings/);
@@ -77,7 +78,7 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
     assert.match(entrypoint, /diagnoseCompatibility/);
     assert.match(entrypoint, /stringifyPortableSettings/);
     assert.match(entrypoint, /createExternalIntegrationController/);
-    assert.match(entrypoint, /normalizeExternalSettings/);
+    assert.match(entrypoint, /normalizeAutomaticExternalSettings/);
     assert.match(settingsHtml, /cmr_run_diagnostics/);
     assert.match(settingsHtml, /cmr_export_backup/);
     assert.doesNotMatch(settingsHtml, /cmr_external_(?:section|list|refresh|status|count)/);

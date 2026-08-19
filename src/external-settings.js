@@ -148,6 +148,22 @@ export function normalizeExternalSettings(value) {
     return createSettings(mappings, selectedModels);
 }
 
+/**
+ * v0.6.3 이후 자동 연결 모드용 설정을 정규화한다.
+ *
+ * 예전 수동 mapping이 512개 한도를 먼저 차지해 보존해야 할 selectedModels가
+ * 잘리는 일을 막기 위해 mapping을 읽기 전에 제외한다.
+ */
+export function normalizeAutomaticExternalSettings(value) {
+    const source = isRecord(value) ? value : {};
+    checkFutureSchema(source);
+    return normalizeExternalSettings({
+        schemaVersion: EXTERNAL_SETTINGS_SCHEMA_VERSION,
+        mappings: {},
+        selectedModels: safeRead(source, 'selectedModels'),
+    });
+}
+
 function assertTargetCapacity(settings, targetId) {
     const targetIds = new Set([
         ...Object.keys(settings.mappings),

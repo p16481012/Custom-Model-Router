@@ -2,9 +2,9 @@
 
 마지막 업데이트: **2026-08-19**
 
-현재 릴리스: **v0.6.3**
+현재 릴리스: **v0.6.4**
 
-현재 단계: **v0.6.3에서 관리 UI·SillyTavern native 선택·외부 자동 브리지·개발자 API의 역할 분리를 반영하고 사용자 검증 대기 중**
+현재 단계: **v0.6.4에서 공개 API 삭제 안전성과 외부 선택 저장 한계 회복을 반영하고 사용자 검증 대기 중**
 
 ## 상태 범례
 
@@ -24,13 +24,13 @@
 | SillyTavern 1.18.0 계약 조사 | ✅ 완료 | 활성 Chat Completion source 25개 중 등록 가능한 24개와 구조적 제외를 확인 |
 | 다중 provider Registry | ✅ 완료 | `(provider, model ID)` 복합키, 제공업체별 선택, v1 Vertex 이관 |
 | 관리 팝업과 기본 컨트롤 | ✅ 완료 | 24개 제공업체 모델 등록·삭제, 실제 선택은 SillyTavern native 컨트롤 사용, 정상 감지 상태 숨김 |
-| 공개 Registry API | ✅ 완료 | API `1.1.0`, 불변 스냅샷·mutation·이벤트·수명주기 |
+| 공개 Registry API | ✅ 완료 | API `1.1.0`, 불변 스냅샷·mutation·이벤트·수명주기, 현재 custom-only 모델 삭제 보호 |
 | 용도별 라우팅 | ✅ 완료 | 일반 UI 없이 Routing API `1.0.0`, Connection Profile 어댑터, route·backup 보존 |
 | 호환성 진단 | ✅ 완료 | ST 버전, context·이벤트·provider 컨트롤과 런타임 자원 진단 |
-| 범용 외부 확장 브리지 | ✅ 완료 | 표준 select/input/datalist 자동 탐지, 확실한 provider만 자동 연결, unknown 무변경, 재렌더·선택 복원 |
+| 범용 외부 확장 브리지 | ✅ 완료 | 표준 select/input/datalist 자동 탐지, 확실한 provider만 자동 연결, unknown 무변경, 재렌더·선택 복원, stale 선택 포화 회복 |
 | 설정 백업·복구 | ✅ 완료 | Registry·route·외부 선택을 portable schema v2로 처리, legacy mapping 자동 정리, v1 이관·미래 schema 거부 |
 | 안정성 계측 | ✅ 완료 | source·profile 전환 표본의 observer·listener·group 누적 판정 |
-| 자동 검사 | ✅ 완료 | 단위·통합·수명주기·보안 경계·버전 일치 검사 129개 통과 |
+| 자동 검사 | ✅ 완료 | 단위·통합·수명주기·보안 경계·버전 일치 검사 133개 통과 |
 | DOM·공개 API 샌드박스 | ✅ 완료 | 기본 24개, native 선택, 외부 자동 추론 select/input/datalist, 개발자 route API, 재렌더와 disable/re-enable 확인 |
 | 사용자 실제 계정 검증 | 🧪 대기 | [통합 체크리스트](./USER_CHECKLIST.md)를 사용하는 연결에서 한 번 수행 |
 
@@ -239,6 +239,25 @@ v0.5.0의 공개 Registry API와 Routing API는 다른 확장이 API를 직접 �
 - [ ] v0.6.2 이하 설정·백업 이관 뒤 legacy mapping은 제거되고 provider별 마지막 선택은 유지됨
 - [ ] 일반 UI에 라우팅 설정이 없지만 개발자 API의 route 조회·설정·실행과 backup round trip이 유지됨
 
+## v0.6.4 — 삭제 안전성·외부 선택 저장 회복
+
+상태: **✅ 구현·자동 검사 완료, 🧪 사용자 검증 대기**
+
+### 반영 결과
+
+- [x] 공개 `unregisterModel()`이 SillyTavern `select`에서 현재 사용 중인 custom-only 모델을 `model_in_use`로 거부
+- [x] SillyTavern native 모델로 전환한 뒤 같은 공개 API 등록 해제를 허용
+- [x] SillyTavern 실행 설정의 자동 모드 이관에서 legacy mapping 512개가 한도를 채워도 `selectedModels`를 우선 보존
+- [x] stale 외부 선택 512개로 포화된 저장은 현재 DOM에서 감지되지 않은 가장 오래된 target 하나만 교체해 새 선택 저장을 회복
+- [x] 추가 회귀 검사를 포함한 자동 검사 133개 통과
+
+### 사용자 검증 초점
+
+- [ ] 현재 custom-only 모델을 공개 API로 지우면 `model_in_use`이며 Registry와 SillyTavern 선택이 유지됨
+- [ ] native 모델로 전환한 뒤에는 공개 API 등록 해제가 성공함
+- [ ] 512개 legacy mapping 이관에서도 별도 target의 provider별 선택 기록이 보존됨
+- [ ] stale 외부 선택 포화 상태에서 현재 감지 target의 새 선택이 저장됨
+
 ## 실제 사용자 검증 게이트
 
 다음 조건은 자동 검사만으로 완료 처리하지 않습니다.
@@ -252,8 +271,10 @@ v0.5.0의 공개 Registry API와 Routing API는 다른 확장이 API를 직접 �
 7. 백업 round trip 뒤 Registry·route·외부 provider별 선택만 복원되고 legacy mapping과 연결 비밀은 남지 않습니다.
 8. 외부 확장 모델 컨트롤에서는 등록 ID가 표시될 뿐 아니라 실제 요청의 `model`에 전달됩니다.
 9. 비대상 모델 컨트롤과 provider를 판별할 수 없는 대상은 변경되지 않습니다.
+10. 공개 API도 현재 사용 중인 select형 custom-only 모델을 native 전환 전에 지우지 못합니다.
+11. 외부 선택 저장이 512개 한계에 도달해도 유효한 이관 선택과 현재 감지 target의 새 선택은 보존됩니다.
 
-실제 검증에서 발견되는 v0.6 범위의 후속 결함은 `v0.6.4`, `v0.6.5`, ... 패치 버전으로 수정합니다.
+실제 검증에서 발견되는 v0.6 범위의 후속 결함은 `v0.6.5`, `v0.6.6`, ... 패치 버전으로 수정합니다.
 
 ## 업데이트 규칙
 
@@ -277,4 +298,5 @@ v0.5.0의 공개 Registry API와 Routing API는 다른 확장이 API를 직접 �
 | v0.6.0 | ✅ 구현 완료·🧪 사용자 검증 대기 | 범용 DOM 모델 브리지, 수동 mapping, 외부 연결 portable schema v2 |
 | v0.6.1 | ↩️ 롤백 | 관리 팝업 UI·UX 재구성은 사용자 피드백에 따라 철회 |
 | v0.6.2 | ✅ 롤백 릴리스 | v0.6.0 UI 복원, 기능 역할·정보 구조 재논의와 v0.6.3 합의 확정 |
-| v0.6.3 | ✅ 현재 릴리스·🧪 사용자 검증 대기 | 등록·삭제 전용 UI, native 선택, 외부 자동 추론, 개발자 Routing API 유지 |
+| v0.6.3 | ✅ 완료 | 등록·삭제 전용 UI, native 선택, 외부 자동 추론, 개발자 Routing API 유지 |
+| v0.6.4 | ✅ 현재 릴리스·🧪 사용자 검증 대기 | 공개 API 삭제 안전성, legacy mapping 선택 우선 이관, stale 외부 선택 저장 회복 |

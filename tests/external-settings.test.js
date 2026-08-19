@@ -8,6 +8,7 @@ import {
     ExternalSettingsError,
     getExternalMapping,
     getExternalSelectedModel,
+    normalizeAutomaticExternalSettings,
     normalizeExternalSettings,
     removeExternalMapping,
     removeExternalSelectedModel,
@@ -67,6 +68,30 @@ test('연결과 provider별 선택을 정규화하고 알 수 없는 필드를 �
 test('미래 schema는 조용히 낮추지 않고 명시적인 오류를 낸다', () => {
     assert.throws(
         () => normalizeExternalSettings({ schemaVersion: 2, mappings: {}, selectedModels: {} }),
+        error => error instanceof ExternalSettingsError && error.code === 'future_schema',
+    );
+});
+
+test('자동 연결 정규화는 한도를 채운 legacy mapping보다 선택 기록을 우선 보존한다', () => {
+    const mappings = {};
+    for (let index = 0; index < EXTERNAL_SETTINGS_MAX_TARGETS; index += 1) {
+        mappings[`cmr-ext-${index.toString(16).padStart(8, '0')}`] = 'openai';
+    }
+    const selectedTarget = 'cmr-ext-00000200';
+    const normalized = normalizeAutomaticExternalSettings({
+        schemaVersion: EXTERNAL_SETTINGS_SCHEMA_VERSION,
+        mappings,
+        selectedModels: {
+            [selectedTarget]: { vertexai: 'gemini-future' },
+        },
+    });
+
+    assert.deepEqual(normalized.mappings, {});
+    assert.deepEqual(normalized.selectedModels, {
+        [selectedTarget]: { vertexai: 'gemini-future' },
+    });
+    assert.throws(
+        () => normalizeAutomaticExternalSettings({ schemaVersion: 2 }),
         error => error instanceof ExternalSettingsError && error.code === 'future_schema',
     );
 });

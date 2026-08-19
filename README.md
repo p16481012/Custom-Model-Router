@@ -2,7 +2,7 @@
 
 SillyTavern 코어 파일을 수정하지 않고 기존 Chat Completion 연결에 사용자 모델 ID를 등록하는 UI 확장입니다. 관리 팝업은 모델 등록과 삭제만 담당하며, 실제 모델은 SillyTavern의 기존 모델 선택기 또는 입력란에서 선택합니다. 범용 외부 확장 브리지는 제공업체를 안전하게 자동 판별한 모델 컨트롤에만 선택지를 추가하며 외부 요청 본문을 직접 바꾸지 않습니다.
 
-현재 버전은 **v0.6.3**이며, SillyTavern 1.18.0의 등록 가능한 Chat Completion 연결 24개, 공개 Registry API, 개발자 opt-in Routing API, 범용 DOM 모델 브리지, 호환성 진단과 비밀정보를 제외한 설정 백업·복구를 제공합니다. v0.6.3은 v0.6.1의 UI 재구성 시도와 v0.6.2 롤백 뒤 합의한 역할에 맞춰 일반 UI를 단순화한 패치입니다.
+현재 버전은 **v0.6.4**이며, SillyTavern 1.18.0의 등록 가능한 Chat Completion 연결 24개, 공개 Registry API, 개발자 opt-in Routing API, 범용 DOM 모델 브리지, 호환성 진단과 비밀정보를 제외한 설정 백업·복구를 제공합니다. v0.6.3은 v0.6.1의 UI 재구성 시도와 v0.6.2 롤백 뒤 합의한 역할에 맞춰 일반 UI를 단순화했습니다. v0.6.4는 현재 사용 중인 custom-only 모델의 공개 API 등록 해제를 막고, legacy 외부 설정과 512개 선택 저장 한계에서 유효한 선택을 우선 보존하는 안정성 패치입니다.
 
 v0.5.0까지의 공개 API와 용도별 라우팅은 다른 확장이 스스로 연동해야 사용할 수 있었으며, 이미 설치된 다른 확장의 모델 선택기에 CMR 모델을 자동 표시하지는 않았습니다. v0.6.0은 이 누락을 보완해 표준 `select`, 텍스트 `input`, `datalist` 기반 Chat Completion 모델 컨트롤을 탐지했습니다. v0.6.3부터는 제공업체를 충분히 확실하게 자동 판별한 대상만 연결하고, 판별할 수 없는 대상은 변경하지 않습니다.
 
@@ -10,7 +10,7 @@ v0.5.0까지의 공개 API와 용도별 라우팅은 다른 확장이 스스로 
 
 | 항목 | 상태 |
 |---|---|
-| 현재 릴리스 | `v0.6.3` |
+| 현재 릴리스 | `v0.6.4` |
 | v0.3 공개 Registry API | ✅ 구현·자동 검사 완료 |
 | v0.4 용도별 라우팅 | ✅ 구현·자동 검사 완료 |
 | v0.5 진단·복구·안정성 계측 | ✅ 구현·자동 검사 완료 |
@@ -33,6 +33,7 @@ v0.5.0까지의 공개 API와 용도별 라우팅은 다른 확장이 스스로 
 - 원격 모델 목록 재생성, source 변경, 새로고침과 Connection Profile 전환 뒤 옵션과 선택을 복원합니다.
 - v0.1의 Vertex 설정을 제공업체별 schema v2로 자동 이관합니다.
 - `globalThis.CustomModelRouter`로 다른 확장에 읽기 전용 Registry 스냅샷, mutation, 이벤트와 용도별 라우팅 API를 제공합니다.
+- 공개 API도 SillyTavern `select`에서 현재 사용 중인 custom-only 모델은 `model_in_use`로 등록 해제를 거부하고, native 모델로 전환한 뒤에만 삭제합니다.
 - 개발자 opt-in Routing API는 Registry의 `(provider, model ID)`와 같은 제공업체의 Connection Profile을 직접 연결합니다. 일반 사용자용 라우팅 설정 UI는 제공하지 않습니다.
 - 보조 요청은 메인 채팅 source·모델을 바꾸지 않고 Connection Profile의 인증과 endpoint를 재사용합니다.
 - SillyTavern 버전, 공개 context, 제공업체 컨트롤과 런타임 자원 누적을 구조화된 진단으로 확인합니다.
@@ -113,7 +114,7 @@ const unsubscribe = registry.subscribe('registry:changed', event => {
 });
 ```
 
-`selectModel()`은 Registry 선택 상태만 변경하며 SillyTavern의 현재 source나 메인 모델을 전환하지 않습니다. 전체 계약은 [공개 API 문서](./API.md), 예제는 [Registry 연동](./examples/registry-integration.js)과 [라우팅 연동](./examples/routing-integration.js)을 참고하세요.
+`selectModel()`은 Registry 선택 상태만 변경하며 SillyTavern의 현재 source나 메인 모델을 전환하지 않습니다. `unregisterModel()`은 SillyTavern `select`형 연결에서 현재 값인 custom-only 모델을 지우려 하면 `model_in_use`를 내며, 기존 native 모델로 전환한 뒤에는 정상적으로 등록 해제합니다. 전체 계약은 [공개 API 문서](./API.md), 예제는 [Registry 연동](./examples/registry-integration.js)과 [라우팅 연동](./examples/routing-integration.js)을 참고하세요.
 
 ## 다른 확장 모델 연결
 
@@ -122,6 +123,8 @@ const unsubscribe = registry.subscribe('registry:changed', event => {
 관리 팝업에는 외부 대상별 자동·수동·확인 필요·사용 안 함 설정이 없습니다. v0.6.2 이하에서 저장된 수동 provider mapping과 `disabled` 값은 v0.6.3에서 자동으로 정리하며, provider별 마지막 CMR 모델 선택은 보존합니다.
 
 외부 확장이 모델 컨트롤을 다시 만들면 CMR 옵션을 다시 추가합니다. 저장된 provider별 CMR 선택은 동일 target으로 다시 감지된 새 컨트롤의 값이 비어 있을 때만 복원하고, 외부 확장이 이미 설정한 유효한 현재값은 덮어쓰지 않습니다. 외부 확장 업데이트로 control의 ID·name·label 또는 상위 확장 구조가 바뀌면 새 target으로 인식될 수 있으며, 새 대상에서도 제공업체 자동 판별에 성공한 경우에만 모델을 추가합니다.
+
+v0.6.4의 자동 모드 이관은 legacy mapping 512개가 한도를 먼저 채워도 `selectedModels`를 우선 보존합니다. 오래된 외부 선택 기록 512개로 저장소가 포화된 경우에는 현재 DOM에서 감지되지 않은 가장 오래된 target 기록 하나만 교체해 새 선택을 저장합니다.
 
 이 브리지는 외부 확장의 기존 선택 이벤트와 저장 경로를 사용합니다. 전역 `fetch`나 `XMLHttpRequest`를 교체하지 않고, API 키·endpoint 또는 외부 확장의 요청 본문을 직접 읽거나 덮어쓰지 않습니다. 따라서 실제 요청 반영 여부는 해당 확장이 표준 컨트롤의 `input` 또는 `change` 이벤트로 모델을 저장하는지에 달려 있으며, Network 요청의 `model` 값으로 최종 확인해야 합니다.
 
@@ -169,11 +172,11 @@ console.log(result.content);
 
 - Registry의 제공업체·모델 ID·선택 상태
 - 용도별 route의 provider·model ID·adapter ID·Connection Profile ID
-- 외부 모델 컨트롤의 DOM 표식 기반 target ID와 provider별 마지막 CMR 모델 선택. `mappings` 필드는 호환성을 위해 남지만 v0.6.3에서는 빈 객체입니다.
+- 외부 모델 컨트롤의 DOM 표식 기반 target ID와 provider별 마지막 CMR 모델 선택. `mappings` 필드는 호환성을 위해 남지만 v0.6.3 이후에는 빈 객체입니다.
 
 API 키, endpoint, 리전, project/account ID, Service Account, 프로필 본문과 생성 설정은 저장하지 않습니다.
 
-**백업 가져오기**는 적용 전에 JSON 형식, 최대 크기, 알려진 필드, provider·모델 ID, route와 schema 버전을 검사하고 사용자 확인을 받습니다. v0.5의 portable schema v1 백업은 외부 연결이 비어 있는 schema v2로 이관합니다. v0.6.0~v0.6.2 백업의 legacy 외부 mapping은 적용하지 않고 자동 정리하며 `selectedModels`는 보존합니다. 알 수 없는 필드나 미래 schema가 있으면 기존 설정을 바꾸지 않고 거부합니다. 가져온 profile ID가 현재 존재하지 않으면 route는 보존되지만 실행 시 명시 오류가 발생합니다.
+**백업 가져오기**는 적용 전에 JSON 형식, 최대 크기, 알려진 필드, provider·모델 ID, route와 schema 버전을 검사하고 사용자 확인을 받습니다. v0.5의 portable schema v1 백업은 외부 연결이 비어 있는 schema v2로 이관합니다. v0.6.0~v0.6.2 백업의 legacy 외부 mapping은 적용하지 않고 자동 정리하며 정상 형식의 `selectedModels`는 보존합니다. 백업의 mapping과 선택을 합친 고유 target이 schema 한도 512개를 넘으면 일부를 조용히 버리지 않고 가져오기를 거부합니다. 알 수 없는 필드나 미래 schema가 있으면 기존 설정을 바꾸지 않고 거부합니다. 가져온 profile ID가 현재 존재하지 않으면 route는 보존되지만 실행 시 명시 오류가 발생합니다.
 
 ## 호환성 제한
 
@@ -199,7 +202,7 @@ API 키, endpoint, 리전, project/account ID, Service Account, 프로필 본문
 
 ### 등록 모델 삭제가 거부됨
 
-select형 연결에서 현재 사용 중인 모델은 SillyTavern의 기존 모델 선택기에서 다른 모델로 먼저 전환한 뒤 삭제합니다. 자유 입력형 `Custom`은 Registry에서 삭제해도 SillyTavern의 현재 `custom_model` 입력값을 지우지 않습니다.
+select형 연결에서 현재 사용 중인 custom-only 모델은 관리 UI와 공개 `unregisterModel()` API 모두 등록 해제를 거부합니다. SillyTavern의 기존 모델 선택기에서 native 모델로 먼저 전환한 뒤 삭제하세요. 공개 API 오류 코드는 `model_in_use`입니다. 자유 입력형 `Custom`은 Registry에서 삭제해도 SillyTavern의 현재 `custom_model` 입력값을 지우지 않습니다.
 
 ### 라우팅 시험이 실패함
 
@@ -218,7 +221,7 @@ npm test
 npm run check
 ```
 
-현재 자동 검사 129개는 24개 provider 회계, 등록·삭제 전용 UI와 SillyTavern native 선택 경계, schema 이관, 동적 옵션 복원, 팝업 수명주기, 공개 API, 개발자용 라우팅 격리, 외부 select/input/datalist 자동 추론·주입·재렌더·정리, legacy mapping 정리와 선택 보존, 비대상 제외, 호환성 진단, 자원 누적 판정, portable schema v1→v2 이관과 버전·문서 일치를 검증합니다. 실제 계정과 브라우저 조작이 필요한 결과는 [통합 사용자 체크리스트](./USER_CHECKLIST.md)에서 별도로 확인합니다.
+현재 자동 검사 133개는 24개 provider 회계, 등록·삭제 전용 UI와 SillyTavern native 선택 경계, 공개 API의 `model_in_use` 보호, schema 이관, 동적 옵션 복원, 팝업 수명주기, 개발자용 라우팅 격리, 외부 select/input/datalist 자동 추론·주입·재렌더·정리, 512개 legacy mapping 이관 시 선택 우선 보존, stale 선택 포화 회복, 비대상 제외, 호환성 진단, 자원 누적 판정, portable schema v1→v2 이관과 버전·문서 일치를 검증합니다. 실제 계정과 브라우저 조작이 필요한 결과는 [통합 사용자 체크리스트](./USER_CHECKLIST.md)에서 별도로 확인합니다.
 
 추가로 실제 브라우저 DOM 샌드박스에서 24개 컨트롤 감지, GLM 등록과 SillyTavern native 선택, 개발자 API 라우팅, 외부 자동 추론, source/profile 이벤트 반복, 비활성화·재활성화와 정리 수명주기를 확인합니다. 이 결과는 실제 제공업체 자격 증명과 네트워크 요청 성공을 대신하지 않습니다.
 
@@ -241,6 +244,7 @@ npm run check
 | `v0.6.0` | 범용 DOM 모델 브리지와 외부 연결 portable backup | ✅ 구현·자동 검사 완료, 사용자 검증 대기 |
 | `v0.6.1` | 관리 팝업 UI·UX 재구성 | ↩️ 사용자 피드백에 따라 롤백 |
 | `v0.6.2` | v0.6.1 UI 변경 롤백·제품 방향 재논의 | ✅ 롤백 릴리스 |
-| `v0.6.3` | 등록·삭제 전용 UI, native 선택, 외부 자동 추론, 개발자용 라우팅 API로 역할 단순화 | ✅ 현재 릴리스 |
+| `v0.6.3` | 등록·삭제 전용 UI, native 선택, 외부 자동 추론, 개발자용 라우팅 API로 역할 단순화 | ✅ 완료 |
+| `v0.6.4` | 공개 API 삭제 안전성, 512개 legacy mapping 선택 우선 이관, stale 외부 선택 저장 회복 | ✅ 현재 릴리스 |
 
 문제가 있으면 [GitHub Issues](https://github.com/p16481012/Custom-Model-Router/issues)에 SillyTavern 버전, 제공업체, 체크리스트 항목 ID와 민감정보를 제거한 오류를 남겨 주세요.

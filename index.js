@@ -52,11 +52,11 @@ import {
 import {
     ExternalSettingsError,
     getExternalSelectedModel,
-    normalizeExternalSettings,
+    normalizeAutomaticExternalSettings,
     setExternalSelectedModel,
 } from './src/external-settings.js';
 
-const EXTENSION_VERSION = '0.6.3';
+const EXTENSION_VERSION = '0.6.4';
 const SETTINGS_KEY = 'customModelRouter';
 const ROUTES_SETTINGS_KEY = 'customModelRouterRouting';
 const EXTERNAL_SETTINGS_KEY = 'customModelRouterExternalIntegrations';
@@ -162,6 +162,14 @@ function getProviderControl(provider) {
     return element?.tagName === expectedTag ? element : null;
 }
 
+function isProtectedConfiguredModel(provider, modelId) {
+    if (provider.controlType !== 'select' || getConfiguredModel(provider) !== modelId) {
+        return false;
+    }
+    const control = getProviderControl(provider);
+    return !control || !isNativeModelOption(control, modelId);
+}
+
 function isProviderActive(provider) {
     const liveContext = getLiveContext();
     return liveContext?.mainApi === provider.mainApi
@@ -182,14 +190,6 @@ function rememberAcceptedSettings() {
     acceptedExternalSnapshot = normalizeAutomaticExternalSettings(externalSettings);
 }
 
-function normalizeAutomaticExternalSettings(value) {
-    const normalized = normalizeExternalSettings(value);
-    return {
-        ...normalized,
-        mappings: {},
-    };
-}
-
 function persistSettings(source = 'runtime') {
     context.extensionSettings[SETTINGS_KEY] = settings;
     acceptedSettingsSnapshot = normalizeSettings(settings);
@@ -198,7 +198,21 @@ function persistSettings(source = 'runtime') {
 }
 
 function writeRegistryApiSettings(nextSettings) {
-    settings = normalizeSettings(nextSettings);
+    const normalized = normalizeSettings(nextSettings);
+    for (const model of getEnabledModels(settings)) {
+        if (hasEnabledModel(normalized, model.provider, model.id)) {
+            continue;
+        }
+        const provider = getProvider(model.provider);
+        if (provider && isProtectedConfiguredModel(provider, model.id)) {
+            throw new ModelRegistryError(
+                'model_in_use',
+                `${provider.label}에서 현재 사용 중인 모델은 다른 모델을 선택하기 전에 등록 해제할 수 없습니다.`,
+            );
+        }
+    }
+
+    settings = normalized;
     context.extensionSettings[SETTINGS_KEY] = settings;
     acceptedSettingsSnapshot = normalizeSettings(settings);
     context.saveSettingsDebounced();
@@ -892,7 +906,29 @@ function onExternalSelectionChanged({ targetId, providerId, modelId }) {
         if (previous === (modelId || null)) {
             return;
         }
-        externalSettings = setExternalSelectedModel(externalSettings, targetId, providerId, modelId);
+        try {
+            externalSettings = setExternalSelectedModel(externalSettings, targetId, providerId, modelId);
+        } catch (error) {
+            if (!(error instanceof ExternalSettingsError) || error.code !== 'target_limit') {
+                throw error;
+            }
+            const detectedTargetIds = new Set(
+                (externalIntegrationController?.getTargets?.() ?? []).map(target => target.targetId),
+            );
+            const staleTargetId = Object.keys(externalSettings.selectedModels)
+                .find(candidateTargetId => !detectedTargetIds.has(candidateTargetId));
+            if (!staleTargetId) {
+                throw error;
+            }
+            const selectedModels = { ...externalSettings.selectedModels };
+            delete selectedModels[staleTargetId];
+            externalSettings = setExternalSelectedModel(
+                { ...externalSettings, mappings: {}, selectedModels },
+                targetId,
+                providerId,
+                modelId,
+            );
+        }
         context.extensionSettings[EXTERNAL_SETTINGS_KEY] = externalSettings;
         acceptedExternalSnapshot = normalizeAutomaticExternalSettings(externalSettings);
         context.saveSettingsDebounced();
@@ -1248,13 +1284,9 @@ function onModelListClick(event) {
     }
 
     if (button.dataset.cmrAction === 'delete') {
-        const control = getProviderControl(provider);
         const configured = getConfiguredModel(provider);
         const preservesInputValue = provider.controlType === 'input' && configured === modelId;
-        const nativeReplacement = provider.controlType === 'select'
-            && control
-            && isNativeModelOption(control, modelId);
-        if (provider.controlType === 'select' && configured === modelId && !nativeReplacement) {
+        if (isProtectedConfiguredModel(provider, modelId)) {
             announce(`이 모델은 SillyTavern에서 현재 사용 중입니다. API Connections의 ${provider.label} 모델 선택기에서 다른 모델을 선택한 뒤 삭제해 주세요.`, 'error');
             return;
         }

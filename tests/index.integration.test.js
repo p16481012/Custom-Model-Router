@@ -9,6 +9,7 @@ import {
     createExternalIntegrationController,
     createExternalTargetId,
 } from '../src/external-integrations.js';
+import { EXTERNAL_SETTINGS_MAX_TARGETS } from '../src/external-settings.js';
 
 const VERTEX_MODEL_ID = 'gemini-3.5-pro-preview';
 const SETTINGS_HTML = '<div id="cmr_settings"></div>';
@@ -932,7 +933,7 @@ test('init은 24개 제공업체를 연결하고 API Connections Popup을 한 �
         assert.ok(harness.observers.some(observer => observer.target === harness.observerRoot));
         assert.ok(harness.observers.some(observer => observer.target === harness.documentRef.body));
         assert.equal(globalThis.CustomModelRouter.apiVersion, '1.1.0');
-        assert.equal(globalThis.CustomModelRouter.extensionVersion, '0.6.3');
+        assert.equal(globalThis.CustomModelRouter.extensionVersion, '0.6.4');
         assert.equal(globalThis.CustomModelRouter.routing.apiVersion, '1.0.0');
         assert.equal(globalThis.CustomModelRouter.getSnapshot().models.length, 1);
 
@@ -1012,6 +1013,38 @@ test('init은 24개 제공업체를 연결하고 API Connections Popup을 한 �
         await destroy();
         assert.equal(getCustomGroup(vertexSelect, 'vertexai'), null);
         assert.equal(harness.context.extensionSettings.customModelRouter.selectedModels.vertexai, VERTEX_MODEL_ID);
+    } finally {
+        await destroy();
+        restoreGlobals();
+    }
+});
+
+test('공개 API도 SillyTavern select에서 현재 사용 중인 사용자 모델 등록 해제를 막는다', async () => {
+    const harness = createHarness();
+    const restoreGlobals = installBrowserGlobals(harness);
+    const vertexSelect = harness.controls.get('vertexai');
+    try {
+        await init();
+        assert.equal(vertexSelect.value, VERTEX_MODEL_ID);
+        assert.equal(harness.context.chatCompletionSettings.vertexai_model, VERTEX_MODEL_ID);
+
+        assert.throws(
+            () => globalThis.CustomModelRouter.unregisterModel('vertexai', VERTEX_MODEL_ID),
+            error => error?.code === 'model_in_use',
+        );
+        assert.ok(globalThis.CustomModelRouter.getModel('vertexai', VERTEX_MODEL_ID));
+        assert.equal(vertexSelect.value, VERTEX_MODEL_ID);
+        assert.equal(harness.context.chatCompletionSettings.vertexai_model, VERTEX_MODEL_ID);
+
+        const nativeModelId = getProvider('vertexai').fallbackModelIds[0];
+        vertexSelect.value = nativeModelId;
+        vertexSelect.dispatchEvent(new FakeEvent('change', { bubbles: true, isTrusted: true }));
+        await flushMicrotasks(8);
+        assert.equal(globalThis.CustomModelRouter.unregisterModel('vertexai', VERTEX_MODEL_ID), true);
+        await flushMicrotasks(8);
+        assert.equal(globalThis.CustomModelRouter.getModel('vertexai', VERTEX_MODEL_ID), null);
+        assert.equal(vertexSelect.value, nativeModelId);
+        assert.equal(harness.context.chatCompletionSettings.vertexai_model, nativeModelId);
     } finally {
         await destroy();
         restoreGlobals();
@@ -2114,6 +2147,82 @@ test('init은 legacy 외부 mapping을 비우고 선택 기록은 보존하며 u
             },
         );
         assert.equal(external.select.querySelector('[data-cmr-external-group="true"]'), null);
+        assert.ok(harness.saveCallCount >= 1);
+    } finally {
+        await destroy();
+        restoreGlobals();
+    }
+});
+
+test('legacy mapping이 한도를 채워도 자동 연결 이관은 선택 기록을 보존한다', async () => {
+    const harness = createHarness();
+    const mappings = {};
+    for (let index = 0; index < EXTERNAL_SETTINGS_MAX_TARGETS; index += 1) {
+        mappings[`cmr-ext-${index.toString(16).padStart(8, '0')}`] = 'openai';
+    }
+    const selectedTarget = 'cmr-ext-00000200';
+    harness.context.extensionSettings.customModelRouterExternalIntegrations = {
+        schemaVersion: 1,
+        mappings,
+        selectedModels: {
+            [selectedTarget]: { vertexai: 'gemini-future' },
+        },
+    };
+    const restoreGlobals = installBrowserGlobals(harness);
+    try {
+        await init();
+        assert.deepEqual(
+            harness.context.extensionSettings.customModelRouterExternalIntegrations,
+            {
+                schemaVersion: 1,
+                mappings: {},
+                selectedModels: {
+                    [selectedTarget]: { vertexai: 'gemini-future' },
+                },
+            },
+        );
+    } finally {
+        await destroy();
+        restoreGlobals();
+    }
+});
+
+test('오래된 외부 선택 512개가 차도 현재 감지 target 선택을 정리 후 저장한다', async () => {
+    const modelId = 'openrouter/translator-latest';
+    const harness = createHarness({
+        models: [createModelRecord('openrouter', modelId)],
+        selectedModels: { openrouter: modelId },
+    });
+    const external = appendExternalModelSelect(harness, {
+        containerId: 'capacity_translator_extension',
+        selectId: 'capacity_translator_model',
+        label: 'OpenRouter 번역 모델',
+        attributes: { 'data-provider': 'openrouter' },
+    });
+    const targetId = createExternalTargetId(external.select, { documentRef: harness.documentRef });
+    const staleSelections = {};
+    for (let index = 0; Object.keys(staleSelections).length < EXTERNAL_SETTINGS_MAX_TARGETS; index += 1) {
+        const candidate = `cmr-ext-${index.toString(16).padStart(8, '0')}`;
+        if (candidate !== targetId) {
+            staleSelections[candidate] = { openrouter: modelId };
+        }
+    }
+    harness.context.extensionSettings.customModelRouterExternalIntegrations = {
+        schemaVersion: 1,
+        mappings: {},
+        selectedModels: staleSelections,
+    };
+    const oldestStaleTarget = Object.keys(staleSelections)[0];
+    const restoreGlobals = installBrowserGlobals(harness);
+    try {
+        await init();
+        external.select.value = modelId;
+        external.select.dispatchEvent(new FakeEvent('change', { bubbles: true, isTrusted: true }));
+
+        const stored = harness.context.extensionSettings.customModelRouterExternalIntegrations;
+        assert.equal(stored.selectedModels[targetId].openrouter, modelId);
+        assert.equal(Object.keys(stored.selectedModels).length, EXTERNAL_SETTINGS_MAX_TARGETS);
+        assert.equal(stored.selectedModels[oldestStaleTarget], undefined);
         assert.ok(harness.saveCallCount >= 1);
     } finally {
         await destroy();

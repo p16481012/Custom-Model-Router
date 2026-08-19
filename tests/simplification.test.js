@@ -8,7 +8,7 @@ async function readText(path) {
     return readFile(new URL(path, ROOT_URL), 'utf8');
 }
 
-test('v0.6.3 관리 패널은 모델 등록·삭제와 오류 표시에만 집중한다', async () => {
+test('v0.6.4 관리 패널은 모델 등록·삭제와 오류 표시에만 집중한다', async () => {
     const [html, source] = await Promise.all([
         readText('settings.html'),
         readText('index.js'),

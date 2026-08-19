@@ -1,8 +1,8 @@
 # 공개 Registry API
 
-Custom Model Router v0.6.3은 다른 SillyTavern 확장이 내부 파일 경로에 의존하지 않고 등록 모델과 용도별 라우팅을 사용할 수 있도록 `globalThis.CustomModelRouter`를 제공합니다. Registry API 계약 버전은 `1.1.0`, Routing API 계약 버전은 `1.0.0`이며 v0.5.0과 동일합니다.
+Custom Model Router v0.6.4는 다른 SillyTavern 확장이 내부 파일 경로에 의존하지 않고 등록 모델과 용도별 라우팅을 사용할 수 있도록 `globalThis.CustomModelRouter`를 제공합니다. Registry API 계약 버전은 `1.1.0`, Routing API 계약 버전은 `1.0.0`이며 v0.5.0과 동일합니다.
 
-v0.6.0의 범용 DOM 모델 브리지, 호환성 진단과 설정 백업·복구는 이 전역 API 계약에 포함되지 않습니다. v0.6.3의 일반 관리 UI는 모델 등록·삭제만 제공하며, Routing API는 개발자 또는 연동 확장이 명시적으로 사용하는 opt-in 계약입니다. 용도별 경로에는 Connection Profile ID만 저장되고 프로필 본문·API 키·endpoint는 복제되지 않습니다.
+v0.6.0의 범용 DOM 모델 브리지, 호환성 진단과 설정 백업·복구는 이 전역 API 계약에 포함되지 않습니다. v0.6.3 이후 일반 관리 UI는 모델 등록·삭제만 제공하며, Routing API는 개발자 또는 연동 확장이 명시적으로 사용하는 opt-in 계약입니다. 용도별 경로에는 Connection Profile ID만 저장되고 프로필 본문·API 키·endpoint는 복제되지 않습니다.
 
 ## 호환성 확인
 
@@ -33,6 +33,8 @@ if (!registry?.isCompatible('1.1.0')) {
 - `selectModel(provider, modelId | null)`
 
 `selectModel()`은 Registry의 제공업체별 저장 선택 상태만 바꿉니다. SillyTavern의 현재 API source, 기본 selector, 메인 채팅 모델을 직접 전환하지 않습니다. 이 경계는 `capabilities.selectionScope === 'registry'`로 확인할 수 있습니다.
+
+`unregisterModel()`은 SillyTavern `select`형 연결의 현재 설정값과 같은 custom-only 모델을 등록 해제하지 않습니다. 해당 요청은 `ModelRegistryError`의 `model_in_use` 코드로 거부되며 Registry와 SillyTavern 선택은 유지됩니다. SillyTavern 기존 선택기에서 native 모델로 전환한 뒤 다시 호출하면 등록 해제됩니다. 자유 입력형 연결은 기존 입력값을 지우지 않는 계약을 유지합니다.
 
 ## 이벤트
 
@@ -109,7 +111,7 @@ DOM 브리지는 전역 `fetch` 또는 `XMLHttpRequest`를 monkey patch하지 �
 
 ## 외부 연결 저장 계약
 
-DOM 브리지 내부 저장 schema v1은 다음 구조입니다. target ID는 외부 컨트롤의 ID·name·label과 상위 확장 구조 등 DOM 표식을 조합해 만든 식별자이며 endpoint나 비밀값을 포함하지 않습니다. v0.6.3은 provider를 런타임에서 자동 추론하므로 `mappings`는 호환성을 위해 빈 객체로만 유지하고, target별 provider별 마지막 CMR 선택만 저장합니다.
+DOM 브리지 내부 저장 schema v1은 다음 구조입니다. target ID는 외부 컨트롤의 ID·name·label과 상위 확장 구조 등 DOM 표식을 조합해 만든 식별자이며 endpoint나 비밀값을 포함하지 않습니다. v0.6.3 이후에는 provider를 런타임에서 자동 추론하므로 `mappings`는 호환성을 위해 빈 객체로만 유지하고, target별 provider별 마지막 CMR 선택만 저장합니다.
 
 ```json
 {
@@ -123,10 +125,10 @@ DOM 브리지 내부 저장 schema v1은 다음 구조입니다. target ID는 �
 }
 ```
 
-v0.6.2 이하 설정·백업에 남은 수동 provider 값 또는 `disabled` mapping은 v0.6.3 초기화·설정 갱신·백업 가져오기에서 자동으로 제거합니다. `selectedModels`는 같은 target을 provider별로 전환해도 마지막 CMR 선택을 기억할 수 있게 실제 모델 ID를 저장합니다. 재렌더된 동일 target의 새 컨트롤이 빈 값일 때만 이 선택을 복원하고 유효한 외부 현재값은 유지합니다. 손상된 값과 알 수 없는 필드는 정규화 과정에서 제거하며, 미래 schema는 명시 오류로 거부합니다. target은 최대 512개입니다.
+v0.6.2 이하 설정·백업에 남은 수동 provider 값 또는 `disabled` mapping은 v0.6.3 이후 초기화·설정 갱신·백업 가져오기에서 자동으로 제거합니다. `selectedModels`는 같은 target을 provider별로 전환해도 마지막 CMR 선택을 기억할 수 있게 실제 모델 ID를 저장합니다. v0.6.4는 SillyTavern에 저장된 실행 설정을 자동 모드로 이관할 때 legacy mapping 512개가 target 한도를 먼저 채우지 못하게 mapping을 제외한 뒤 `selectedModels`를 정규화합니다. 또한 stale 선택 512개로 새 선택 저장이 막히면 현재 DOM에서 감지되지 않은 가장 오래된 target 기록 하나를 제거한 뒤 저장을 다시 시도합니다. 재렌더된 동일 target의 새 컨트롤이 빈 값일 때만 이 선택을 복원하고 유효한 외부 현재값은 유지합니다. 손상된 값과 알 수 없는 필드는 정규화 과정에서 제거하며, 미래 schema는 명시 오류로 거부합니다. target은 최대 512개입니다.
 
 ## Portable backup schema v2
 
-portable backup 최상위는 `format`, `schemaVersion`, `createdAt`, `registry`, `purposeRoutes`, `externalIntegrations`만 가집니다. v0.6.3의 `externalIntegrations.mappings`는 빈 객체이며 `selectedModels`에는 provider별 마지막 CMR 선택만 포함됩니다. 개발자용 `purposeRoutes`는 일반 라우팅 UI가 없어도 보존됩니다. API 키, endpoint, provider 계정 설정, 외부 요청 본문과 Connection Profile 본문은 포함되지 않습니다.
+portable backup 최상위는 `format`, `schemaVersion`, `createdAt`, `registry`, `purposeRoutes`, `externalIntegrations`만 가집니다. v0.6.3 이후의 `externalIntegrations.mappings`는 빈 객체이며 `selectedModels`에는 provider별 마지막 CMR 선택만 포함됩니다. 개발자용 `purposeRoutes`는 일반 라우팅 UI가 없어도 보존됩니다. API 키, endpoint, provider 계정 설정, 외부 요청 본문과 Connection Profile 본문은 포함되지 않습니다.
 
-v0.5.0에서 내보낸 portable schema v1 백업은 `registry`와 `purposeRoutes`를 보존하고 빈 `externalIntegrations`를 추가해 schema v2로 이관합니다. v0.6.0~v0.6.2 백업은 Registry·route·`selectedModels`를 보존하고 legacy mapping을 제거합니다. 알 수 없는 필드나 미래 portable/Registry/route/external schema는 기존 설정을 변경하지 않고 거부합니다.
+v0.5.0에서 내보낸 portable schema v1 백업은 `registry`와 `purposeRoutes`를 보존하고 빈 `externalIntegrations`를 추가해 schema v2로 이관합니다. v0.6.0~v0.6.2 백업은 Registry·route·정상 형식의 `selectedModels`를 보존하고 legacy mapping을 제거합니다. mapping과 선택을 합친 고유 target이 schema 한도 512개를 넘는 백업은 일부 기록을 조용히 버리지 않고 가져오기를 거부합니다. 알 수 없는 필드나 미래 portable/Registry/route/external schema는 기존 설정을 변경하지 않고 거부합니다.
