@@ -2,7 +2,7 @@
 
 SillyTavern 코어 파일을 수정하지 않고 기존 Chat Completion 연결에 사용자 모델 ID를 등록하는 UI 확장입니다. 관리 팝업의 기본 목록은 등록한 모든 모델을 제공업체별로 보여주며, 실제 모델은 SillyTavern의 기존 모델 선택기 또는 입력란에서 선택합니다. 범용 외부 확장 브리지는 안전하게 감지한 모델 컨트롤에 등록 모델 전체를 제공업체별로 직접 추가하며 외부 요청 본문을 직접 바꾸지 않습니다.
 
-현재 버전은 **v0.6.6**이며, SillyTavern 1.18.0의 등록 가능한 Chat Completion 연결 24개, 공개 Registry API, 개발자 opt-in Routing API, 범용 DOM 모델 브리지, 호환성 진단과 비밀정보를 제외한 설정 백업·복구를 제공합니다. v0.6.6은 외부 연결을 단일 직접 연결 방식으로 단순화하고, 합법적인 외부 모델 그룹을 중복 자원으로 오인하던 진단을 수정했습니다. 관리 팝업은 SillyTavern 기본 닫기 버튼 하나만 사용하고 모델 추가 버튼 크기를 줄였습니다.
+현재 버전은 **v0.6.7**이며, SillyTavern 1.18.0의 등록 가능한 Chat Completion 연결 24개, 공개 Registry API, 개발자 opt-in Routing API, 범용 DOM 모델 브리지, 호환성 진단과 비밀정보를 제외한 설정 백업·복구를 제공합니다. v0.6.7은 실제 `settings.html`과 SillyTavern 1.18.0 고정 commit의 core·Popup CSS를 결합한 Playwright Chromium UI 회귀 검사를 도입했습니다. 320·360·420·720px 화면, 모델 0·6·7·100개 경계와 닫기·스크롤·버튼·단일 직접 연결 배치를 자동으로 확인합니다.
 
 v0.5.0까지의 공개 API와 용도별 라우팅은 다른 확장이 스스로 연동해야 사용할 수 있었으며, 이미 설치된 다른 확장의 모델 선택기에 CMR 모델을 자동 표시하지는 않았습니다. v0.6.0은 이 누락을 보완해 표준 `select`, 텍스트 `input`, `datalist` 기반 Chat Completion 모델 컨트롤을 탐지했습니다. v0.6.6부터 대상별 모드 선택 없이, 감지된 안전한 Chat Completion 모델 컨트롤에 Registry 전체 모델을 제공업체별로 표시합니다.
 
@@ -10,12 +10,13 @@ v0.5.0까지의 공개 API와 용도별 라우팅은 다른 확장이 스스로 
 
 | 항목 | 상태 |
 |---|---|
-| 현재 릴리스 | `v0.6.6` |
+| 현재 릴리스 | `v0.6.7` |
 | v0.3 공개 Registry API | ✅ 구현·자동 검사 완료 |
 | v0.4 용도별 라우팅 | ✅ 구현·자동 검사 완료 |
 | v0.5 진단·복구·안정성 계측 | ✅ 구현·자동 검사 완료 |
 | v0.6 범용 DOM 모델 브리지 | ✅ 구현·자동 검사 완료 |
 | DOM·공개 API 샌드박스 | ✅ 기본 24개와 외부 select/input/datalist·재렌더·정리 수명주기 통과 |
+| Chromium UI 회귀 검사 | ✅ 실제 `settings.html`과 SillyTavern 1.18.0 CSS 결합 검사 6개 통과 |
 | 실제 제공업체 계정 검증 | 🧪 사용자 환경별 확인 대기 |
 | 사용자가 할 일 | [통합 사용자 체크리스트](./USER_CHECKLIST.md)를 한 번 순서대로 확인 |
 
@@ -221,16 +222,24 @@ select형 연결에서 현재 사용 중인 custom-only 모델은 관리 UI와 �
 
 ## 개발 및 검사
 
-런타임 의존성과 빌드 과정은 없습니다. Node.js 20 이상에서 실행합니다.
+확장 런타임 의존성과 빌드 과정은 없습니다. Node.js 20 이상에서 실행하며, UI 회귀 검사에만 개발 의존성인 Playwright와 Chromium을 사용합니다.
 
 ```bash
-npm test
+npm ci
 npm run check
+npx playwright install chromium
+npm run test:ui
 ```
+
+로컬 UI 검사는 SillyTavern 1.18.0 소스가 필요합니다. `SILLYTAVERN_ROOT`에 해당 저장소 경로를 지정하거나 CMR 저장소와 나란히 `sillytavern-1.18.0-review`를 두세요. 버전이 다르거나 필요한 CSS가 없으면 검사를 시작하지 않고 명시적으로 중단합니다. GitHub Actions는 검증한 SillyTavern 1.18.0 commit을 별도로 체크아웃합니다.
 
 현재 자동 검사 148개는 24개 provider 회계, 전체 등록 모델 UI와 SillyTavern native 선택 경계, 공개 API의 `model_in_use` 보호, schema 이관, 동적 옵션 복원, 팝업 수명주기, 개발자용 라우팅 격리, 외부 select/input/datalist 단일 직접 연결, provider별 그룹 주입·재렌더·정리, legacy mapping 제거와 선택 보존, 비대상 제외, host별 중복 자원 진단, portable schema v1→v2 이관과 버전·문서 일치를 검증합니다. 실제 계정과 브라우저 조작이 필요한 결과는 [통합 사용자 체크리스트](./USER_CHECKLIST.md)에서 별도로 확인합니다.
 
-추가로 브라우저 DOM 샌드박스에서 24개 컨트롤 감지, GLM 등록과 SillyTavern native 선택, 개발자 API 라우팅, 외부 모델 컨트롤 연결, source/profile 이벤트 반복, 비활성화·재활성화와 정리 수명주기를 확인합니다. 이 결과는 실제 제공업체 자격 증명과 네트워크 요청 성공을 대신하지 않습니다.
+추가로 브라우저 DOM 샌드박스에서 24개 컨트롤 감지, GLM 등록과 SillyTavern native 선택, 개발자 API 라우팅, 외부 모델 컨트롤 연결, source/profile 이벤트 반복, 비활성화·재활성화와 정리 수명주기를 확인합니다.
+
+Playwright Chromium UI 회귀 검사 6개는 제품 `settings.html`을 SillyTavern 1.18.0 고정 commit의 `style.css`·`popup.css`와 함께 렌더링합니다. 320×568, 360×640, 420×800, 720×900에서 가로 넘침, 버튼 정렬, 공백 단위 줄바꿈, 단일 닫기와 단일 직접 연결 UI를 검사합니다. 모델 0·6개는 펼친 목록, 7·100개는 숨은 내부 스크롤을 사용하는지 확인합니다. 모델·외부 대상·진단 목록은 마우스 휠과 키보드로, Popup 본문은 마우스 휠로 실제 스크롤합니다. GitHub Actions는 성공과 실패 모두 PNG와 HTML report를 `ui-regression-evidence-*` artifact로 14일 보관합니다.
+
+이 검사는 실제 설정 마크업과 SillyTavern CSS의 배치·상호작용을 확인하지만 전체 SillyTavern 런타임을 기동하지는 않습니다. 실제 외부 확장의 저장 로직, 제공업체 자격 증명과 API 요청 성공은 [통합 사용자 체크리스트](./USER_CHECKLIST.md)에서 별도로 확인해야 합니다.
 
 ## 버전 정책
 
@@ -254,6 +263,7 @@ npm run check
 | `v0.6.3` | 등록·삭제 전용 UI, native 선택, 외부 자동 추론, 개발자용 라우팅 API로 역할 단순화 | ✅ 완료 |
 | `v0.6.4` | 공개 API 삭제 안전성, 512개 legacy mapping 선택 우선 이관, stale 외부 선택 저장 회복 | ✅ 완료 |
 | `v0.6.5` | 전체 등록 목록·UI 정리, 외부 직접 연결과 연결 안 함 회귀 복구 | ✅ 완료 |
-| `v0.6.6` | 외부 연결 단일화, 중복 자원 진단 오탐·닫기 버튼·추가 버튼 수정 | ✅ 현재 릴리스 |
+| `v0.6.6` | 외부 연결 단일화, 중복 자원 진단 오탐·닫기 버튼·추가 버튼 수정 | ✅ 완료 |
+| `v0.6.7` | SillyTavern 1.18.0 CSS 기반 Chromium UI 회귀 검사와 CI 증거 보관 | ✅ 현재 릴리스 |
 
 문제가 있으면 [GitHub Issues](https://github.com/p16481012/Custom-Model-Router/issues)에 SillyTavern 버전, 제공업체, 체크리스트 항목 ID와 민감정보를 제거한 오류를 남겨 주세요.

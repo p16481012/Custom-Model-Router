@@ -57,7 +57,7 @@ import {
     setExternalSelectedModel,
 } from './src/external-settings.js';
 
-const EXTENSION_VERSION = '0.6.6';
+const EXTENSION_VERSION = '0.6.7';
 const SETTINGS_KEY = 'customModelRouter';
 const ROUTES_SETTINGS_KEY = 'customModelRouterRouting';
 const EXTERNAL_SETTINGS_KEY = 'customModelRouterExternalIntegrations';

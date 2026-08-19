@@ -1,6 +1,6 @@
-# v0.6.6 통합 사용자 검증 체크리스트
+# v0.6.7 통합 사용자 검증 체크리스트
 
-대상 버전: **v0.6.6**
+대상 버전: **v0.6.7**
 
 이 문서는 v0.1~v0.6 기능을 한 번에 확인하는 최종 수동 검증 순서입니다. 위에서 아래로 진행하고, 사용하지 않는 제공업체·외부 확장·개발자 API 항목은 `해당 없음`으로 표시하세요.
 
@@ -15,12 +15,18 @@
 
 데이터 손실, 인증 설정 변경, 반복 요청, 브라우저 멈춤 또는 비밀정보 노출이 보이면 즉시 검증을 중단하고 `치명`으로 기록하세요.
 
+## 자동 검사 완료 범위
+
+v0.6.7 저장소에서는 Node 자동 검사 148개와 Playwright Chromium UI 회귀 검사 6개를 별도로 실행합니다. UI 검사는 실제 `settings.html`과 SillyTavern 1.18.0 고정 commit의 core·Popup CSS를 결합해 320·360·420·720px 화면, 모델 0·6·7·100개 경계, 클릭·`Escape` 닫기, 버튼 정렬, 공백 단위 줄바꿈과 숨은 스크롤바 조작을 확인합니다. GitHub Actions의 `ui-regression-evidence-*` artifact에는 성공·실패 PNG와 HTML report가 14일 보관됩니다.
+
+이 자동 검사는 전체 SillyTavern JavaScript 런타임이나 실제 외부 확장·API 요청을 실행하지 않습니다. 아래 체크리스트에서 실제 설치 화면, 외부 확장의 선택 저장, Network payload와 제공업체 요청 성공을 계속 확인해야 합니다. API 키나 Service Account를 자동 검사에 제공할 필요는 없습니다.
+
 ## 0. 환경 기록과 사전 준비
 
 ```text
 검증 날짜:
 SillyTavern 버전:
-Custom Model Router 버전: v0.6.6
+Custom Model Router 버전: v0.6.7
 브라우저·OS:
 설치 방식: 신규 / 업데이트
 이전 확장 버전:
@@ -76,6 +82,7 @@ Connection Profile 사용 여부:
 - [ ] **[권장][UI-15] `호환성 진단 및 설정 복구`와 `지원 범위 및 개인정보`를 펼쳤을 때 내용 아래에 충분한 안쪽 여백이 있어 마지막 문장이 테두리에 붙지 않는다.**
 - [ ] **[권장][UI-16] 일반 안내 문구는 단어 중간에서 잘리지 않고 공간이 부족할 때만 공백에서 줄바꿈된다. 짧은 구절은 가능한 한 한 줄에 유지되고 각 문장은 종결부호 뒤에서 다음 줄로 분리된다.**
 - [ ] **[필수][UI-17] 추가·삭제·진단·백업 버튼의 아이콘과 텍스트가 가로·세로 중앙에 정렬되고 글자가 세로로 쪼개지지 않는다. 모델 추가 버튼은 입력란 옆에서 필요한 크기만 차지한다.**
+- [ ] **[권장][UI-18] GitHub Actions의 최신 `UI 회귀 검사`가 통과했고 `ui-regression-evidence-*` artifact의 320·360·420·720px PNG에서 잘림·겹침·가로 넘침이 없는지 확인한다.**
 
 ## 3. 모델 등록·SillyTavern native 선택·삭제 공통 경로
 
@@ -121,7 +128,7 @@ Connection Profile 사용 여부:
 - [ ] **[필수][EXT-17] 외부 브리지 동작 전후 메인 Chat Completion source·모델·API 키·endpoint가 바뀌지 않는다.**
 - [ ] **[선택][EXT-18] React 자체 위젯, iframe, 닫힌 Shadow DOM과 모델 control 없는 확장은 대상 목록에도 나타나지 않으며 전용 opt-in API 연동이 필요하다는 안내를 확인한다.**
 
-CMR은 전역 `fetch`나 `XMLHttpRequest`를 monkey patch하지 않습니다. 모델이 목록에 보이는 것과 실제 요청 반영은 별도 항목이며, `EXT-10`과 Caption 전용 `EXT-10A`에서 반드시 구분해 확인합니다. 저장소의 브라우저 샌드박스는 DOM option과 이벤트 전달만 확인하며 실제 `/caption-image` 요청을 대신하지 않습니다.
+CMR은 전역 `fetch`나 `XMLHttpRequest`를 monkey patch하지 않습니다. 모델이 목록에 보이는 것과 실제 요청 반영은 별도 항목이며, `EXT-10`과 Caption 전용 `EXT-10A`에서 반드시 구분해 확인합니다. 저장소의 DOM 샌드박스는 option과 이벤트 전달을, Playwright UI 회귀 검사는 실제 설정 마크업과 SillyTavern CSS의 배치·상호작용을 확인합니다. 어느 검사도 실제 `/caption-image` 요청을 대신하지 않습니다.
 
 ## 5. 실제 제공업체 요청
 
@@ -216,7 +223,7 @@ CMR은 전역 `fetch`나 `XMLHttpRequest`를 monkey patch하지 않습니다. �
 
 ## 10. 확장 전용 백업·복구
 
-- [ ] **[필수][BKP-01] `백업 내보내기`로 `custom-model-router-backup-v0.6.6.json`을 저장한다.**
+- [ ] **[필수][BKP-01] `백업 내보내기`로 `custom-model-router-backup-v0.6.7.json`을 저장한다.**
 - [ ] **[필수][BKP-02] JSON 최상위에 `format`, `schemaVersion`, `createdAt`, `registry`, `purposeRoutes`, `externalIntegrations`만 있고 portable schemaVersion이 `2`인지 확인한다.**
 - [ ] **[필수][BKP-03] Registry에는 provider·model ID·protocol·enabled·선택 상태만 있는지 확인한다.**
 - [ ] **[필수][BKP-04] route에는 provider·model ID·adapter ID·Connection Profile ID만 있는지 확인한다.**
@@ -250,10 +257,10 @@ CMR은 전역 `fetch`나 `XMLHttpRequest`를 monkey patch하지 않습니다. �
 ## 결과 보고 양식
 
 ```text
-제목: [v0.6.6][제공업체 또는 기능][항목 ID] 짧은 증상
+제목: [v0.6.7][제공업체 또는 기능][항목 ID] 짧은 증상
 
 SillyTavern 버전:
-Custom Model Router 버전: v0.6.6
+Custom Model Router 버전: v0.6.7
 OS / 브라우저:
 신규 설치 또는 업데이트:
 이전 CMR 버전:
@@ -277,4 +284,4 @@ Caption /caption-image payload의 model 확인 결과:
 민감정보를 제거한 스크린샷:
 ```
 
-실패 항목이 있어도 데이터 손실·무한 반복·비밀 노출이 아니라면 나머지 독립 항목은 계속 확인해도 됩니다. 결과를 모으면 같은 v0.6 범위의 후속 수정은 `v0.6.7`, `v0.6.8`, ...로 반영합니다.
+실패 항목이 있어도 데이터 손실·무한 반복·비밀 노출이 아니라면 나머지 독립 항목은 계속 확인해도 됩니다. 결과를 모으면 같은 v0.6 범위의 후속 수정은 `v0.6.8`, `v0.6.9`, ...로 반영합니다.

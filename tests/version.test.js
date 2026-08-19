@@ -14,6 +14,7 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
     const [
         manifestText,
         packageText,
+        packageLockText,
         settingsHtml,
         readme,
         entrypoint,
@@ -21,10 +22,15 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
         roadmap,
         apiDocument,
         portableSettings,
+        playwrightConfig,
+        uiRegressionSpec,
+        uiRegressionServer,
+        uiRegressionWorkflow,
         rootEntries,
     ] = await Promise.all([
         readText('manifest.json'),
         readText('package.json'),
+        readText('package-lock.json'),
         readText('settings.html'),
         readText('README.md'),
         readText('index.js'),
@@ -32,14 +38,22 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
         readText('ROADMAP.md'),
         readText('API.md'),
         readText('src/portable-settings.js'),
+        readText('playwright.config.js'),
+        readText('tests/visual/ui-regression.spec.js'),
+        readText('tests/visual/server.js'),
+        readText('.github/workflows/ui-regression.yml'),
         readdir(ROOT_URL),
     ]);
     const manifest = JSON.parse(manifestText);
     const packageJson = JSON.parse(packageText);
+    const packageLock = JSON.parse(packageLockText);
     const version = manifest.version;
 
     assert.match(version, /^0\.\d+\.\d+$/);
     assert.equal(packageJson.version, version);
+    assert.equal(packageLock.version, version);
+    assert.equal(packageLock.packages[''].version, version);
+    assert.match(packageJson.scripts['test:ui'], /playwright test.*playwright\.config\.js/);
     assert.match(packageJson.scripts.check, /src\/providers\.js/);
     assert.match(packageJson.scripts.check, /src\/model-select\.js/);
     assert.match(packageJson.scripts.check, /src\/registry-api\.js/);
@@ -70,6 +84,7 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
     assert.match(roadmap, /## v0\.6\.4 — 삭제 안전성·외부 선택 저장 회복/);
     assert.match(roadmap, /## v0\.6\.5 — UI 정리와 직접 연결 회귀 복구/);
     assert.match(roadmap, /## v0\.6\.6 — 외부 연결 단일화와 진단·버튼 수정/);
+    assert.match(roadmap, /## v0\.6\.7 — 실제 UI 회귀 검사 자동화/);
     assert.match(entrypoint, /new context\.Popup/);
     assert.match(entrypoint, /#cmr_open_manager/);
     assert.doesNotMatch(entrypoint, /#extensions_settings2|#extensions_settings/);
@@ -90,8 +105,43 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
     assert.match(portableSettings, /externalIntegrations/);
     assert.match(apiDocument, /v0\.6 범용 DOM 모델 브리지/);
     assert.match(apiDocument, /Portable backup schema v2/);
+    assert.match(apiDocument, /v0\.6\.7의 Playwright UI 회귀 검사 인프라/);
     assert.match(readme, /select\/input\/datalist/);
     assert.match(roadmap, /fetch.*XMLHttpRequest.*monkey patch/);
+    for (const document of [readme, roadmap, checklist]) {
+        assert.match(document, /Playwright Chromium UI 회귀 검사 6개/);
+        assert.match(document, /전체 SillyTavern.*런타임/);
+    }
+
+    assert.match(playwrightConfig, /testDir:\s*'\.\/tests\/visual'/);
+    assert.match(playwrightConfig, /browserName:\s*'chromium'/);
+    assert.match(playwrightConfig, /screenshot:\s*'only-on-failure'/);
+    for (const viewport of ['320, height: 568', '360, height: 640', '420, height: 800', '720, height: 900']) {
+        assert.match(uiRegressionSpec, new RegExp(`width: ${viewport}`));
+    }
+    assert.match(uiRegressionSpec, /\[0, 6\]/);
+    assert.match(uiRegressionSpec, /\[7, 100\]/);
+    assert.match(uiRegressionSpec, /page\.keyboard\.press\('Escape'\)/);
+    assert.match(uiRegressionSpec, /#cmr_external_list/);
+    assert.match(uiRegressionSpec, /#cmr_diagnostic_list/);
+    assert.match(uiRegressionSpec, /expectHiddenScrollbarCanScroll/);
+    assert.match(uiRegressionSpec, /직접 연결했습니다/);
+    assert.match(uiRegressionServer, /REQUIRED_ST_VERSION = '1\.18\.0'/);
+    assert.match(uiRegressionServer, /readFile\(resolve\(REPOSITORY_ROOT, 'settings\.html'\)/);
+    assert.match(uiRegressionServer, /public', 'style\.css'/);
+    assert.match(uiRegressionServer, /public', 'css', 'popup\.css'/);
+    assert.match(uiRegressionWorkflow, /ref: 51ad27fb86d39a3daca3adaa970375c9670c12df/);
+    assert.doesNotMatch(uiRegressionWorkflow, /uses:\s*actions\/(?:checkout|setup-node|upload-artifact)@v\d+/);
+    for (const actionCommit of [
+        '11d5960a326750d5838078e36cf38b85af677262',
+        '49933ea5288caeca8642d1e84afbd3f7d6820020',
+        'ea165f8d65b6e75b540449e92b4886f43607fa02',
+    ]) {
+        assert.match(uiRegressionWorkflow, new RegExp(actionCommit));
+    }
+    assert.match(uiRegressionWorkflow, /ui-regression-evidence-/);
+    assert.match(uiRegressionWorkflow, /if: always\(\) && !cancelled\(\)/);
+    assert.match(uiRegressionWorkflow, /retention-days: 14/);
     for (const document of [readme, roadmap, checklist, apiDocument]) {
         assert.match(document, /Vectors|embedding/);
         assert.match(document, /TTS/);
