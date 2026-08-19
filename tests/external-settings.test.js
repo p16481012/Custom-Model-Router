@@ -2,8 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-    EXTERNAL_MAPPING_DISABLED,
-    EXTERNAL_MAPPING_MANUAL,
     EXTERNAL_SETTINGS_MAX_TARGETS,
     EXTERNAL_SETTINGS_SCHEMA_VERSION,
     ExternalSettingsError,
@@ -31,7 +29,7 @@ test('빈 값과 손상된 최상위 값은 schema v1 빈 설정으로 정규화
     assert.deepEqual(normalizeExternalSettings({ mappings: 'bad', selectedModels: 42 }), empty);
 });
 
-test('연결과 provider별 선택을 정규화하고 알 수 없는 필드를 버린다', () => {
+test('legacy 연결 mode를 제거하고 provider별 선택과 안전한 필드만 정규화한다', () => {
     const normalized = normalizeExternalSettings({
         schemaVersion: 1,
         mappings: {
@@ -53,10 +51,7 @@ test('연결과 provider별 선택을 정규화하고 알 수 없는 필드를 �
 
     assert.deepEqual(normalized, {
         schemaVersion: 1,
-        mappings: {
-            [TARGET]: EXTERNAL_MAPPING_MANUAL,
-            'cmr-ext-2345bcde': EXTERNAL_MAPPING_DISABLED,
-        },
+        mappings: {},
         selectedModels: {
             [TARGET]: {
                 zai: 'glm-5-plus',
@@ -74,7 +69,7 @@ test('미래 schema는 조용히 낮추지 않고 명시적인 오류를 낸다'
     );
 });
 
-test('legacy provider mapping은 직접 연결로 이관하고 한도에서는 선택 기록을 우선 보존한다', () => {
+test('legacy provider mapping은 제거하고 대상별 마지막 선택만 보존한다', () => {
     const mappings = {};
     for (let index = 0; index < EXTERNAL_SETTINGS_MAX_TARGETS; index += 1) {
         mappings[`cmr-ext-${index.toString(16).padStart(8, '0')}`] = 'openai';
@@ -88,8 +83,7 @@ test('legacy provider mapping은 직접 연결로 이관하고 한도에서는 �
         },
     });
 
-    assert.equal(Object.keys(normalized.mappings).length, EXTERNAL_SETTINGS_MAX_TARGETS - 1);
-    assert.ok(Object.values(normalized.mappings).every(value => value === EXTERNAL_MAPPING_MANUAL));
+    assert.deepEqual(normalized.mappings, {});
     assert.deepEqual(normalized.selectedModels, {
         [selectedTarget]: { vertexai: 'gemini-future' },
     });
@@ -99,14 +93,14 @@ test('legacy provider mapping은 직접 연결로 이관하고 한도에서는 �
     );
 });
 
-test('연결 설정·조회·삭제는 원본을 바꾸지 않고 manual·disabled를 보존한다', () => {
+test('legacy 연결 mutation API는 입력을 검증하되 mode를 다시 저장하지 않는다', () => {
     const source = normalizeExternalSettings();
     const mapped = setExternalMapping(source, TARGET, 'openai');
-    const disabled = setExternalMapping(mapped, TARGET, EXTERNAL_MAPPING_DISABLED);
+    const disabled = setExternalMapping(mapped, TARGET, 'disabled');
 
     assert.equal(getExternalMapping(source, TARGET), null);
-    assert.equal(getExternalMapping(mapped, TARGET), EXTERNAL_MAPPING_MANUAL);
-    assert.equal(getExternalMapping(disabled, TARGET), EXTERNAL_MAPPING_DISABLED);
+    assert.equal(getExternalMapping(mapped, TARGET), null);
+    assert.equal(getExternalMapping(disabled, TARGET), null);
     assert.deepEqual(removeExternalMapping(disabled, TARGET), {
         schemaVersion: 1,
         mappings: {},
@@ -124,7 +118,7 @@ test('하나의 target에 provider별 선택을 독립 저장하고 선택만 �
     settings = removeExternalSelectedModel(settings, TARGET, 'zai');
     assert.equal(getExternalSelectedModel(settings, TARGET, 'zai'), null);
     assert.equal(getExternalSelectedModel(settings, TARGET, 'openai'), 'gpt-6-mini');
-    assert.equal(getExternalMapping(settings, TARGET), EXTERNAL_MAPPING_MANUAL);
+    assert.equal(getExternalMapping(settings, TARGET), null);
 
     settings = setExternalSelectedModel(settings, TARGET, 'openai', '');
     assert.deepEqual(settings.selectedModels, {});
@@ -168,24 +162,24 @@ test('원형·getter 오류·prototype pollution 입력을 실행하거나 결�
     });
 
     const normalized = normalizeExternalSettings(source);
-    assert.deepEqual(normalized.mappings, { [TARGET]: EXTERNAL_MAPPING_MANUAL });
+    assert.deepEqual(normalized.mappings, {});
     assert.deepEqual(normalized.selectedModels, { [TARGET]: { openai: 'gpt-6-mini' } });
     assert.equal(Object.hasOwn(normalized.mappings, '__proto__'), false);
     assert.equal({}.polluted, undefined);
 });
 
-test('고유 target을 최대 512개까지만 정규화하고 mutation 추가는 거부한다', () => {
-    const mappings = {};
+test('provider별 선택 target을 최대 512개까지만 정규화하고 mutation 추가는 거부한다', () => {
+    const selectedModels = {};
     for (let index = 0; index < EXTERNAL_SETTINGS_MAX_TARGETS + 4; index += 1) {
-        mappings[`cmr-ext-${index.toString(16).padStart(8, '0')}`] = 'openai';
+        selectedModels[`cmr-ext-${index.toString(16).padStart(8, '0')}`] = { openai: `gpt-${index}` };
     }
-    const normalized = normalizeExternalSettings({ mappings });
-    assert.equal(Object.keys(normalized.mappings).length, EXTERNAL_SETTINGS_MAX_TARGETS);
+    const normalized = normalizeExternalSettings({ selectedModels });
+    assert.equal(Object.keys(normalized.selectedModels).length, EXTERNAL_SETTINGS_MAX_TARGETS);
     assert.throws(
-        () => setExternalMapping(normalized, 'cmr-ext-ffffffff', 'openai'),
+        () => setExternalSelectedModel(normalized, 'cmr-ext-ffffffff', 'openai', 'gpt-new'),
         error => error instanceof ExternalSettingsError && error.code === 'target_limit',
     );
 
-    const existing = Object.keys(normalized.mappings)[0];
-    assert.equal(setExternalMapping(normalized, existing, 'zai').mappings[existing], EXTERNAL_MAPPING_MANUAL);
+    const existing = Object.keys(normalized.selectedModels)[0];
+    assert.equal(setExternalSelectedModel(normalized, existing, 'zai', 'glm-new').selectedModels[existing].zai, 'glm-new');
 });

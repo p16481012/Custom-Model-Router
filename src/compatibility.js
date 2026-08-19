@@ -391,6 +391,31 @@ function findDuplicateListenerReferences(subscriptions) {
     }));
 }
 
+function findDuplicateModelGroups(groups) {
+    const countsByHost = new Map();
+    const duplicates = [];
+    for (const group of Array.isArray(groups) ? groups : []) {
+        const providerId = String(group?.dataset?.cmrProvider ?? '');
+        const optionHost = group?.parentElement ?? group?.parentNode ?? null;
+        if (!providerId || !optionHost) {
+            continue;
+        }
+        if (!countsByHost.has(optionHost)) {
+            countsByHost.set(optionHost, new Map());
+        }
+        const providerCounts = countsByHost.get(optionHost);
+        providerCounts.set(providerId, (providerCounts.get(providerId) ?? 0) + 1);
+    }
+    for (const providerCounts of countsByHost.values()) {
+        for (const [key, count] of providerCounts) {
+            if (count > 1) {
+                duplicates.push({ key, count });
+            }
+        }
+    }
+    return duplicates;
+}
+
 export function diagnoseRuntimeResources(runtimeState = {}, documentRef = globalThis.document) {
     const checks = [];
     const subscriptions = Array.isArray(runtimeState.subscriptions) ? runtimeState.subscriptions : [];
@@ -413,10 +438,7 @@ export function diagnoseRuntimeResources(runtimeState = {}, documentRef = global
         : null;
 
     const managedGroups = safelyQueryAll(documentRef, 'optgroup[data-cmr-provider]');
-    const duplicateDomGroups = findDuplicateKeys(
-        managedGroups,
-        group => String(group?.dataset?.cmrProvider ?? ''),
-    );
+    const duplicateDomGroups = findDuplicateModelGroups(managedGroups);
     const hasDuplicateResources = launcherCount > 1
         || panelCount > 1
         || (observerCount !== null && observerCount > 1)

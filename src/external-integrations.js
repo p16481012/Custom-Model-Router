@@ -6,6 +6,7 @@ import {
 } from './providers.js';
 
 export const EXTERNAL_AUTO_CONFIDENCE_THRESHOLD = 0.72;
+// v0.6.5 이하 모듈 import 호환용 상수다. controller는 mode mapping을 사용하지 않는다.
 export const EXTERNAL_MAPPING_MANUAL = 'manual';
 export const EXTERNAL_MAPPING_DISABLED = 'disabled';
 export const EXTERNAL_GROUP_LABEL = '사용자 모델';
@@ -16,6 +17,7 @@ export const EXTERNAL_INJECTED_OPTION_LIMIT = 512;
 const EXTERNAL_DATALIST_ATTRIBUTE = 'data-cmr-external-datalist';
 const EXTERNAL_DATALIST_PREVIOUS_LIST_ATTRIBUTE = 'data-cmr-previous-list';
 const EXTERNAL_DATALIST_HAD_LIST_ATTRIBUTE = 'data-cmr-had-list';
+const EXTERNAL_DIRECT_PROVIDER_MARKER = 'direct';
 
 const SAFE_TARGET_ID_PATTERN = /^cmr-ext-[a-f0-9]{8}$/;
 const MODEL_WORD_PATTERN = /(?:^|[^a-z0-9])(model|models|llm|engine)(?:$|[^a-z0-9])/i;
@@ -625,49 +627,15 @@ export function discoverExternalModelTargets(root, options = {}) {
 }
 
 export function normalizeExternalMappings(value) {
-    const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
-    const result = {};
-    let entries;
-    try {
-        entries = Object.entries(source);
-    } catch {
-        entries = [];
-    }
-    for (const [targetId, provider] of entries.slice(0, EXTERNAL_TARGET_LIMIT)) {
-        if (!SAFE_TARGET_ID_PATTERN.test(targetId) || ['__proto__', 'prototype', 'constructor'].includes(targetId)) {
-            continue;
-        }
-        const providerId = normalizeProviderId(provider);
-        if (providerId === EXTERNAL_MAPPING_MANUAL || providerId === EXTERNAL_MAPPING_DISABLED) {
-            result[targetId] = providerId;
-        } else if (isSupportedProvider(providerId)) {
-            // v0.6.0~v0.6.2의 제공업체 고정 mapping은 전체 제공업체 직접 연결로 이관한다.
-            result[targetId] = EXTERNAL_MAPPING_MANUAL;
-        }
-    }
-    return result;
+    // v0.6.0~v0.6.5 호출부의 호환용 함수다. 단일 직접 연결에서는 대상별 mode가 없다.
+    void value;
+    return {};
 }
 
 export function resolveExternalTargetProvider(target, mappings, options = {}) {
-    const normalizedMappings = normalizeExternalMappings(mappings);
+    void mappings;
+    void options;
     const isRiskBlocked = target?.risk?.level === 'blocked';
-    if (Object.hasOwn(normalizedMappings, target?.targetId)) {
-        const mode = normalizedMappings[target.targetId];
-        if (isRiskBlocked && options.allowRiskyManualMappings !== true) {
-            return {
-                providerId: null,
-                confidence: 1,
-                source: 'risk-blocked',
-                excludedReason: target.risk.excludedReason,
-            };
-        }
-        return {
-            providerId: null,
-            confidence: 1,
-            source: mode === EXTERNAL_MAPPING_DISABLED ? 'manual-disabled' : 'manual',
-        };
-    }
-
     if (isRiskBlocked) {
         return {
             providerId: null,
@@ -677,14 +645,10 @@ export function resolveExternalTargetProvider(target, mappings, options = {}) {
         };
     }
 
-    const threshold = Number.isFinite(options.minConfidence)
-        ? Math.max(0, Math.min(1, options.minConfidence))
-        : EXTERNAL_AUTO_CONFIDENCE_THRESHOLD;
-    const inference = target?.inference ?? { providerId: null, confidence: 0, source: 'none' };
     return {
-        providerId: inference.providerId && inference.confidence >= threshold ? inference.providerId : null,
-        confidence: inference.confidence,
-        source: inference.providerId && inference.confidence >= threshold ? `auto:${inference.source}` : 'unresolved',
+        providerId: null,
+        confidence: 1,
+        source: 'direct',
     };
 }
 
@@ -924,7 +888,7 @@ export function syncExternalTargetProviders(target, providerEntries, options = {
         ?? target?.optionHost?.ownerDocument
         ?? control?.ownerDocument
         ?? globalThis.document;
-    const host = ensureExternalOptionHost(target, EXTERNAL_MAPPING_MANUAL, documentRef);
+    const host = ensureExternalOptionHost(target, EXTERNAL_DIRECT_PROVIDER_MARKER, documentRef);
     if (!host || !documentRef?.createElement) {
         return { injectedModels: [], nativeModels: [], reason: 'no-option-host' };
     }
@@ -1125,7 +1089,6 @@ export function createExternalIntegrationController(options = {}) {
             queueMicrotask(callback);
         }
     });
-    let mappings = normalizeExternalMappings(options.mappings);
     let observer = null;
     let pending = false;
     let active = false;
@@ -1265,16 +1228,13 @@ export function createExternalIntegrationController(options = {}) {
     }
 
     function bindTarget(target) {
-        const resolution = target.resolution;
-        const isManual = resolution?.source === 'manual';
         if (target.providerControl && target.providerControl !== target.control) {
             bindElement(target.providerControl, 'change', () => requestSync(), `provider:${target.targetId}`);
             bindElement(target.providerControl, 'input', () => requestSync(), `provider-input:${target.targetId}`);
         }
-        if (!resolution?.providerId && !isManual) {
+        if (target.resolution?.source !== 'direct') {
             return;
         }
-        const providerId = resolution.providerId;
         bindElement(target.control, tagName(target.control) === 'SELECT' ? 'change' : 'input', event => {
             if (event?.isTrusted !== true) {
                 return;
@@ -1296,35 +1256,28 @@ export function createExternalIntegrationController(options = {}) {
                 .map(option => normalizeProviderId(getAttribute(option, 'data-cmr-provider')))
                 .filter(isSupportedProvider))];
             const selectedProviderId = matchingProviderIds.length === 1 ? matchingProviderIds[0] : null;
-            const isCmrModel = Boolean(managedOption && (
-                isManual
-                    ? isSupportedProvider(selectedProviderId)
-                    : selectedProviderId === providerId
-            )) || Boolean(isManual && matchingProviderIds.length);
+            const isCmrModel = Boolean(managedOption && isSupportedProvider(selectedProviderId))
+                || Boolean(matchingProviderIds.length);
             const selection = {
                 targetId: target.targetId,
-                providerId: isManual ? (isCmrModel ? selectedProviderId : null) : providerId,
+                providerId: isCmrModel ? selectedProviderId : null,
                 modelId: isCmrModel ? value : null,
-                mode: isManual ? EXTERNAL_MAPPING_MANUAL : 'auto',
+                mode: 'direct',
                 userInitiated: true,
             };
-            if (isManual && matchingProviderIds.length > 1) {
+            if (matchingProviderIds.length > 1) {
                 selection.providerIds = matchingProviderIds;
             }
             options.onSelectionChanged?.(selection);
-        }, `model:${target.targetId}:${isManual ? EXTERNAL_MAPPING_MANUAL : providerId}`);
+        }, `model:${target.targetId}:direct`);
 
     }
 
     function restorePreferredModel(target) {
-        const isManual = target.resolution?.source === 'manual';
-        const providerId = target.resolution?.providerId;
-        if ((!providerId && !isManual) || normalizeText(target.control?.value)) {
+        if (target.resolution?.source !== 'direct' || normalizeText(target.control?.value)) {
             return null;
         }
-        const preferredEntries = isManual
-            ? Object.entries(options.getPreferredModels?.(target.targetId) ?? {})
-            : [[providerId, options.getPreferredModel?.(target.targetId, providerId)]];
+        const preferredEntries = Object.entries(options.getPreferredModels?.(target.targetId) ?? {});
         let preferredOption = null;
         for (const [candidateProvider, candidateModel] of preferredEntries) {
             const normalizedCandidateProvider = normalizeProviderId(candidateProvider);
@@ -1370,23 +1323,16 @@ export function createExternalIntegrationController(options = {}) {
         }
 
         for (const target of nextTargets) {
-            const resolution = resolveExternalTargetProvider(target, mappings, options);
+            const resolution = resolveExternalTargetProvider(target, null, options);
             const previous = managedTargets.get(target.control);
             if (previous?.optionHost && previous.optionHost !== target.optionHost) {
                 // 외부 확장이 plain input의 list를 자기 datalist로 바꾼 경우 이전 CMR host를 남기지 않는다.
                 removeExternalTargetModels(previous, null, { removeOwnedHost: true });
             }
             target.resolution = resolution;
-            if (resolution.source === 'manual') {
+            if (resolution.source === 'direct') {
                 syncManagedTarget(target, () => (
                     syncExternalTargetProviders(target, getProviderEntries(), options)
-                ));
-                managedTargets.set(target.control, target);
-                bindTarget(target);
-                target.restoredModelId = restorePreferredModel(target);
-            } else if (resolution.providerId) {
-                syncManagedTarget(target, () => (
-                    syncExternalTarget(target, resolution.providerId, getModels(resolution.providerId), options)
                 ));
                 managedTargets.set(target.control, target);
                 bindTarget(target);
@@ -1472,14 +1418,12 @@ export function createExternalIntegrationController(options = {}) {
     }
 
     function getMetrics() {
-        const autoCount = targets.filter(target => target.resolution?.source?.startsWith('auto:')).length;
-        const manualCount = targets.filter(target => target.resolution?.source === 'manual').length;
+        const directCount = targets.filter(target => target.resolution?.source === 'direct').length;
         return {
             observerCount: active && observer ? 1 : 0,
             targetCount: targets.length,
             boundCount: managedTargets.size,
-            autoCount,
-            manualCount,
+            directCount,
             listenerCount: [...bindings.values()].reduce((total, entries) => total + entries.length, 0),
         };
     }
@@ -1493,10 +1437,11 @@ export function createExternalIntegrationController(options = {}) {
         sync: scanAndSync,
         requestSync,
         getTargets: () => [...targets],
-        getMappings: () => ({ ...mappings }),
+        getMappings: () => ({}),
         getMetrics,
         setMappings(value) {
-            mappings = normalizeExternalMappings(value);
+            // v0.6.5 이하 호출부와의 호환용 no-op이다.
+            normalizeExternalMappings(value);
             return scanAndSync();
         },
     });

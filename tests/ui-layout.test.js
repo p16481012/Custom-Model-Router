@@ -11,15 +11,15 @@ async function readUiFiles() {
     ]);
 }
 
-test('패널 헤더는 버전 배지 없이 자체 닫기 버튼 자리를 제공한다', async () => {
+test('패널 헤더는 버전 배지와 중복 닫기 버튼을 만들지 않는다', async () => {
     const [html, css] = await readUiFiles();
     const header = html.match(/<header class="cmr-panel-header">([\s\S]*?)<\/header>/)?.[1] ?? '';
 
-    assert.match(header, /class="cmr-panel-header-actions"/);
-    assert.match(header, /id="cmr_panel_close"/);
+    assert.match(header, /id="cmr_panel_title"/);
+    assert.doesNotMatch(header, /cmr-panel-header-actions|cmr_panel_close/);
     assert.doesNotMatch(html, /cmr-version|>v0\.\d+\.\d+</);
-    assert.match(css, /\.cmr-manager-dialog \.popup-button-close\s*{[^}]*display:\s*none/s);
-    assert.match(css, /\.cmr-panel-close\.menu_button\s*{[^}]*inline-size:\s*2rem\s*!important/s);
+    assert.doesNotMatch(css, /\.popup-button-close\s*{[^}]*display:\s*none/s);
+    assert.doesNotMatch(css, /\.cmr-panel-close\b/);
 });
 
 test('등록 모델 영역은 전체 보기와 제공업체별 그룹 계약을 사용한다', async () => {
@@ -65,13 +65,12 @@ test('한국어 설명은 문장 블록과 공백 기준 줄바꿈을 사용한�
     assert.doesNotMatch(css, /word-break:\s*break-all/);
 });
 
-test('다른 확장 연결 UI는 세 가지 모드 설명과 기존 정적 ID를 제공한다', async () => {
+test('다른 확장 연결 UI는 새로고침과 모드 선택 없이 단일 직접 연결 상태만 제공한다', async () => {
     const [html, css] = await readUiFiles();
 
     for (const id of [
         'cmr_external_section',
         'cmr_external_count',
-        'cmr_external_refresh',
         'cmr_external_status',
         'cmr_external_list',
     ]) {
@@ -79,20 +78,21 @@ test('다른 확장 연결 UI는 세 가지 모드 설명과 기존 정적 ID를
     }
     assert.match(html, /id="cmr_external_list"[^>]*tabindex="0"/);
     assert.match(html, /연결 대상 0개/);
-    assert.match(html, /<dt>자동 연결<\/dt>[\s\S]*외부 확장에서 선택한 제공업체를 따릅니다/);
-    assert.match(html, /<dt>직접 연결<\/dt>[\s\S]*등록된 모든 제공업체 모델을 제공업체별로 표시합니다/);
-    assert.match(html, /<dt>연결 안 함<\/dt>[\s\S]*CMR 모델 선택지를 표시하지 않습니다/);
+    assert.match(html, /등록 모델 전체를 제공업체별로 표시합니다/);
+    assert.match(html, /화면 변경을 감지해 자동으로 갱신됩니다/);
+    assert.doesNotMatch(html, /cmr_external_refresh|data-cmr-external-mode|<dt>자동 연결|<dt>연결 안 함/);
     assert.match(html, /임베딩, TTS, 이미지 생성/);
-    assert.match(css, /\.cmr-external-row\s*{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) minmax\(10rem, 14rem\)/s);
+    assert.match(css, /\.cmr-external-row\s*{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/s);
     assert.match(css, /\.cmr-external-heading\s*{[^}]*flex:\s*1 1 auto/s);
     assert.match(css, /\.cmr-external-name\s*{[^}]*display:\s*block[^}]*text-overflow:\s*ellipsis[^}]*white-space:\s*nowrap/s);
-    assert.match(css, /select\[data-cmr-external-mode\]/);
+    assert.doesNotMatch(css, /select\[data-cmr-external-mode\]|cmr-external-mode-guide|cmr-external-toolbar/);
 });
 
 test('버튼·상세 섹션·제공업체 그룹은 SillyTavern 전역 스타일과 독립적으로 정렬된다', async () => {
     const [html, css] = await readUiFiles();
 
     assert.match(css, /#cmr_settings \.menu_button\s*{[^}]*display:\s*inline-flex\s*!important[^}]*justify-content:\s*center\s*!important[^}]*text-align:\s*center\s*!important/s);
+    assert.match(css, /\.cmr-add-button\.menu_button\s*{[^}]*block-size:\s*1\.9rem[^}]*padding-inline:\s*0\.5rem/s);
     assert.match(css, /\.cmr-operation-actions\s*{[^}]*grid-template-columns:\s*repeat\(4, minmax\(0, 1fr\)\)/s);
     assert.match(css, /@container \(max-width: 560px\)[\s\S]*\.cmr-operation-actions\s*{[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/s);
     assert.match(css, /\.cmr-tool-section,[\s\S]*\.cmr-scope-note\s*{[^}]*margin-block:[^;}]+;[^}]*padding-block:/s);

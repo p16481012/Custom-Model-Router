@@ -39,10 +39,6 @@
     min-width: 0;
 }
 
-.cmr-manager-dialog .popup-button-close {
-    display: none;
-}
-
 #cmr_settings {
     box-sizing: border-box;
     container-type: inline-size;
@@ -74,9 +70,7 @@
 #cmr_settings .cmr-model-row,
 #cmr_settings .cmr-model-summary,
 #cmr_settings .cmr-model-actions,
-#cmr_settings .cmr-provider-group-header,
-#cmr_settings .cmr-panel-header-actions,
-#cmr_settings .cmr-external-toolbar {
+#cmr_settings .cmr-provider-group-header {
     align-items: center;
     display: flex;
 }
@@ -102,12 +96,6 @@
     font-size: 1.15rem;
 }
 
-#cmr_settings .cmr-panel-header-actions {
-    flex: 0 0 auto;
-    justify-content: flex-end;
-    margin-inline-start: auto;
-}
-
 /* SillyTavern의 전역 .menu_button 크기·정렬 규칙이 패널 레이아웃을 덮지 않게 한다. */
 #cmr_settings .menu_button {
     align-items: center !important;
@@ -119,16 +107,6 @@
     min-width: 0;
     text-align: center !important;
     white-space: normal;
-}
-
-#cmr_settings .cmr-panel-close.menu_button {
-    block-size: 2rem;
-    border-radius: 50%;
-    flex: 0 0 2rem;
-    inline-size: 2rem !important;
-    min-block-size: 2rem !important;
-    min-inline-size: 2rem !important;
-    padding: 0 !important;
 }
 
 #cmr_settings .cmr-product-name,
@@ -157,8 +135,7 @@
 }
 
 #cmr_settings .cmr-provider-field select,
-#cmr_settings .cmr-input-row input,
-#cmr_settings .cmr-external-row select[data-cmr-external-mode] {
+#cmr_settings .cmr-input-row input {
     box-sizing: border-box;
     min-width: 0;
 }
@@ -348,11 +325,14 @@
     flex: 1 1 auto;
 }
 
-#cmr_settings .cmr-input-row > .menu_button {
+#cmr_settings .cmr-input-row > .cmr-add-button.menu_button {
+    block-size: 1.9rem;
+    font-size: 0.86rem;
     flex: 0 0 auto;
     inline-size: auto !important;
-    min-block-size: 2.25rem;
-    padding-inline: 0.7rem;
+    min-block-size: 1.9rem !important;
+    padding-inline: 0.5rem;
+    white-space: nowrap;
 }
 
 #cmr_settings .cmr-list-region {
@@ -470,38 +450,6 @@
     color: var(--warning-color, #e57373);
 }
 
-#cmr_settings .cmr-external-mode-guide {
-    display: grid;
-    font-size: 0.82rem;
-    gap: 0.35rem;
-    margin: 0;
-}
-
-#cmr_settings .cmr-external-mode-guide > div {
-    display: grid;
-    gap: 0.55rem;
-    grid-template-columns: minmax(5.25rem, auto) minmax(0, 1fr);
-}
-
-#cmr_settings .cmr-external-mode-guide dt {
-    font-weight: 700;
-}
-
-#cmr_settings .cmr-external-mode-guide dd {
-    margin: 0;
-    opacity: 0.78;
-}
-
-#cmr_settings .cmr-external-toolbar {
-    justify-content: flex-end;
-}
-
-#cmr_settings .cmr-external-toolbar > .menu_button {
-    inline-size: auto !important;
-    min-block-size: 2.25rem;
-    padding-inline: 0.7rem;
-}
-
 #cmr_settings .cmr-external-list {
     max-block-size: min(36dvh, 19rem);
     overflow-y: auto;
@@ -513,7 +461,7 @@
     border-block-end: 1px solid var(--SmartThemeBorderColor, currentColor);
     display: grid;
     gap: 0.45rem 0.75rem;
-    grid-template-columns: minmax(0, 1fr) minmax(10rem, 14rem);
+    grid-template-columns: minmax(0, 1fr);
     padding: 0.55rem 0.65rem;
 }
 
@@ -543,14 +491,8 @@
     opacity: 0.68;
 }
 
-#cmr_settings .cmr-external-row select[data-cmr-external-mode] {
-    inline-size: 100%;
-    margin: 0;
-}
-
 .cmr-launcher:focus-visible,
-#cmr_settings .cmr-icon-button:focus-visible,
-#cmr_settings .cmr-panel-close:focus-visible {
+#cmr_settings .cmr-icon-button:focus-visible {
     outline: 2px solid var(--SmartThemeQuoteColor, currentColor);
     outline-offset: 2px;
 }
@@ -576,11 +518,6 @@
 
     #cmr_settings .cmr-external-row {
         align-items: stretch;
-        grid-template-columns: minmax(0, 1fr);
-    }
-
-    #cmr_settings .cmr-external-mode-guide > div {
-        gap: 0.1rem;
         grid-template-columns: minmax(0, 1fr);
     }
 

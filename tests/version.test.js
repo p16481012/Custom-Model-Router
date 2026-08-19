@@ -69,6 +69,7 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
     assert.match(roadmap, /## v0\.6\.0 — 범용 외부 확장 모델 브리지/);
     assert.match(roadmap, /## v0\.6\.4 — 삭제 안전성·외부 선택 저장 회복/);
     assert.match(roadmap, /## v0\.6\.5 — UI 정리와 직접 연결 회귀 복구/);
+    assert.match(roadmap, /## v0\.6\.6 — 외부 연결 단일화와 진단·버튼 수정/);
     assert.match(entrypoint, /new context\.Popup/);
     assert.match(entrypoint, /#cmr_open_manager/);
     assert.doesNotMatch(entrypoint, /#extensions_settings2|#extensions_settings/);
@@ -82,7 +83,8 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
     assert.match(entrypoint, /normalizeAutomaticExternalSettings/);
     assert.match(settingsHtml, /cmr_run_diagnostics/);
     assert.match(settingsHtml, /cmr_export_backup/);
-    assert.match(settingsHtml, /cmr_external_(?:section|list|refresh|status|count)/);
+    assert.match(settingsHtml, /cmr_external_(?:section|list|status|count)/);
+    assert.doesNotMatch(settingsHtml, /cmr_external_refresh|data-cmr-external-mode/);
     assert.doesNotMatch(settingsHtml, /cmr_rout(?:ing_section|e_(?:form|purpose|model|profile|clear|test|status))/);
     assert.match(portableSettings, /PORTABLE_SETTINGS_SCHEMA_VERSION = 2/);
     assert.match(portableSettings, /externalIntegrations/);

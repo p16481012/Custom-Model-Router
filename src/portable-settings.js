@@ -16,7 +16,9 @@ import {
     validatePurposeRoute,
 } from './purpose-router.js';
 import {
+    EXTERNAL_MAPPING_DISABLED,
     EXTERNAL_MAPPING_MANUAL,
+    EXTERNAL_SETTINGS_MAX_TARGETS,
     EXTERNAL_SETTINGS_SCHEMA_VERSION,
     normalizeExternalSettings,
 } from './external-settings.js';
@@ -502,13 +504,16 @@ function validateExternalIntegrations(value, issues) {
         ));
         return null;
     }
-    const mappingsCanonical = isRecord(value.mappings)
-        && Object.keys(value.mappings).length === Object.keys(normalized.mappings).length
-        && Object.entries(normalized.mappings).every(([targetId, mode]) => {
-            const sourceMode = normalizeProviderId(value.mappings[targetId]);
-            return sourceMode === mode
-                || (mode === EXTERNAL_MAPPING_MANUAL && isSupportedProvider(sourceMode));
-        });
+    const mappingEntries = isRecord(value.mappings) ? Object.entries(value.mappings) : null;
+    const mappingsCanonical = Boolean(mappingEntries
+        && mappingEntries.length <= EXTERNAL_SETTINGS_MAX_TARGETS
+        && mappingEntries.every(([targetId, mode]) => {
+            const sourceMode = normalizeProviderId(mode);
+            return /^cmr-ext-[a-f0-9]{8}$/.test(targetId)
+                && (sourceMode === EXTERNAL_MAPPING_MANUAL
+                    || sourceMode === EXTERNAL_MAPPING_DISABLED
+                    || isSupportedProvider(sourceMode));
+        }));
     const selectedCanonical = isRecord(value.selectedModels)
         && Object.keys(value.selectedModels).length === Object.keys(normalized.selectedModels).length
         && Object.entries(normalized.selectedModels).every(([targetId, selections]) => (

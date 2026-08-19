@@ -172,11 +172,12 @@ test('필수 context와 보조 요청 계약 누락을 오류와 주의로 나�
 
 test('런처·옵저버·동일 핸들러·모델 그룹 중복과 비활성화 잔여 자원을 찾는다', () => {
     const handler = () => {};
+    const modelHost = {};
     const documentRef = createDocument({
         launcherCount: 2,
         modelGroups: [
-            { dataset: { cmrProvider: 'vertexai' } },
-            { dataset: { cmrProvider: 'vertexai' } },
+            { dataset: { cmrProvider: 'vertexai' }, parentElement: modelHost },
+            { dataset: { cmrProvider: 'vertexai' }, parentElement: modelHost },
         ],
     });
     const activeChecks = diagnoseRuntimeResources({
@@ -207,6 +208,47 @@ test('런처·옵저버·동일 핸들러·모델 그룹 중복과 비활성화 
         'failed',
     );
     assert.equal(getMostSevereCheck(destroyedChecks).status, 'failed');
+});
+
+test('모델 그룹 중복은 같은 option host의 같은 제공업체만 판정한다', () => {
+    const coreHost = {};
+    const firstExternalHost = {};
+    const secondExternalHost = {};
+    const legalChecks = diagnoseRuntimeResources({}, createDocument({
+        modelGroups: [
+            { dataset: { cmrProvider: 'vertexai' }, parentElement: coreHost },
+            { dataset: { cmrProvider: 'claude' }, parentElement: coreHost },
+            {
+                dataset: { cmrProvider: 'vertexai', cmrExternalGroup: 'true' },
+                parentElement: firstExternalHost,
+            },
+            {
+                dataset: { cmrProvider: 'vertexai', cmrExternalGroup: 'true' },
+                parentElement: secondExternalHost,
+            },
+        ],
+    }));
+    assert.equal(
+        legalChecks.find(check => check.id === 'runtime-duplicate-resources').status,
+        'passed',
+    );
+
+    const duplicateHost = {};
+    const duplicateChecks = diagnoseRuntimeResources({}, createDocument({
+        modelGroups: [
+            {
+                dataset: { cmrProvider: 'vertexai', cmrExternalGroup: 'true' },
+                parentElement: duplicateHost,
+            },
+            {
+                dataset: { cmrProvider: 'vertexai', cmrExternalGroup: 'true' },
+                parentElement: duplicateHost,
+            },
+        ],
+    }));
+    const duplicate = duplicateChecks.find(check => check.id === 'runtime-duplicate-resources');
+    assert.equal(duplicate.status, 'failed');
+    assert.deepEqual(duplicate.details.duplicateModelGroups, [{ key: 'vertexai', count: 2 }]);
 });
 
 test('100회 동일 자원 표본과 표본 수 제한을 안정 상태로 판정한다', () => {

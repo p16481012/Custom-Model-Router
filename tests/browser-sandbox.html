@@ -67,7 +67,7 @@
         </section>
 
         <section id="unknown_panel" data-extension-name="unknown helper">
-            <h2>제공업체를 알 수 없어 건너뛸 대상</h2>
+            <h2>제공업체 선택기가 없어도 직접 연결할 대상</h2>
             <label for="helper_model">Model</label>
             <select id="helper_model">
                 <option value="native-default">native-default</option>
@@ -87,7 +87,7 @@
     <script type="module">
         import {
             createExternalIntegrationController,
-        } from '../src/external-integrations.js?browser-sandbox=0.6.5';
+        } from '../src/external-integrations.js?browser-sandbox=0.6.6';
 
         const models = {
             openai: [{ provider: 'openai', id: 'gpt-5.9-preview', enabled: true }],
@@ -133,7 +133,7 @@
                 vectorInjected: document.querySelectorAll('#vectors_openai_model [data-cmr-external-model="true"]').length,
                 ttsInjected: document.querySelectorAll('#tts_openai_model [data-cmr-external-model="true"]').length,
                 imageGenerationInjected: document.querySelectorAll('#sd_image_model [data-cmr-external-model="true"]').length,
-                ambiguousInjected: document.querySelectorAll('#helper_model [data-cmr-external-model="true"]').length,
+                providerlessInjected: document.querySelectorAll('#helper_model [data-cmr-external-model="true"]').length,
                 unknownResolution: unknownTarget?.resolution?.source ?? null,
                 changes: [...changes],
                 externalState: { ...externalState },

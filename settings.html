@@ -4,17 +4,6 @@
             <h2 id="cmr_panel_title">사용자 모델 관리</h2>
             <span class="cmr-product-name">Custom Model Router</span>
         </div>
-        <div class="cmr-panel-header-actions">
-            <button
-                id="cmr_panel_close"
-                class="menu_button cmr-panel-close"
-                type="button"
-                title="닫기"
-                aria-label="사용자 모델 관리 닫기"
-            >
-                <i class="fa-solid fa-xmark" aria-hidden="true"></i>
-            </button>
-        </div>
     </header>
 
     <p class="cmr-description">
@@ -48,7 +37,7 @@
                 aria-describedby="cmr_provider_help cmr_model_help cmr_feedback"
                 required
             >
-            <button class="menu_button menu_button_icon" type="submit">
+            <button class="menu_button cmr-add-button" type="submit">
                 <i class="fa-solid fa-plus" aria-hidden="true"></i>
                 <span>추가</span>
             </button>
@@ -66,7 +55,7 @@
         <ul id="cmr_model_list" class="cmr-model-list" aria-describedby="cmr_model_list_help"></ul>
         <small id="cmr_model_list_help">
             <span class="cmr-sentence">등록한 모델은 제공업체별로 정리됩니다.</span>
-            <span class="cmr-sentence">SillyTavern의 기존 모델 선택기와 자동 또는 직접 연결한 다른 확장에 추가됩니다.</span>
+            <span class="cmr-sentence">SillyTavern의 기존 모델 선택기와 감지된 다른 확장의 모델 칸에 추가됩니다.</span>
             <span class="cmr-sentence">자유 입력 방식은 기존 입력란에 모델 ID를 입력하세요.</span>
         </small>
     </section>
@@ -78,29 +67,12 @@
         </summary>
         <div class="cmr-tool-body">
             <p class="cmr-tool-description">
-                다른 확장의 Chat Completion 모델 선택기나 입력란을 찾아 등록 모델을 표시합니다.
+                감지된 Chat Completion 모델 칸에 등록 모델 전체를 제공업체별로 표시합니다.
             </p>
-            <dl class="cmr-external-mode-guide">
-                <div>
-                    <dt>자동 연결</dt>
-                    <dd>외부 확장에서 선택한 제공업체를 따릅니다.</dd>
-                </div>
-                <div>
-                    <dt>직접 연결</dt>
-                    <dd>등록된 모든 제공업체 모델을 제공업체별로 표시합니다.</dd>
-                </div>
-                <div>
-                    <dt>연결 안 함</dt>
-                    <dd>해당 모델 칸에 CMR 모델 선택지를 표시하지 않습니다.</dd>
-                </div>
-            </dl>
-            <div class="cmr-external-toolbar">
-                <button id="cmr_external_refresh" type="button" class="menu_button">목록 새로고침</button>
-            </div>
             <div id="cmr_external_status" class="cmr-feedback" role="status" aria-live="polite" aria-atomic="true"></div>
             <ul id="cmr_external_list" class="cmr-external-list" aria-label="감지한 외부 확장 모델 컨트롤" tabindex="0"></ul>
             <small>
-                <span class="cmr-sentence">제공업체를 판별하지 못한 대상은 직접 연결하기 전까지 변경하지 않습니다.</span>
+                <span class="cmr-sentence">목록은 외부 확장의 화면 변경을 감지해 자동으로 갱신됩니다.</span>
                 <span class="cmr-sentence">임베딩, TTS, 이미지 생성 등 Chat Completion이 아닌 대상은 안전을 위해 제외합니다.</span>
             </small>
         </div>
@@ -129,8 +101,8 @@
         <div class="cmr-tool-body">
             <p class="cmr-sentence">SillyTavern과 외부 확장이 기존 Chat Completion 연결 및 요청 규격을 그대로 사용하는 모델 ID를 지원합니다.</p>
             <p>
-                <span class="cmr-sentence">자동 연결은 제공업체를 판단할 수 있을 때 기존 모델 컨트롤에 선택지를 추가합니다.</span>
-                <span class="cmr-sentence">판단할 수 없는 입력란은 직접 연결을 선택하기 전까지 변경하지 않습니다.</span>
+                <span class="cmr-sentence">감지된 표준 Chat Completion 모델 컨트롤에는 등록 모델 전체를 제공업체별로 추가합니다.</span>
+                <span class="cmr-sentence">자체 위젯이나 비채팅 모델 컨트롤은 변경하지 않습니다.</span>
                 <span class="cmr-sentence">전역 fetch를 가로채지 않습니다.</span>
             </p>
             <p>

@@ -1,6 +1,6 @@
-# v0.6.5 통합 사용자 검증 체크리스트
+# v0.6.6 통합 사용자 검증 체크리스트
 
-대상 버전: **v0.6.5**
+대상 버전: **v0.6.6**
 
 이 문서는 v0.1~v0.6 기능을 한 번에 확인하는 최종 수동 검증 순서입니다. 위에서 아래로 진행하고, 사용하지 않는 제공업체·외부 확장·개발자 API 항목은 `해당 없음`으로 표시하세요.
 
@@ -20,7 +20,7 @@
 ```text
 검증 날짜:
 SillyTavern 버전:
-Custom Model Router 버전: v0.6.5
+Custom Model Router 버전: v0.6.6
 브라우저·OS:
 설치 방식: 신규 / 업데이트
 이전 확장 버전:
@@ -43,15 +43,15 @@ Connection Profile 사용 여부:
 ## 1. 버전·이관·초기화
 
 - [ ] **[필수][MIG-01] API Connections 도구행에 사용자 모델 관리 아이콘이 정확히 하나 표시된다.**
-- [ ] **[필수][MIG-02] 관리 팝업 헤더에 버전 배지가 표시되지 않고 제품명과 닫기 버튼만 정돈되어 있다.**
+- [ ] **[필수][MIG-02] 관리 팝업에 버전 배지가 없고 SillyTavern 공식 닫기 버튼 하나만 표시된다.**
 - [ ] **[필수][MIG-03] Extensions 설정 영역에 이전의 큰 CMR inline 패널이 남지 않는다.**
 - [ ] **[조건부][MIG-04] v0.1.x의 Vertex 등록 모델이 Google Vertex AI 목록에 보존된다.**
 - [ ] **[조건부][MIG-05] v0.2.x의 여러 제공업체 등록 모델과 선택 상태가 모두 보존된다.**
 - [ ] **[조건부][MIG-06] v0.4.0의 용도별 route가 같은 모델과 profile ID를 가리킨다.**
 - [ ] **[조건부][MIG-06A] v0.5.0에서 업데이트했다면 Registry와 route가 보존되고 외부 연결 설정은 빈 상태로 안전하게 시작한다.**
-- [ ] **[조건부][MIG-06B] v0.6.0~v0.6.2에서 업데이트했다면 외부 target의 legacy provider mapping은 특정 업체 고정이 아닌 직접 연결로 이관되고, `disabled`와 provider별 마지막 CMR 선택은 보존된다.**
-- [ ] **[조건부][MIG-06C] legacy mapping 512개와 별도 target의 `selectedModels`가 함께 있으면 선택 기록을 우선 보존하고, 보존된 legacy provider mapping은 직접 연결로 이관된다.**
-- [ ] **[조건부][MIG-06D] v0.6.3~v0.6.4에서 업데이트했다면 자동 연결과 provider별 마지막 선택이 보존되고, 외부 대상 목록에서 직접 연결과 연결 안 함을 다시 선택할 수 있다.**
+- [ ] **[조건부][MIG-06B] v0.6.0~v0.6.5에서 업데이트했다면 외부 target의 legacy provider·`manual`·`disabled` mapping은 제거되고 정상 `selectedModels` 선택 기록은 보존된다.**
+- [ ] **[조건부][MIG-06C] legacy mapping 512개와 별도 target의 `selectedModels`가 함께 있으면 mapping 수와 관계없이 정상 선택 기록을 우선 보존한다.**
+- [ ] **[조건부][MIG-06D] v0.6.5에서 업데이트했다면 외부 대상의 모드 선택기는 사라지고 감지된 안전한 대상이 모두 단일 직접 연결로 표시된다.**
 - [ ] **[필수][MIG-07] 새로고침을 두 번 반복해도 런처·팝업·사용자 모델 그룹이 중복되지 않는다.**
 - [ ] **[필수][MIG-08] 브라우저 콘솔에 처리되지 않은 CMR 초기화 오류가 없다.**
 
@@ -69,13 +69,13 @@ Connection Profile 사용 여부:
 - [ ] **[권장][UI-08A] 팝업 본문, 외부 대상 목록과 진단 결과도 내용이 길어지면 시각적 스크롤바 없이 휠·터치·키보드 스크롤이 동작한다.**
 - [ ] **[권장][UI-09] 긴 계층형 모델 ID가 행 밖으로 넘치거나 버튼을 가리지 않는다.**
 - [ ] **[권장][UI-10] 좁은 창 또는 모바일 폭에서 입력·추가·삭제·외부 연결·진단 섹션을 사용할 수 있다.**
-- [ ] **[필수][UI-11] Tab 키만으로 제공업체, 입력, 추가, 모델 삭제, 외부 연결 모드, 진단과 닫기 컨트롤에 접근한다.**
+- [ ] **[필수][UI-11] Tab 키만으로 제공업체, 입력, 추가, 모델 삭제, 진단과 SillyTavern 공식 닫기 컨트롤에 접근한다. 외부 연결 상태 목록에는 불필요한 모드 조작 컨트롤이 없다.**
 - [ ] **[필수][UI-12] 등록 목록에는 제공업체 이름, 모델 ID와 작은 휴지통 버튼만 있고 선택·적용 버튼, 현재 사용 배지와 라우팅 설정 UI가 없다. 삭제 버튼이 모델 행보다 과도하게 크지 않다.**
 - [ ] **[필수][UI-13] 팝업 안내가 실제 모델 선택은 SillyTavern의 기존 모델 선택기 또는 입력란에서 한다고 명시한다.**
-- [ ] **[필수][UI-14] 닫기 버튼이 팝업 헤더 제목 옆의 같은 영역에 있고 외딴 위치에 중복 닫기 버튼이 생기지 않는다. 버튼과 `Escape`가 모두 팝업을 닫는다.**
+- [ ] **[필수][UI-14] SillyTavern 공식 닫기 버튼 하나만 보이고 CMR 내부에 두 번째 닫기 버튼이 없다. 공식 버튼과 `Escape`가 모두 팝업을 닫는다.**
 - [ ] **[권장][UI-15] `호환성 진단 및 설정 복구`와 `지원 범위 및 개인정보`를 펼쳤을 때 내용 아래에 충분한 안쪽 여백이 있어 마지막 문장이 테두리에 붙지 않는다.**
 - [ ] **[권장][UI-16] 일반 안내 문구는 단어 중간에서 잘리지 않고 공간이 부족할 때만 공백에서 줄바꿈된다. 짧은 구절은 가능한 한 한 줄에 유지되고 각 문장은 종결부호 뒤에서 다음 줄로 분리된다.**
-- [ ] **[필수][UI-17] 추가·닫기·삭제·외부 연결·진단·백업 버튼의 아이콘과 텍스트가 가로·세로 중앙에 정렬되고 글자가 세로로 쪼개지지 않는다.**
+- [ ] **[필수][UI-17] 추가·삭제·진단·백업 버튼의 아이콘과 텍스트가 가로·세로 중앙에 정렬되고 글자가 세로로 쪼개지지 않는다. 모델 추가 버튼은 입력란 옆에서 필요한 크기만 차지한다.**
 
 ## 3. 모델 등록·SillyTavern native 선택·삭제 공통 경로
 
@@ -94,32 +94,32 @@ Connection Profile 사용 여부:
 
 ## 4. 다른 확장 모델 연결
 
-먼저 CMR Registry에 서로 다른 제공업체의 사용자 모델을 하나씩 등록합니다. 관리 팝업의 **다른 확장 모델 연결**에서 실제 외부 Chat Completion 대상을 찾아 자동 연결, 직접 연결, 연결 안 함을 각각 확인합니다.
+먼저 CMR Registry에 서로 다른 제공업체의 사용자 모델을 하나씩 등록합니다. 감지된 안전한 외부 Chat Completion 모델 칸에는 별도의 모드 설정 없이 등록 모델 전체가 제공업체별로 표시됩니다.
 
-- [ ] **[필수][EXT-01] 외부 target별 행에 `자동 연결`, `직접 연결`, `연결 안 함`만 있고 특정 제공업체 하나를 고르는 메뉴나 기능별 라우팅 설정은 없다. 각 모드 설명을 읽고 차이를 이해할 수 있다.**
-- [ ] **[조건부][EXT-02] 표준 Chat Completion `select`의 제공업체를 충분히 확실하게 자동 판별하면 같은 제공업체의 CMR 모델만 별도 그룹으로 표시되고 native option과 현재 값은 유지된다.**
-- [ ] **[조건부][EXT-03] 제공업체를 자동 판별할 수 있는 텍스트 `input` 또는 `datalist` 기반 외부 모델 컨트롤에서 CMR 모델 제안이 나타나며 기존 입력값과 기존 datalist option은 유지된다.**
-- [ ] **[필수][EXT-04] 제공업체를 확정하지 못한 unknown 모델 컨트롤은 자동 연결에서 원래 값과 option을 유지한다. 같은 대상을 직접 연결하면 CMR 모델이 나타난다.**
-- [ ] **[조건부][EXT-05] v0.6.0~v0.6.2의 특정 provider 수동 mapping은 직접 연결로 이관되어 한 업체만이 아니라 등록된 모든 provider 모델을 표시하고, 기존 `disabled`는 연결 안 함으로 유지된다.**
-- [ ] **[조건부][EXT-06] mode 이관 뒤에도 같은 target과 provider의 마지막 CMR 모델 선택 기록은 보존된다.**
+- [ ] **[필수][EXT-01] 외부 target 행은 읽기 전용 상태만 보여주며 `자동 연결`, `직접 연결`, `연결 안 함` 선택기와 수동 모델 새로고침 버튼이 없다.**
+- [ ] **[조건부][EXT-02] 표준 Chat Completion `select`에 등록된 모든 제공업체의 CMR 모델이 제공업체별 그룹으로 표시되고 native option과 현재 값은 유지된다.**
+- [ ] **[조건부][EXT-03] 텍스트 `input` 또는 `datalist` 기반 외부 모델 컨트롤에 등록된 모든 제공업체의 CMR 모델 제안이 나타나며 기존 입력값과 기존 datalist option은 유지된다.**
+- [ ] **[필수][EXT-04] 제공업체 선택기가 없더라도 안전한 표준 Chat Completion 모델 컨트롤에는 등록 모델 전체가 표시된다. 모델 컨트롤인지 안전하게 판별할 수 없는 대상은 원래 값과 option을 유지한다.**
+- [ ] **[조건부][EXT-05] v0.6.0~v0.6.5의 provider·`manual`·`disabled` mapping은 제거되고, 이전에 연결 안 함이었던 안전한 대상도 단일 직접 연결 동작을 사용한다.**
+- [ ] **[조건부][EXT-06] mapping 제거 뒤에도 같은 target과 provider의 마지막 CMR 모델 선택 기록은 보존된다.**
 - [ ] **[조건부][EXT-06A] 제거된 확장의 stale 외부 선택 512개로 저장이 포화된 상태에서 현재 감지 target의 CMR 모델을 선택하면, 감지되지 않은 가장 오래된 target 기록 하나만 교체되고 나머지 기존 선택은 보존된다.**
-- [ ] **[조건부][EXT-06B] stale 직접 연결 mapping이 512개로 포화된 상태에서 현재 target을 직접 연결하면, 감지되지 않은 mapping-only 기록 하나만 교체되고 기존 provider별 모델 선택은 우선 보존된다.**
-- [ ] **[조건부][EXT-07] Caption의 Multimodal provider/model control에서 `Anthropic→claude`, `Google AI Studio→makersuite`, `Mistral→mistralai` 같은 provider alias가 올바른 Registry와 자동 연결된다.**
-- [ ] **[필수][EXT-08] 직접 연결한 `select`에는 등록된 모든 provider의 모델이 `제공업체 이름 · 사용자 모델` optgroup으로 구분되어 나타나며 같은 모델 ID도 provider별로 구분된다.**
-- [ ] **[조건부][EXT-08A] Caption처럼 option `data-type`을 쓰는 확장에서 자동·직접 연결 CMR option에 올바른 외부 provider 값이 유지된다.**
-- [ ] **[필수][EXT-08B] 연결 안 함을 선택하면 해당 모델 칸에서 CMR 선택지만 사라지고 native option은 유지된다. CMR option을 선택 중이었다면 외부 확장 또는 브라우저의 native 기본값으로 전환될 수 있으며, 이를 기존 CMR 값 보존 실패로 판정하지 않는다.**
+- [ ] **[조건부][EXT-06B] stale legacy mapping 512개와 별도 target의 선택 기록이 함께 있어도 mapping은 제거되고 정상 선택 기록은 우선 보존된다.**
+- [ ] **[조건부][EXT-07] Caption의 Multimodal provider/model control에서 `Anthropic→claude`, `Google AI Studio→makersuite`, `Mistral→mistralai` 같은 provider metadata가 올바른 CMR option에 유지된다.**
+- [ ] **[필수][EXT-08] 외부 `select`에는 등록된 모든 provider의 모델이 `제공업체 이름 · 사용자 모델` optgroup으로 구분되어 나타나며 같은 모델 ID도 provider별로 구분된다.**
+- [ ] **[조건부][EXT-08A] Caption처럼 option `data-type`을 쓰는 확장에서 CMR option에 올바른 외부 provider 값이 유지된다.**
+- [ ] **[필수][EXT-08B] 관리 팝업을 닫거나 페이지를 다시 열어도 대상별 모드 선택 없이 같은 안전한 외부 모델 칸에 CMR 선택지가 다시 한 번만 나타난다.**
 - [ ] **[조건부][EXT-09] 외부 확장에서 CMR 모델을 선택하면 그 확장의 기존 `input` 또는 `change` 저장 동작이 실행되고, 기능을 다시 열어도 선택이 남는다.**
 - [ ] **[조건부][EXT-10] 외부 확장 기능을 한 번 실행하고 Network 요청 JSON의 `model`이 선택한 정확한 ID인지 확인한다. 인증 header와 전체 URL은 기록하지 않는다.**
 - [ ] **[조건부][EXT-10A] Caption에서 CMR 모델을 선택해 이미지 설명을 한 번 실행하고, 실제 `/caption-image` Network 요청 JSON의 `model`이 선택한 정확한 ID인지 확인한다. 모델이 목록에 보이는 것만으로 통과 처리하지 않는다.**
-- [ ] **[조건부][EXT-11] 페이지 새로고침 뒤 DOM 표식이 같은 외부 target의 직접 연결 또는 연결 안 함 mode와 provider별 마지막 CMR 선택을 복원한다. 새 control 값이 비어 있을 때만 선택을 복원하고 외부 확장이 둔 유효한 현재값은 덮어쓰지 않는다.**
-- [ ] **[조건부][EXT-11A] 외부 확장 업데이트로 control ID·name·label 또는 상위 구조가 바뀐 새 target은 기본 자동 모드로 시작한다. 자동 판별에 실패하면 사용자가 새 행에서 직접 연결을 다시 선택할 수 있다.**
+- [ ] **[조건부][EXT-11] 페이지 새로고침 뒤 DOM 표식이 같은 외부 target의 마지막 CMR 선택을 provider 식별자와 함께 복원한다. 새 control 값이 비어 있을 때만 선택을 복원하고 외부 확장이 둔 유효한 현재값은 덮어쓰지 않는다.**
+- [ ] **[조건부][EXT-11A] 외부 확장 업데이트로 control ID·name·label 또는 상위 구조가 바뀌면 새 target으로 다시 감지되며, 안전한 표준 모델 컨트롤이면 별도 설정 없이 직접 연결된다.**
 - [ ] **[조건부][EXT-12] 외부 확장의 새로고침 버튼 또는 설정 전환으로 모델 `select`가 다시 렌더링되어도 CMR option이 한 번만 복원된다.**
-- [ ] **[필수][EXT-13] Vectors·embedding·rerank 모델 컨트롤이 자동 또는 직접 연결 대상에 포함되지 않는다.**
-- [ ] **[필수][EXT-14] TTS·voice·speech 모델 컨트롤이 자동 또는 직접 연결 대상에 포함되지 않는다.**
-- [ ] **[필수][EXT-15] Stable Diffusion·이미지 생성 모델 컨트롤이 자동 또는 직접 연결 대상에 포함되지 않는다.**
-- [ ] **[권장][EXT-16] 진단 결과의 자동·직접 연결, 판별 불가와 안전상 건너뜀 개수가 실제 외부 컨트롤과 일치한다.**
+- [ ] **[필수][EXT-13] Vectors·embedding·rerank 모델 컨트롤이 직접 연결 대상에 포함되지 않는다.**
+- [ ] **[필수][EXT-14] TTS·voice·speech 모델 컨트롤이 직접 연결 대상에 포함되지 않는다.**
+- [ ] **[필수][EXT-15] Stable Diffusion·이미지 생성 모델 컨트롤이 직접 연결 대상에 포함되지 않는다.**
+- [ ] **[권장][EXT-16] 진단 결과의 직접 연결과 안전상 건너뜀 개수가 실제 외부 컨트롤과 일치한다.**
 - [ ] **[필수][EXT-17] 외부 브리지 동작 전후 메인 Chat Completion source·모델·API 키·endpoint가 바뀌지 않는다.**
-- [ ] **[선택][EXT-18] React 자체 위젯, iframe, 닫힌 Shadow DOM과 모델 control 없는 확장은 대상 목록에도 나타나지 않으며 직접 연결 대신 전용 opt-in API 연동이 필요하다는 안내를 확인한다.**
+- [ ] **[선택][EXT-18] React 자체 위젯, iframe, 닫힌 Shadow DOM과 모델 control 없는 확장은 대상 목록에도 나타나지 않으며 전용 opt-in API 연동이 필요하다는 안내를 확인한다.**
 
 CMR은 전역 `fetch`나 `XMLHttpRequest`를 monkey patch하지 않습니다. 모델이 목록에 보이는 것과 실제 요청 반영은 별도 항목이며, `EXT-10`과 Caption 전용 `EXT-10A`에서 반드시 구분해 확인합니다. 저장소의 브라우저 샌드박스는 DOM option과 이벤트 전달만 확인하며 실제 `/caption-image` 요청을 대신하지 않습니다.
 
@@ -198,8 +198,8 @@ CMR은 전역 `fetch`나 `XMLHttpRequest`를 monkey patch하지 않습니다. �
 - [ ] **[필수][DIAG-01] 호환성 진단 및 설정 복구 섹션에서 `진단 실행`을 누른다.**
 - [ ] **[필수][DIAG-02] SillyTavern 1.18.0이면 버전 계약이 통과로 표시된다.**
 - [ ] **[필수][DIAG-03] 현재 화면의 공개 context·event·provider control 결과에 설명 없는 실패가 없다.**
-- [ ] **[필수][DIAG-04] 런처·observer·listener·사용자 모델 그룹 중복이 없다고 표시된다.**
-- [ ] **[필수][DIAG-04A] 외부 브리지 observer·listener·target 수와 자동·직접 연결·판별 불가·안전상 건너뜀 수가 표시되고 설명 없는 증가가 없다.**
+- [ ] **[필수][DIAG-04] 런처·observer·listener·사용자 모델 그룹 중복이 없다고 표시된다. 서로 다른 모델 선택기에 같은 제공업체 그룹이 하나씩 있는 것은 중복으로 오인하지 않는다.**
+- [ ] **[필수][DIAG-04A] 외부 브리지 observer·listener·target 수와 직접 연결·안전상 건너뜀 수가 표시되고 설명 없는 증가가 없다.**
 - [ ] **[필수][DIAG-05] 경고가 있다면 코드와 사유를 결과 메모에 기록한다.**
 - [ ] **[필수][DIAG-06] `진단 복사` 결과를 텍스트 편집기에서 열어 API 키·endpoint·project/account ID·Service Account가 없는지 확인한다.**
 - [ ] **[권장][DIAG-07] 1.18.0보다 새 버전에서는 미검증 경고가 표시되고 확장이 무조건 호환이라고 단정하지 않는다.**
@@ -216,14 +216,14 @@ CMR은 전역 `fetch`나 `XMLHttpRequest`를 monkey patch하지 않습니다. �
 
 ## 10. 확장 전용 백업·복구
 
-- [ ] **[필수][BKP-01] `백업 내보내기`로 `custom-model-router-backup-v0.6.5.json`을 저장한다.**
+- [ ] **[필수][BKP-01] `백업 내보내기`로 `custom-model-router-backup-v0.6.6.json`을 저장한다.**
 - [ ] **[필수][BKP-02] JSON 최상위에 `format`, `schemaVersion`, `createdAt`, `registry`, `purposeRoutes`, `externalIntegrations`만 있고 portable schemaVersion이 `2`인지 확인한다.**
 - [ ] **[필수][BKP-03] Registry에는 provider·model ID·protocol·enabled·선택 상태만 있는지 확인한다.**
 - [ ] **[필수][BKP-04] route에는 provider·model ID·adapter ID·Connection Profile ID만 있는지 확인한다.**
-- [ ] **[필수][BKP-04A] externalIntegrations에는 schemaVersion, target ID별 `manual` 또는 `disabled` mapping과 provider별 CMR model 선택만 있는지 확인한다. 자동 연결 target에는 mapping이 없어야 한다.**
+- [ ] **[필수][BKP-04A] externalIntegrations에는 schemaVersion, 빈 `mappings` 호환 필드와 target별 마지막 CMR model·provider 식별자만 있는지 확인한다. 대상별 mode나 provider 고정 mapping은 없어야 한다.**
 - [ ] **[필수][BKP-05] 백업에 API 키·endpoint·리전·project/account ID·Service Account·profile 본문이 없는지 확인한다.**
 - [ ] **[필수][BKP-06] 모델과 route 하나를 변경한 뒤 원본 백업을 가져오고 확인 대화상자에서 취소하면 아무 설정도 바뀌지 않는다.**
-- [ ] **[필수][BKP-07] 다시 원본 백업을 가져와 확인하면 Registry·개발자 route·외부 직접 연결·연결 안 함·provider별 선택이 내보내기 당시 상태로 복원된다.**
+- [ ] **[필수][BKP-07] 다시 원본 백업을 가져와 확인하면 Registry·개발자 route와 외부 target별 provider 모델 선택이 내보내기 당시 상태로 복원된다.**
 - [ ] **[필수][BKP-08] 가져오기 전후 API key·endpoint·리전과 profile 내용이 바뀌지 않는다.**
 - [ ] **[권장][BKP-09] 잘못된 JSON 파일을 가져오면 명확히 거부되고 현재 설정은 유지된다.**
 - [ ] **[권장][BKP-10] 복사본에 알 수 없는 최상위 필드를 추가하면 거부되고 현재 설정은 유지된다.**
@@ -231,7 +231,7 @@ CMR은 전역 `fetch`나 `XMLHttpRequest`를 monkey patch하지 않습니다. �
 - [ ] **[조건부][BKP-12] 존재하지 않는 profile ID를 참조하는 정상 route 백업은 보존되지만 실행 시 profile 오류가 난다.**
 - [ ] **[조건부][BKP-13] v0.5.0에서 만든 portable schema v1 백업을 가져오면 Registry·route가 보존되고 빈 externalIntegrations를 가진 schema v2 상태로 이관된다.**
 - [ ] **[권장][BKP-14] 외부 연결 schema를 미래 값으로 올리거나 위험한 target key를 넣은 백업은 기존 설정 무변경 상태로 거부된다.**
-- [ ] **[조건부][BKP-15] v0.6.0~v0.6.2 백업의 외부 provider mapping은 가져오기 뒤 `manual` 직접 연결로 이관되고 `disabled`와 `selectedModels`는 보존된다.**
+- [ ] **[조건부][BKP-15] v0.6.0~v0.6.5 백업의 외부 provider·`manual`·`disabled` mapping은 가져오기 뒤 제거되고 정상 `selectedModels`는 보존된다.**
 
 ## 11. 비활성화·재활성화·보안
 
@@ -240,7 +240,7 @@ CMR은 전역 `fetch`나 `XMLHttpRequest`를 monkey patch하지 않습니다. �
 - [ ] **[필수][LIFE-02] select형 현재 사용자 모델은 가능한 기본 모델로 안전하게 전환되고 인증 설정은 유지된다.**
 - [ ] **[조건부][LIFE-03] Custom 자유 입력값과 endpoint는 비활성화해도 삭제되지 않는다.**
 - [ ] **[필수][LIFE-04] 다시 활성화하면 UI와 API가 하나씩만 생성되고 등록 설정이 복원된다.**
-- [ ] **[필수][LIFE-04A] 다시 활성화하면 외부 target의 자동·직접 연결 또는 연결 안 함 mode가 복원되고 CMR option은 한 번만 나타난다. 동일 target의 control 값이 비어 있을 때만 저장 선택을 복원하며 유효한 외부 현재값은 유지한다.**
+- [ ] **[필수][LIFE-04A] 다시 활성화하면 안전한 외부 target에 CMR option이 한 번만 나타난다. 동일 target의 control 값이 비어 있을 때만 저장 선택을 복원하며 유효한 외부 현재값은 유지한다.**
 - [ ] **[권장][LIFE-05] 활성화·비활성화를 5회 반복해도 이벤트 중복, 잔여 dialog 또는 콘솔 오류가 없다.**
 - [ ] **[필수][SEC-01] 확장 설정과 백업에 API 키·Service Account·전체 endpoint가 저장되지 않는다.**
 - [ ] **[필수][SEC-02] 진단 결과와 오류 메시지에 사용자가 입력한 비밀값 자체가 노출되지 않는다.**
@@ -250,10 +250,10 @@ CMR은 전역 `fetch`나 `XMLHttpRequest`를 monkey patch하지 않습니다. �
 ## 결과 보고 양식
 
 ```text
-제목: [v0.6.5][제공업체 또는 기능][항목 ID] 짧은 증상
+제목: [v0.6.6][제공업체 또는 기능][항목 ID] 짧은 증상
 
 SillyTavern 버전:
-Custom Model Router 버전: v0.6.5
+Custom Model Router 버전: v0.6.6
 OS / 브라우저:
 신규 설치 또는 업데이트:
 이전 CMR 버전:
@@ -269,7 +269,7 @@ Connection Profile 사용 여부와 비밀이 아닌 이름:
 source/Profile 반복 횟수:
 진단 상태·경고 코드:
 백업 가져오기 결과:
-외부 target 자동/직접 연결/연결 안 함/판별 불가/안전상 건너뜀 상태:
+외부 target 직접 연결/안전상 건너뜀 상태:
 외부 control 종류(select/input/datalist/기타):
 Network payload의 model 확인 결과:
 Caption /caption-image payload의 model 확인 결과:
@@ -277,4 +277,4 @@ Caption /caption-image payload의 model 확인 결과:
 민감정보를 제거한 스크린샷:
 ```
 
-실패 항목이 있어도 데이터 손실·무한 반복·비밀 노출이 아니라면 나머지 독립 항목은 계속 확인해도 됩니다. 결과를 모으면 같은 v0.6 범위의 후속 수정은 `v0.6.6`, `v0.6.7`, ...로 반영합니다.
+실패 항목이 있어도 데이터 손실·무한 반복·비밀 노출이 아니라면 나머지 독립 항목은 계속 확인해도 됩니다. 결과를 모으면 같은 v0.6 범위의 후속 수정은 `v0.6.7`, `v0.6.8`, ...로 반영합니다.

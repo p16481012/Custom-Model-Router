@@ -13,7 +13,7 @@ import {
 } from '../src/portable-settings.js';
 import { addModel, setSelectedModel } from '../src/registry.js';
 import { setPurposeRoute } from '../src/purpose-router.js';
-import { setExternalMapping, setExternalSelectedModel } from '../src/external-settings.js';
+import { setExternalSelectedModel } from '../src/external-settings.js';
 
 function createSettings() {
     let registrySettings = addModel(undefined, 'openai', 'gpt-future');
@@ -25,9 +25,8 @@ function createSettings() {
         adapterId: 'sillytavern.connection-profile',
         connectionProfileId: 'profile-summary',
     }, { registrySettings });
-    let externalSettings = setExternalMapping(undefined, 'cmr-ext-1234abcd', 'openai');
-    externalSettings = setExternalSelectedModel(
-        externalSettings,
+    const externalSettings = setExternalSelectedModel(
+        undefined,
         'cmr-ext-1234abcd',
         'openai',
         'gpt-future',
@@ -63,7 +62,7 @@ test('Registry·용도별 경로·외부 연결만 결정적 백업으로 만들
         adapterId: 'sillytavern.connection-profile',
         connectionProfileId: 'profile-summary',
     });
-    assert.equal(backup.externalIntegrations.mappings['cmr-ext-1234abcd'], 'manual');
+    assert.deepEqual(backup.externalIntegrations.mappings, {});
     assert.doesNotMatch(
         serialized,
         /REGISTRY_SECRET|ROUTES_SECRET|ROUTE_SECRET|PROFILE_SECRET|secret\.invalid/,
@@ -105,7 +104,7 @@ test('정상 백업을 검사하고 원본 설정을 변경하지 않는 값으�
     assert.equal(source.registrySettings.models[0].id, 'gpt-future');
 });
 
-test('v0.6.0~v0.6.2 제공업체 고정 mapping 백업은 직접 연결로 이관한다', () => {
+test('v0.6.0~v0.6.5 legacy mapping 백업은 선택 기록만 남기고 제거한다', () => {
     const source = createSettings();
     const backup = createPortableSettings({
         ...source,
@@ -116,7 +115,7 @@ test('v0.6.0~v0.6.2 제공업체 고정 mapping 백업은 직접 연결로 이�
     const inspection = inspectPortableSettings(backup);
     assert.equal(inspection.ok, true);
     const parsed = parsePortableSettings(backup);
-    assert.equal(parsed.externalSettings.mappings['cmr-ext-1234abcd'], 'manual');
+    assert.deepEqual(parsed.externalSettings.mappings, {});
     assert.equal(
         parsed.externalSettings.selectedModels['cmr-ext-1234abcd'].openai,
         'gpt-future',

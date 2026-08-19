@@ -368,7 +368,7 @@ test('target ID는 동일한 extension 구조의 DOM 재생성 후에도 안정�
     assert.match(createExternalTargetId(first), /^cmr-ext-[a-f0-9]{8}$/);
 });
 
-test('legacy provider mapping은 안전한 직접 연결로 이관하고 자동 추론보다 우선한다', () => {
+test('legacy provider mapping은 제거되고 안전한 target은 모두 직접 연결된다', () => {
     const target = {
         targetId: 'cmr-ext-deadbeef',
         inference: { providerId: 'openai', confidence: 0.9, source: 'id-name-label' },
@@ -380,12 +380,9 @@ test('legacy provider mapping은 안전한 직접 연결로 이관하고 자동 
         unsafe: 'openai',
         'cmr-ext-aaaaaaaa': 'not-real',
     });
-    assert.deepEqual(mappings, {
-        'cmr-ext-deadbeef': EXTERNAL_MAPPING_MANUAL,
-        'cmr-ext-12345678': 'disabled',
-    });
+    assert.deepEqual(mappings, {});
     assert.deepEqual(resolveExternalTargetProvider(target, mappings), {
-        providerId: null, confidence: 1, source: 'manual',
+        providerId: null, confidence: 1, source: 'direct',
     });
 });
 
@@ -482,7 +479,6 @@ test('직접 연결 input 제안은 실제 모델 ID와 제공업체가 보이�
     const controller = createExternalIntegrationController({
         root: documentRef,
         documentRef,
-        mappings: { [target.targetId]: EXTERNAL_MAPPING_MANUAL },
         getModels: providerId => ['openai', 'claude'].includes(providerId)
             ? [{ provider: providerId, id: 'shared-model' }]
             : [],
@@ -497,7 +493,7 @@ test('직접 연결 input 제안은 실제 모델 ID와 제공업체가 보이�
         providerId: null,
         providerIds: ['openai', 'claude'],
         modelId: 'shared-model',
-        mode: EXTERNAL_MAPPING_MANUAL,
+        mode: 'direct',
         userInitiated: true,
     });
     controller.destroy();
@@ -534,7 +530,7 @@ test('multiplex select의 native 중복은 provider와 model ID가 모두 같은
     assert.equal(select.options.some(item => item.dataset.cmrExternalModel === 'true'), false);
 });
 
-test('약한 이름 추론은 비채팅 모델과 민감 설정에 자동 주입하지 않고 Caption Chat Completion은 보존한다', () => {
+test('비채팅 모델과 민감 설정은 제외하고 안전한 Chat Completion target만 직접 연결한다', () => {
     const documentRef = new FakeDocument();
     const risks = [
         ['openai_image_model', 'image-generation-model'],
@@ -569,7 +565,7 @@ test('약한 이름 추론은 비채팅 모델과 민감 설정에 자동 주입
     const captionTarget = discoverExternalModelTargets(documentRef, { documentRef })
         .find(candidate => candidate.control === caption);
     assert.equal(captionTarget.risk.level, 'none');
-    assert.equal(resolveExternalTargetProvider(captionTarget, {}).providerId, 'openai');
+    assert.equal(resolveExternalTargetProvider(captionTarget, {}).source, 'direct');
 
     caption.setAttribute('data-provider', 'custom');
     const customCaption = discoverExternalModelTargets(documentRef, { documentRef })
@@ -589,7 +585,7 @@ test('약한 이름 추론은 비채팅 모델과 민감 설정에 자동 주입
     const captionInputs = discoverExternalModelTargets(documentRef, { documentRef });
     const customInputTarget = captionInputs.find(candidate => candidate.control === captionCustomInput);
     const ollamaInputTarget = captionInputs.find(candidate => candidate.control === captionOllamaInput);
-    assert.equal(resolveExternalTargetProvider(customInputTarget, {}).providerId, 'custom');
+    assert.equal(resolveExternalTargetProvider(customInputTarget, {}).source, 'direct');
     assert.equal(ollamaInputTarget.inference.providerId, 'custom');
     assert.equal(ollamaInputTarget.risk.excludedReason, 'caption-ollama-model');
     assert.equal(resolveExternalTargetProvider(ollamaInputTarget, {}).source, 'risk-blocked');
@@ -930,7 +926,7 @@ test('controller observer는 관련 mutation을 한 frame으로 묶고 추론 �
     controller.destroy();
 });
 
-test('controller는 재렌더 target에 선호 모델을 복원하고 provider 변경·사용자 선택·destroy를 정리한다', () => {
+test('controller는 모든 안전 target을 직접 연결하고 재렌더·선호 선택·destroy를 정리한다', () => {
     const documentRef = new FakeDocument();
     const wrapper = documentRef.createElement('section');
     wrapper.setAttribute('data-extension-id', 'caption');
@@ -954,7 +950,7 @@ test('controller는 재렌더 target에 선호 모델을 복원하고 provider �
         root: documentRef,
         documentRef,
         getModels: providerId => [{ provider: providerId, id: providerId === 'claude' ? 'claude-next' : 'gpt-next' }],
-        getPreferredModel: id => id === targetId ? 'claude-next' : null,
+        getPreferredModels: id => id === targetId ? { claude: 'claude-next' } : {},
         onSelectionChanged: selection => selections.push(selection),
         observerFactory(callback) {
             observerCallback = callback;
@@ -965,12 +961,13 @@ test('controller는 재렌더 target에 선호 모델을 복원하고 provider �
     });
 
     let targets = controller.start();
-    assert.equal(targets[0].resolution.source, 'unresolved');
-    assert.equal(model.options.some(item => item.dataset.cmrExternalModel === 'true'), false);
+    assert.equal(targets[0].resolution.source, 'direct');
+    assert.equal(model.options.some(item => item.dataset.cmrExternalModel === 'true'), true);
     assert.deepEqual(controller.getMetrics(), {
-        observerCount: 1, targetCount: 1, boundCount: 0, autoCount: 0, manualCount: 0, listenerCount: 2,
+        observerCount: 1, targetCount: 1, boundCount: 1, directCount: 1, listenerCount: 3,
     });
 
+    model.value = '';
     provider.value = 'anthropic';
     provider.dispatchEvent({ type: 'change', isTrusted: true });
     assert.equal(scheduled.length, 1);
@@ -979,7 +976,7 @@ test('controller는 재렌더 target에 선호 모델을 복원하고 provider �
     assert.equal(targets[0].restoredModelId, 'claude-next');
     assert.equal(model.value, 'claude-next');
     assert.deepEqual(controller.getMetrics(), {
-        observerCount: 1, targetCount: 1, boundCount: 1, autoCount: 1, manualCount: 0, listenerCount: 3,
+        observerCount: 1, targetCount: 1, boundCount: 1, directCount: 1, listenerCount: 3,
     });
 
     model.value = 'native';
@@ -1010,7 +1007,7 @@ test('controller는 재렌더 target에 선호 모델을 복원하고 provider �
     assert.equal(disconnected, true);
     assert.equal(model.options.some(item => item.dataset.cmrExternalModel === 'true'), false);
     assert.deepEqual(controller.getMetrics(), {
-        observerCount: 0, targetCount: 0, boundCount: 0, autoCount: 0, manualCount: 0, listenerCount: 0,
+        observerCount: 0, targetCount: 0, boundCount: 0, directCount: 0, listenerCount: 0,
     });
 });
 
@@ -1034,7 +1031,6 @@ test('직접 연결 controller는 중복 모델 ID도 실제 selected option met
     const controller = createExternalIntegrationController({
         root: documentRef,
         documentRef,
-        mappings: { [targetId]: EXTERNAL_MAPPING_MANUAL },
         getModels: providerId => modelsAvailable && ['openai', 'claude'].includes(providerId)
             ? [{ provider: providerId, id: 'shared-model' }]
             : [],
@@ -1056,7 +1052,7 @@ test('직접 연결 controller는 중복 모델 ID도 실제 selected option met
         targetId,
         providerId: 'claude',
         modelId: 'shared-model',
-        mode: EXTERNAL_MAPPING_MANUAL,
+        mode: 'direct',
         userInitiated: true,
     });
     controller.sync();
@@ -1065,14 +1061,14 @@ test('직접 연결 controller는 중복 모델 ID도 실제 selected option met
     assert.equal(select.value, 'shared-model');
 
     controller.setMappings({});
-    assert.equal(controller.getMetrics().autoCount, 1);
+    assert.equal(controller.getMetrics().directCount, 1);
     assert.equal(select.options.find(option => option.selected)?.dataset.cmrProvider, 'claude');
     assert.equal(select.value, 'shared-model');
 
     controller.setMappings({ [targetId]: EXTERNAL_MAPPING_MANUAL });
     assert.equal(select.options.find(option => option.selected)?.dataset.cmrProvider, 'claude');
     assert.equal(select.value, 'shared-model');
-    assert.equal(controller.getMetrics().manualCount, 1);
+    assert.equal(controller.getMetrics().directCount, 1);
 
     modelsAvailable = false;
     controller.sync();
@@ -1082,22 +1078,8 @@ test('직접 연결 controller는 중복 모델 ID도 실제 selected option met
     assert.equal(invalidations.at(-1).reason, 'models-updated');
 
     modelsAvailable = true;
-    controller.sync();
-    const selectedBeforeDisable = select.options.find(option => (
-        option.dataset.cmrExternalModel === 'true' && option.dataset.cmrProvider === 'claude'
-    ));
-    for (const optionItem of select.options) {
-        optionItem.selected = optionItem === selectedBeforeDisable;
-    }
-    select.value = 'shared-model';
-
     controller.setMappings({ [targetId]: EXTERNAL_MAPPING_DISABLED });
-    assert.equal(select.value, 'native-model');
-    assert.equal(externalSavedValues.at(-1), 'native-model');
-    assert.equal(select.options.some(item => item.dataset.cmrExternalModel === 'true'), false);
-    assert.equal(invalidations.at(-1).reason, 'manual-disabled');
-
-    controller.setMappings({ [targetId]: EXTERNAL_MAPPING_MANUAL });
+    assert.equal(controller.getMetrics().directCount, 1);
     const selectedBeforeDestroy = select.options.find(option => (
         option.dataset.cmrExternalModel === 'true' && option.dataset.cmrProvider === 'claude'
     ));
@@ -1120,7 +1102,6 @@ test('직접 연결 controller는 중복 모델 ID도 실제 selected option met
     const collisionController = createExternalIntegrationController({
         root: documentRef,
         documentRef,
-        mappings: { [collisionTargetId]: EXTERNAL_MAPPING_MANUAL },
         getModels: providerId => providerId === 'claude'
             ? [{ provider: 'claude', id: 'shared-model' }]
             : [],
@@ -1138,7 +1119,7 @@ test('직접 연결 controller는 중복 모델 ID도 실제 selected option met
         targetId: collisionTargetId,
         providerId: null,
         modelId: null,
-        mode: EXTERNAL_MAPPING_MANUAL,
+        mode: 'direct',
         userInitiated: true,
     });
     collisionController.destroy();

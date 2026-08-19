@@ -159,22 +159,13 @@
 
         <div id="sandbox_viewport" class="sandbox-viewport" data-width="420">
             <div class="cmr-manager-dialog" role="dialog" aria-modal="false" aria-labelledby="cmr_panel_title">
-                <button class="popup-button-close" type="button">Popup 기본 닫기</button>
+                <button id="sandbox_popup_close" class="popup-button-close" type="button">Popup 기본 닫기</button>
                 <div class="popup-content">
                     <section id="cmr_settings" class="cmr-panel" aria-labelledby="cmr_panel_title">
                         <header class="cmr-panel-header">
                             <div class="cmr-panel-heading">
                                 <h2 id="cmr_panel_title">사용자 모델 관리</h2>
                                 <span class="cmr-product-name">Custom Model Router</span>
-                            </div>
-                            <div class="cmr-panel-header-actions">
-                                <button
-                                    id="cmr_panel_close"
-                                    class="menu_button cmr-panel-close"
-                                    type="button"
-                                    title="닫기"
-                                    aria-label="사용자 모델 관리 닫기"
-                                >×</button>
                             </div>
                         </header>
 
@@ -204,7 +195,7 @@
                             <label for="cmr_model_id">Google Vertex AI 모델 ID</label>
                             <div class="cmr-input-row">
                                 <input id="cmr_model_id" class="text_pole" type="text" value="gemini-next-preview" aria-label="모델 ID 예시">
-                                <button class="menu_button menu_button_icon" type="button">＋ 추가</button>
+                                <button class="menu_button cmr-add-button" type="button">＋ 추가</button>
                             </div>
                             <small>Google 모델 경로 한 구간만 입력합니다.</small>
                         </form>
@@ -277,29 +268,19 @@
                                 <span class="cmr-list-count">연결 대상 3개</span>
                             </summary>
                             <div class="cmr-tool-body">
-                                <p class="cmr-tool-description">행과 연결 방식 선택기의 반응형 배치를 확인합니다.</p>
+                                <p class="cmr-tool-description">감지된 모델 칸에 등록 모델 전체를 제공업체별로 표시하는 읽기 전용 상태 목록입니다.</p>
+                                <div id="cmr_external_status" class="cmr-feedback" role="status" aria-live="polite">3개 모델 칸에 직접 연결했습니다.</div>
                                 <ul id="cmr_external_list" class="cmr-external-list" tabindex="0" aria-label="감지한 외부 확장 모델 컨트롤">
                                     <li class="cmr-model-row cmr-external-row">
-                                        <div class="cmr-model-summary"><span class="cmr-external-heading"><strong class="cmr-external-name">번역 확장 모델</strong><br><small>OpenRouter 제공업체를 자동으로 찾았습니다.</small></span></div>
-                                        <select class="text_pole" data-cmr-external-mode="true" aria-label="번역 확장 연결 방식">
-                                            <option value="auto" selected>자동 연결</option><option value="manual">직접 연결</option><option value="disabled">연결 안 함</option>
-                                        </select>
+                                        <div class="cmr-model-summary"><span class="cmr-external-heading"><strong class="cmr-external-name">번역 확장 모델</strong><br><small>등록 모델 전체를 제공업체별로 표시합니다.</small></span></div>
                                     </li>
                                     <li class="cmr-model-row cmr-external-row">
                                         <div class="cmr-model-summary"><span class="cmr-external-heading"><strong class="cmr-external-name">공백없이아주긴외부확장모델선택기이름말줄임검증</strong><br><small>등록된 모든 제공업체 모델을 표시합니다.</small></span></div>
-                                        <select class="text_pole" data-cmr-external-mode="true" aria-label="요약 도우미 연결 방식">
-                                            <option value="auto">자동 연결</option><option value="manual" selected>직접 연결</option><option value="disabled">연결 안 함</option>
-                                        </select>
                                     </li>
                                     <li class="cmr-model-row cmr-external-row">
-                                        <div class="cmr-model-summary"><span class="cmr-external-heading"><strong class="cmr-external-name">장문 분석 모델 입력란</strong><br><small>CMR 모델 선택지를 표시하지 않습니다.</small></span></div>
-                                        <select class="text_pole" data-cmr-external-mode="true" aria-label="장문 분석 연결 방식">
-                                            <option value="auto">자동 연결</option><option value="manual">직접 연결</option><option value="disabled" selected>연결 안 함</option>
-                                        </select>
+                                        <div class="cmr-model-summary"><span class="cmr-external-heading"><strong class="cmr-external-name">장문 분석 모델 입력란</strong><br><small>등록 모델 전체를 제공업체별로 표시합니다.</small></span></div>
                                     </li>
                                 </ul>
-                                <button id="cmr_external_refresh" type="button" class="menu_button">목록 새로고침</button>
-                                <div id="cmr_external_status" class="cmr-feedback" role="status" aria-live="polite"></div>
                             </div>
                         </details>
 
@@ -385,7 +366,7 @@
                 button.addEventListener('click', () => setWidth(Number(button.dataset.sandboxWidth)));
             }
 
-            document.getElementById('cmr_panel_close').addEventListener('click', () => {
+            document.getElementById('sandbox_popup_close').addEventListener('click', () => {
                 panel.hidden = true;
                 reopenButton.hidden = false;
             });
@@ -393,13 +374,7 @@
             reopenButton.addEventListener('click', () => {
                 panel.hidden = false;
                 reopenButton.hidden = true;
-                document.getElementById('cmr_panel_close').focus();
-            });
-
-            document.getElementById('cmr_external_refresh').addEventListener('click', () => {
-                const status = document.getElementById('cmr_external_status');
-                status.dataset.state = 'ok';
-                status.textContent = '정적 연결 대상 3개를 다시 표시했습니다. 실제 탐지는 실행하지 않았습니다.';
+                document.getElementById('sandbox_popup_close').focus();
             });
 
             document.getElementById('sandbox_show_metrics').addEventListener('click', () => {
