@@ -44,13 +44,12 @@ test('등록 모델 영역은 전체 보기와 12개 초과 검색 계약을 사
     }
 });
 
-test('대량 등록·삭제 실행 취소·백업 미리보기는 접근 가능한 독립 흐름을 갖는다', async () => {
+test('통합 모델 등록·삭제 실행 취소·백업 미리보기는 접근 가능한 독립 흐름을 갖는다', async () => {
     const [html, css, index] = await readUiFiles();
 
     for (const id of [
-        'cmr_bulk_add',
-        'cmr_bulk_add_form',
-        'cmr_bulk_model_ids',
+        'cmr_add_form',
+        'cmr_model_id',
         'cmr_undo_delete',
         'cmr_import_preview',
         'cmr_import_preview_summary',
@@ -60,15 +59,18 @@ test('대량 등록·삭제 실행 취소·백업 미리보기는 접근 가능�
     ]) {
         assert.match(html, new RegExp(`id="${id}"`));
     }
-    assert.match(html, /id="cmr_bulk_model_ids"[\s\S]*?placeholder="한 줄에 모델 ID 하나"/);
+    assert.match(html, /<textarea[\s\S]*?id="cmr_model_id"[\s\S]*?rows="3"[\s\S]*?maxlength="65536"[\s\S]*?placeholder="한 줄에 모델 ID 하나"[\s\S]*?<\/textarea>/);
+    assert.doesNotMatch(html, /cmr_bulk_/);
     assert.match(html, /id="cmr_undo_delete"[^>]*\bhidden\b/);
     assert.match(html, /id="cmr_import_preview"[^>]*\bhidden\b/);
     assert.match(html, /id="cmr_import_preview_list"[^>]*aria-label="백업 변경 내역"[^>]*tabindex="0"/);
-    assert.match(index, /#cmr_bulk_add_form'\)\?\.addEventListener\('submit', onBulkAddModels\)/);
+    assert.match(index, /#cmr_add_form'\)\?\.addEventListener\('submit', onAddModel\)/);
+    assert.doesNotMatch(index, /cmr_bulk_|onBulkAddModels/);
     assert.match(index, /#cmr_undo_delete'\)\?\.addEventListener\('click', onUndoModelDeletion\)/);
     assert.match(index, /#cmr_import_preview_apply'\)\?\.addEventListener\('click', onApplyImportPreview\)/);
     assert.match(index, /#cmr_import_preview_cancel'\)\?\.addEventListener\('click', onCancelImportPreview\)/);
-    assert.match(css, /\.cmr-bulk-add-form textarea\s*{[^}]*resize:\s*vertical/s);
+    assert.match(css, /\.cmr-add-form textarea\s*{[^}]*resize:\s*vertical/s);
+    assert.doesNotMatch(css, /cmr-bulk-add-form|cmr-inline-actions/);
     assert.match(css, /\.cmr-undo-button\[hidden\]\s*{[^}]*display:\s*none\s*!important/s);
     assert.match(css, /\.cmr-import-preview\[hidden\]\s*{[^}]*display:\s*none/s);
     assert.match(css, /\.cmr-change-list\s*{[^}]*max-block-size:[^;}]+;[^}]*overflow-y:\s*auto[^}]*scrollbar-width:\s*none/s);
@@ -100,7 +102,7 @@ test('한국어 설명은 문장 블록과 공백 기준 줄바꿈을 사용한�
         const content = html.match(new RegExp(`id="${id}"[^>]*>([\\s\\S]*?)<\\/${closingTag}>`))?.[1] ?? '';
         assert.equal((content.match(/class="cmr-sentence"/g) ?? []).length, expectedCount);
     }
-    assert.match(index, /help\.textContent\s*=\s*formatUiSentences\(getProviderHelp\(provider\)\)/);
+    assert.match(index, /\$\{getProviderHelp\(provider\)\}[^`]*한 줄에 하나씩 최대 200개/);
     assert.match(css, /word-break:\s*keep-all/);
     assert.match(css, /overflow-wrap:\s*normal/);
     assert.match(css, /\.cmr-sentence\s*{[^}]*display:\s*block/s);
@@ -162,8 +164,11 @@ test('외부 연결 UI는 평상시 숨기고 문제 경고와 고급 제외 관
 
 test('모델 추가 버튼은 접근 가능한 아이콘 전용 정사각형 버튼이다', async () => {
     const [html, css] = await readUiFiles();
-    const button = html.match(/<button[\s\S]*?class="menu_button cmr-add-button cmr-icon-button"[\s\S]*?<\/button>/)?.[0] ?? '';
+    const addForm = html.match(/<form id="cmr_add_form"[\s\S]*?<\/form>/)?.[0] ?? '';
+    const button = addForm.match(/<button[\s\S]*?class="menu_button cmr-add-button cmr-icon-button"[\s\S]*?<\/button>/)?.[0] ?? '';
 
+    assert.equal((addForm.match(/<button\b/g) ?? []).length, 1);
+    assert.equal((addForm.match(/<textarea\b/g) ?? []).length, 1);
     assert.match(button, /type="submit"/);
     assert.match(button, /title="모델 등록"/);
     assert.match(button, /aria-label="입력한 모델 ID 등록"/);

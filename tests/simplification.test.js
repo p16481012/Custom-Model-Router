@@ -16,8 +16,8 @@ test('모델 관리 기본 화면은 등록·삭제에 집중하고 외부 연�
 
     assert.match(html, /id="cmr_provider"/);
     assert.match(html, /id="cmr_add_form"/);
-    assert.match(html, /id="cmr_bulk_add_form"/);
-    assert.match(html, /id="cmr_bulk_model_ids"/);
+    assert.match(html, /<textarea[\s\S]*?id="cmr_model_id"[\s\S]*?maxlength="65536"[\s\S]*?<\/textarea>/);
+    assert.doesNotMatch(html, /cmr_bulk_/);
     assert.match(html, /id="cmr_model_list"/);
     assert.match(html, /id="cmr_model_search_region"[^>]*\bhidden\b/);
     assert.match(html, /id="cmr_undo_delete"[^>]*\bhidden\b/);
@@ -38,10 +38,13 @@ test('모델 관리 기본 화면은 등록·삭제에 집중하고 외부 연�
     assert.doesNotMatch(html, /id="cmr_rout(?:ing_section|e_(?:form|purpose|model|profile|clear|test|status))"/);
     assert.doesNotMatch(source, /dataset\.cmrAction\s*=\s*'select'/);
     assert.match(source, /dataset\.cmrAction\s*=\s*'delete'/);
+    assert.equal((source.match(/#cmr_add_form'\)\?\.addEventListener\('submit', onAddModel\)/g) ?? []).length, 1);
+    assert.doesNotMatch(source, /cmr_bulk_|onBulkAddModels/);
     assert.match(source, /appendExternalRows\(\s*list,\s*\[\.\.\.failedTargets, \.\.\.userExcludedTargets\]/s);
     assert.match(source, /appendExternalRows\(\s*pickerList,\s*selectableTargets/s);
 
     const addButton = html.match(/<button\b[^>]*class="[^"]*cmr-add-button[^"]*"[^>]*>([\s\S]*?)<\/button>/)?.[0] ?? '';
+    assert.equal((html.match(/\bcmr-add-button\b/g) ?? []).length, 1);
     assert.match(addButton, /aria-label="[^"]+"/);
     assert.match(addButton, /title="[^"]+"/);
     assert.match(addButton, /fa-plus/);
@@ -70,18 +73,17 @@ test('브라우저 샌드박스는 안전 대상 자동 연결·provider metadat
     assert.match(html, /id="switch_caption_provider"/);
     assert.match(html, /switchCaptionProvider\(\)/);
     assert.match(html, /data-extension-name="unknown helper"/);
-    assert.match(html, /browser-sandbox=0\.6\.10/);
+    assert.match(html, /browser-sandbox=0\.6\.11/);
     assert.match(html, /제공업체 선택기가 없어도 안전하게 자동 연결/);
 });
 
-test('수동 UI 샌드박스도 대량 등록·복구 미리보기·외부 목록 분리를 반영한다', async () => {
+test('수동 UI 샌드박스도 모델 등록·복구 미리보기·외부 목록 분리를 반영한다', async () => {
     const html = await readText('tests/ui-sandbox.html');
     const actionList = html.match(/id="cmr_external_list"[\s\S]*?<\/ul>/)?.[0] ?? '';
     const pickerList = html.match(/id="cmr_external_picker_list"[\s\S]*?<\/ul>/)?.[0] ?? '';
 
     for (const id of [
-        'cmr_bulk_add_form',
-        'cmr_bulk_model_ids',
+        'cmr_model_id',
         'cmr_undo_delete',
         'cmr_model_search_region',
         'cmr_import_preview',

@@ -1,8 +1,8 @@
 # 공개 Registry API
 
-Custom Model Router v0.6.10은 다른 SillyTavern 확장이 내부 파일 경로에 의존하지 않고 등록 모델과 용도별 라우팅을 사용할 수 있도록 `globalThis.CustomModelRouter`를 제공합니다. Registry API 계약 버전은 `1.1.0`, Routing API 계약 버전은 `1.0.0`이며 v0.5.0과 동일합니다.
+Custom Model Router v0.6.11은 다른 SillyTavern 확장이 내부 파일 경로에 의존하지 않고 등록 모델과 용도별 라우팅을 사용할 수 있도록 `globalThis.CustomModelRouter`를 제공합니다. Registry API 계약 버전은 `1.1.0`, Routing API 계약 버전은 `1.0.0`이며 v0.5.0과 동일합니다.
 
-v0.6.0의 범용 DOM 모델 브리지, 호환성 진단과 설정 백업·복구, v0.6.7의 Playwright UI 회귀 검사 인프라는 이 전역 API 계약에 포함되지 않습니다. v0.6.10의 조건부 모델 검색·일괄 등록·삭제 실행 취소·백업 미리보기와 예외 중심 외부 관리 UI도 공개 Registry/Routing API 버전을 바꾸지 않습니다. 대상별 제외·복구와 UI 주입 상태는 진단 섹션의 고급 외부 연결 관리에 있고, 실제 요청 반영은 별도로 확인해야 합니다. 외부 저장 schema v2 역시 공개 API 호출 계약과 별개입니다. Routing API는 개발자 또는 연동 확장이 명시적으로 사용하는 opt-in 계약이며 일반 라우팅 UI는 없습니다. 용도별 경로에는 Connection Profile ID만 저장되고 프로필 본문·API 키·endpoint는 복제되지 않습니다.
+v0.6.0의 범용 DOM 모델 브리지, 호환성 진단과 설정 백업·복구, v0.6.7의 Playwright UI 회귀 검사 인프라는 이 전역 API 계약에 포함되지 않습니다. v0.6.10의 조건부 모델 검색·일괄 등록·삭제 실행 취소·백업 미리보기와 예외 중심 외부 관리 UI, v0.6.11의 단일·여러 줄 공용 모델 등록 UI도 공개 Registry/Routing API 버전을 바꾸지 않습니다. 대상별 제외·복구와 UI 주입 상태는 진단 섹션의 고급 외부 연결 관리에 있고, 실제 요청 반영은 별도로 확인해야 합니다. 외부 저장 schema v2 역시 공개 API 호출 계약과 별개입니다. Routing API는 개발자 또는 연동 확장이 명시적으로 사용하는 opt-in 계약이며 일반 라우팅 UI는 없습니다. 용도별 경로에는 Connection Profile ID만 저장되고 프로필 본문·API 키·endpoint는 복제되지 않습니다.
 
 ## 호환성 확인
 

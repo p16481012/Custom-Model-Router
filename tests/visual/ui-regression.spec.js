@@ -46,8 +46,6 @@ async function expectNoHorizontalOverflow(page) {
             '.cmr-provider-field',
             '.cmr-add-form',
             '.cmr-input-row',
-            '#cmr_bulk_add',
-            '.cmr-bulk-add-form',
             '.cmr-feedback-row',
             '.cmr-list-region',
             '#cmr_model_search_region',
@@ -148,6 +146,63 @@ async function expectButtonsAligned(page, expectedColumns) {
     expect(new Set(firstRow.map(button => Math.round(button.x))).size).toBe(expectedColumns);
 }
 
+async function expectRegistrationControlsAligned(page) {
+    const metrics = await page.evaluate(() => {
+        const row = document.querySelector('#cmr_add_form .cmr-input-row');
+        const textarea = document.getElementById('cmr_model_id');
+        const button = row.querySelector(':scope > .cmr-add-button');
+        const icon = button.querySelector(':scope > .fa-solid.fa-plus');
+        const rowRect = row.getBoundingClientRect();
+        const textareaRect = textarea.getBoundingClientRect();
+        const buttonRect = button.getBoundingClientRect();
+        return {
+            buttonAfter: getComputedStyle(button, '::after').content,
+            buttonBefore: getComputedStyle(button, '::before').content,
+            buttonChildCount: button.childElementCount,
+            buttonRect: {
+                bottom: buttonRect.bottom,
+                left: buttonRect.left,
+                right: buttonRect.right,
+                top: buttonRect.top,
+                width: buttonRect.width,
+            },
+            iconAfter: getComputedStyle(icon, '::after').content,
+            iconBefore: getComputedStyle(icon, '::before').content,
+            iconCount: button.querySelectorAll(':scope > .fa-solid.fa-plus').length,
+            rowAlignItems: getComputedStyle(row).alignItems,
+            rowRect: {
+                left: rowRect.left,
+                right: rowRect.right,
+                top: rowRect.top,
+            },
+            textareaRect: {
+                bottom: textareaRect.bottom,
+                left: textareaRect.left,
+                right: textareaRect.right,
+                top: textareaRect.top,
+                width: textareaRect.width,
+            },
+            textareaRows: textarea.rows,
+            textareaTagName: textarea.tagName,
+        };
+    });
+
+    expect(metrics.textareaTagName).toBe('TEXTAREA');
+    expect(metrics.textareaRows).toBe(3);
+    expect(metrics.rowAlignItems).toBe('flex-start');
+    expect(Math.abs(metrics.textareaRect.top - metrics.buttonRect.top)).toBeLessThanOrEqual(1);
+    expect(metrics.textareaRect.left).toBeGreaterThanOrEqual(metrics.rowRect.left - 1);
+    expect(metrics.textareaRect.right).toBeLessThan(metrics.buttonRect.left);
+    expect(metrics.buttonRect.right).toBeLessThanOrEqual(metrics.rowRect.right + 1);
+    expect(metrics.textareaRect.width).toBeGreaterThan(metrics.buttonRect.width);
+    expect(metrics.buttonChildCount).toBe(1);
+    expect(metrics.iconCount).toBe(1);
+    expect(metrics.buttonBefore).toBe('none');
+    expect(metrics.buttonAfter).toBe('none');
+    expect(metrics.iconBefore).toBe('"+"');
+    expect(metrics.iconAfter).toBe('none');
+}
+
 async function expectHiddenScrollbarCanScroll(page, selector, { keyboard = true, hoverAtStart = false } = {}) {
     const target = page.locator(selector);
     await target.scrollIntoViewIfNeeded();
@@ -209,6 +264,7 @@ for (const viewport of VIEWPORTS) {
 
             await expectNoHorizontalOverflow(page);
             await expectButtonsAligned(page, viewport.width === 720 ? 4 : 2);
+            await expectRegistrationControlsAligned(page);
 
             const wrapping = await page.evaluate(() => ({
                 sentenceDisplay: getComputedStyle(document.querySelector('.cmr-sentence')).display,
@@ -226,6 +282,9 @@ for (const viewport of VIEWPORTS) {
             await expect(addButton).toHaveAttribute('title', '모델 등록');
             await expect(addButton).toHaveAttribute('aria-label', '입력한 모델 ID 등록');
             await expect(addButton.locator('.fa-plus')).toHaveCount(1);
+            await expect(page.locator('#cmr_add_form')).toHaveCount(1);
+            await expect(page.locator('#cmr_model_id')).toHaveCount(1);
+            await expect(page.locator('#cmr_bulk_add, #cmr_bulk_add_form, #cmr_bulk_model_ids')).toHaveCount(0);
             const addButtonSize = await addButton.evaluate(element => {
                 const rect = element.getBoundingClientRect();
                 return { width: rect.width, height: rect.height };
@@ -470,19 +529,22 @@ test.describe('모델 등록·복구 흐름', () => {
     test.use({ viewport: { width: 420, height: 800 } });
 
     test('여러 모델을 textarea로 등록하고 삭제를 즉시 실행 취소한다', async ({ page }, testInfo) => {
-        await openScenario(page, { modelCount: 11, openBulk: true });
-        const bulk = page.locator('#cmr_bulk_add');
-        const textarea = page.locator('#cmr_bulk_model_ids');
+        await openScenario(page, { modelCount: 11 });
+        const textarea = page.locator('#cmr_model_id');
         const undo = page.locator('#cmr_undo_delete');
-        await expect(bulk).toHaveAttribute('open', '');
+        await expect(page.locator('#cmr_add_form')).toHaveCount(1);
+        await expect(page.locator('#cmr_bulk_add, #cmr_bulk_add_form, #cmr_bulk_model_ids')).toHaveCount(0);
         await expect(page.locator('#cmr_model_search_region')).toBeHidden();
 
         await textarea.fill('gemini-bulk-alpha\ngemini-bulk-beta\ngemini-bulk-alpha');
-        await page.locator('#cmr_bulk_add_form button[type="submit"]').click();
-        await expect(page.locator('#cmr_feedback')).toHaveText('모델 2개를 등록했습니다.');
+        await page.locator('#cmr_add_form .cmr-add-button').click();
+        await expect(page.locator('#cmr_feedback')).toHaveText(
+            'Google Vertex AI에 모델 2개를 등록했습니다. 중복 1개는 건너뛰었습니다.',
+        );
         await expect(page.locator('#cmr_model_count')).toHaveText('제공업체 3곳 · 모델 13개');
         await expect(page.locator('#cmr_model_search_region')).toBeVisible();
         await expect(textarea).toHaveValue('');
+        await expect(textarea).toBeFocused();
 
         const addedRow = page.locator('#cmr_model_list .cmr-model-row').filter({ hasText: 'gemini-bulk-alpha' });
         await addedRow.locator('.cmr-delete-button').click();
@@ -495,7 +557,7 @@ test.describe('모델 등록·복구 흐름', () => {
         await expect(undo).toBeHidden();
         await expect(page.locator('#cmr_feedback')).toContainText('gemini-bulk-alpha 모델 등록을 복구했습니다.');
         await expect(page.locator('#cmr_model_count')).toHaveText('제공업체 3곳 · 모델 13개');
-        await attachViewportScreenshot(page, testInfo, 'bulk-add-delete-undo');
+        await attachViewportScreenshot(page, testInfo, 'multiline-add-delete-undo');
     });
 
     test('백업은 적용 전 변경 미리보기를 스크롤하고 취소·적용할 수 있다', async ({ page }, testInfo) => {

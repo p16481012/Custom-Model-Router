@@ -254,25 +254,36 @@ function fixtureScript() {
                 renderUndo();
             });
 
-            document.getElementById('cmr_bulk_add_form').addEventListener('submit', event => {
+            document.getElementById('cmr_add_form').addEventListener('submit', event => {
                 event.preventDefault();
-                const textarea = document.getElementById('cmr_bulk_model_ids');
+                const textarea = document.getElementById('cmr_model_id');
                 const provider = providerSelect.value;
                 const existing = new Set(registeredModels.map(model => model.provider + '\u0000' + model.id));
                 const additions = [];
+                let duplicateCount = 0;
                 for (const rawLine of textarea.value.split(/\r?\n/)) {
                     const id = rawLine.trim();
                     const key = provider + '\u0000' + id;
-                    if (!id || existing.has(key)) continue;
+                    if (!id) continue;
+                    if (existing.has(key)) {
+                        duplicateCount += 1;
+                        continue;
+                    }
                     existing.add(key);
                     additions.push({ provider, id });
                 }
                 registeredModels.push(...additions);
                 pendingDeletion = null;
                 textarea.value = '';
-                document.getElementById('cmr_feedback').textContent = '모델 ' + additions.length + '개를 등록했습니다.';
+                const providerLabel = providers.find(item => item.id === provider)?.label ?? provider;
+                const duplicateSuffix = duplicateCount
+                    ? ' 중복 ' + duplicateCount + '개는 건너뛰었습니다.'
+                    : '';
+                document.getElementById('cmr_feedback').textContent = providerLabel
+                    + '에 모델 ' + additions.length + '개를 등록했습니다.' + duplicateSuffix;
                 renderModels();
                 renderUndo();
+                textarea.focus();
             });
 
             let externalScenario = {
@@ -573,7 +584,6 @@ function fixtureScript() {
                 openDetails = false,
                 openAdvanced = openDetails,
                 openPicker = false,
-                openBulk = false,
             } = {}) => {
                 configureModels(modelCount);
                 configureExternal({
@@ -593,7 +603,6 @@ function fixtureScript() {
                 }
                 document.getElementById('cmr_external_advanced').open = openAdvanced;
                 document.getElementById('cmr_external_picker').open = openPicker;
-                document.getElementById('cmr_bulk_add').open = openBulk;
             };
 
             document.getElementById('cmr_external_warning_open').addEventListener('click', () => {

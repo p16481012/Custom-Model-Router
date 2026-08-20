@@ -74,6 +74,7 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
     assert.match(entrypoint, /초기화 완료/);
     assert.match(checklist, new RegExp(`대상 버전: \\*\\*v${version.replaceAll('.', '\\.')}\\*\\*`));
     assert.match(roadmap, new RegExp(`현재 릴리스: \\*\\*v${version.replaceAll('.', '\\.')}\\*\\*`));
+    assert.match(apiDocument, new RegExp(`Custom Model Router v${version.replaceAll('.', '\\.')}`));
     assert.match(readme, /\.\/USER_CHECKLIST\.md/);
     assert.match(readme, /\.\/ROADMAP\.md/);
     assert.match(readme, /\.\/API\.md/);
@@ -93,6 +94,12 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
     assert.match(roadmap, /## v0\.6\.8 — 외부 target 식별 안정화와 진단 정합성/);
     assert.match(roadmap, /## v0\.6\.9 — 외부 연결 예외 중심 UI와 schema v2/);
     assert.match(roadmap, /## v0\.6\.10 — 대량 모델 관리·안전한 복구와 외부 UI 정리/);
+    assert.match(roadmap, /## v0\.6\.11 — 단일·여러 줄 모델 등록 UI 통합/);
+    assert.match(settingsHtml, /<textarea[\s\S]*?id="cmr_model_id"/);
+    assert.match(settingsHtml, /id="cmr_add_form"/);
+    assert.doesNotMatch(settingsHtml, /cmr_bulk_/);
+    assert.match(entrypoint, /#cmr_add_form'\)\?\.addEventListener\('submit', onAddModel\)/);
+    assert.doesNotMatch(entrypoint, /cmr_bulk_/);
     assert.match(entrypoint, /new context\.Popup/);
     assert.match(entrypoint, /#cmr_open_manager/);
     assert.doesNotMatch(entrypoint, /#extensions_settings2|#extensions_settings/);

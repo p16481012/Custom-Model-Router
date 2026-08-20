@@ -129,8 +129,7 @@
 }
 
 #cmr_settings .cmr-provider-field,
-#cmr_settings .cmr-add-form,
-#cmr_settings .cmr-bulk-add-form {
+#cmr_settings .cmr-add-form {
     display: grid;
     gap: 0.32rem;
 }
@@ -145,28 +144,14 @@
     inline-size: fit-content;
 }
 
-#cmr_settings .cmr-bulk-add-form {
-    margin-block-start: 0.5rem;
-}
-
-#cmr_settings .cmr-bulk-add-form textarea {
+#cmr_settings .cmr-add-form textarea {
     box-sizing: border-box;
-    min-block-size: 5.5rem;
+    min-block-size: 4.5rem;
     resize: vertical;
 }
 
-#cmr_settings .cmr-inline-actions {
-    display: flex;
-    justify-content: flex-end;
-}
-
-#cmr_settings .cmr-inline-actions > .menu_button {
-    min-block-size: 2rem;
-    padding-inline: 0.75rem;
-}
-
 #cmr_settings .cmr-provider-field select,
-#cmr_settings .cmr-input-row input {
+#cmr_settings .cmr-input-row textarea {
     box-sizing: border-box;
     min-width: 0;
 }
@@ -492,11 +477,13 @@
 }
 
 #cmr_settings .cmr-input-row {
+    align-items: flex-start;
     gap: 0.45rem;
 }
 
-#cmr_settings .cmr-input-row input {
+#cmr_settings .cmr-input-row textarea {
     flex: 1 1 auto;
+    margin: 0 !important;
 }
 
 #cmr_settings .cmr-input-row > .cmr-add-button.menu_button {
@@ -506,7 +493,24 @@
     inline-size: 1.9rem !important;
     min-block-size: 1.9rem !important;
     min-inline-size: 1.9rem !important;
+    overflow: hidden;
     padding: 0 !important;
+}
+
+#cmr_settings .cmr-input-row > .cmr-add-button.menu_button::before,
+#cmr_settings .cmr-input-row > .cmr-add-button.menu_button::after {
+    content: none !important;
+    display: none !important;
+}
+
+#cmr_settings .cmr-input-row > .cmr-add-button.menu_button > .fa-solid {
+    flex: 0 0 auto;
+    margin: 0 !important;
+}
+
+#cmr_settings .cmr-input-row > .cmr-add-button.menu_button > .fa-solid::after {
+    content: none !important;
+    display: none !important;
 }
 
 #cmr_settings .cmr-list-region {

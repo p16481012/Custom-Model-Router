@@ -371,7 +371,7 @@ class FakeDocument {
         addForm.id = 'cmr_add_form';
         const modelLabel = this.createElement('label');
         modelLabel.id = 'cmr_model_label';
-        const input = this.createElement('input');
+        const input = this.createElement('textarea');
         input.id = 'cmr_model_id';
         const addButton = this.createElement('button');
         addButton.type = 'submit';
@@ -385,14 +385,6 @@ class FakeDocument {
         const modelHelp = this.createElement('small');
         modelHelp.id = 'cmr_model_help';
         addForm.append(modelLabel, input, addButton, modelHelp);
-
-        const bulkAddForm = this.createElement('form');
-        bulkAddForm.id = 'cmr_bulk_add_form';
-        const bulkInput = this.createElement('textarea');
-        bulkInput.id = 'cmr_bulk_model_ids';
-        const bulkAddButton = this.createElement('button');
-        bulkAddButton.type = 'submit';
-        bulkAddForm.append(bulkInput, bulkAddButton);
 
         const feedback = this.createElement('div');
         feedback.id = 'cmr_feedback';
@@ -501,7 +493,6 @@ class FakeDocument {
             providerHelp,
             compatibility,
             addForm,
-            bulkAddForm,
             feedback,
             undoDelete,
             listTitle,
@@ -1093,7 +1084,7 @@ test('init은 24개 제공업체를 연결하고 API Connections Popup을 한 �
         assert.ok(harness.observers.some(observer => observer.target === harness.observerRoot));
         assert.ok(harness.observers.some(observer => observer.target === harness.documentRef.body));
         assert.equal(globalThis.CustomModelRouter.apiVersion, '1.1.0');
-        assert.equal(globalThis.CustomModelRouter.extensionVersion, '0.6.10');
+        assert.equal(globalThis.CustomModelRouter.extensionVersion, '0.6.11');
         assert.equal(globalThis.CustomModelRouter.routing.apiVersion, '1.0.0');
         assert.equal(globalThis.CustomModelRouter.getSnapshot().models.length, 1);
 
@@ -1455,15 +1446,25 @@ test('Vertex 모델 카드는 등록과 삭제만 제공하며 등록만으로 �
         await init();
         const panel = openPanel(harness);
         const input = panel.querySelector('#cmr_model_id');
+        const addForm = panel.querySelector('#cmr_add_form');
         const feedback = panel.querySelector('#cmr_feedback');
         const addedModelId = 'gemini-4-flash-preview';
         const currentModelBefore = vertexSelect.value;
         const configuredModelBefore = harness.context.chatCompletionSettings.vertexai_model;
         const selectedModelBefore = harness.context.extensionSettings.customModelRouter.selectedModels.vertexai;
 
+        assert.equal(input.tagName, 'TEXTAREA');
+        assert.equal(input.maxLength, 65_536);
+        assert.equal(panel.querySelector('#cmr_bulk_add_form'), null);
+        assert.equal(panel.querySelector('#cmr_bulk_model_ids'), null);
+        const submitButtons = addForm.querySelectorAll('button').filter(button => button.type === 'submit');
+        assert.equal(submitButtons.length, 1);
+        assert.equal(submitButtons[0].title, '모델 등록');
+        assert.equal(submitButtons[0].getAttribute('aria-label'), '입력한 모델 ID 등록');
+
         input.value = addedModelId;
         const submitEvent = new FakeEvent('submit');
-        panel.querySelector('#cmr_add_form').dispatchEvent(submitEvent);
+        addForm.dispatchEvent(submitEvent);
         assert.equal(submitEvent.defaultPrevented, true);
         assert.equal(input.value, '');
         assert.equal(input.getAttribute('aria-invalid'), 'false');
@@ -1621,15 +1622,19 @@ test('비활성 등록 모델도 런처·전체 목록·검색에 남고 주입 
     }
 });
 
-test('줄 단위 모델 등록은 오류 시 원자적으로 중단하고 중복·native 모델만 건너뛴다', async () => {
+test('통합 모델 등록 입력은 여러 줄 오류를 원자적으로 중단하고 중복·native 모델만 건너뛴다', async () => {
     const harness = createHarness();
     const restoreGlobals = installBrowserGlobals(harness);
     try {
         await init();
         const panel = openPanel(harness);
-        const form = panel.querySelector('#cmr_bulk_add_form');
-        const input = panel.querySelector('#cmr_bulk_model_ids');
+        const form = panel.querySelector('#cmr_add_form');
+        const input = panel.querySelector('#cmr_model_id');
         const saveCountBefore = harness.saveCallCount;
+
+        assert.equal(input.tagName, 'TEXTAREA');
+        assert.equal(panel.querySelector('#cmr_bulk_add_form'), null);
+        assert.equal(panel.querySelector('#cmr_bulk_model_ids'), null);
 
         input.value = 'gemini-bulk-valid\nbad/model\ngemini-bulk-never-applied';
         const invalidSubmit = new FakeEvent('submit');
@@ -1639,6 +1644,7 @@ test('줄 단위 모델 등록은 오류 시 원자적으로 중단하고 중복
         assert.equal(globalThis.CustomModelRouter.getModel('vertexai', 'gemini-bulk-valid'), null);
         assert.equal(globalThis.CustomModelRouter.getModel('vertexai', 'gemini-bulk-never-applied'), null);
         assert.equal(harness.saveCallCount, saveCountBefore);
+        assert.equal(input.value, 'gemini-bulk-valid\nbad/model\ngemini-bulk-never-applied');
         assert.match(panel.querySelector('#cmr_feedback').textContent, /아무 모델도 등록하지 않았습니다/);
 
         const nativeModelId = getProvider('vertexai').fallbackModelIds[0];
@@ -1654,6 +1660,7 @@ test('줄 단위 모델 등록은 오류 시 원자적으로 중단하고 중복
 
         assert.equal(input.getAttribute('aria-invalid'), 'false');
         assert.equal(input.value, '');
+        assert.equal(harness.documentRef.activeElement, input);
         assert.ok(globalThis.CustomModelRouter.getModel('vertexai', 'gemini-bulk-one'));
         assert.ok(globalThis.CustomModelRouter.getModel('vertexai', 'gemini-bulk-two'));
         assert.equal(harness.saveCallCount, saveCountBefore + 1);

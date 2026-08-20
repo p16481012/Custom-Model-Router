@@ -35,9 +35,15 @@
 
         button,
         input,
-        select {
+        select,
+        textarea {
             color: inherit;
             font: inherit;
+        }
+
+        /* Font Awesome 파일을 로드하지 않는 샌드박스에서도 production의 단일 아이콘 자리를 재현한다. */
+        .cmr-add-button > .fa-plus::before {
+            content: "+";
         }
 
         /* SillyTavern 전역 충돌 재현: 확장 스타일의 #cmr_settings 규칙이 이를 방어해야 한다. */
@@ -194,25 +200,27 @@
                         <form id="cmr_add_form" class="cmr-add-form">
                             <label for="cmr_model_id">Google Vertex AI 모델 ID</label>
                             <div class="cmr-input-row">
-                                <input id="cmr_model_id" class="text_pole" type="text" value="gemini-next-preview" aria-label="모델 ID 예시">
+                                <textarea
+                                    id="cmr_model_id"
+                                    class="text_pole flex1"
+                                    rows="3"
+                                    maxlength="65536"
+                                    placeholder="한 줄에 모델 ID 하나"
+                                    aria-label="모델 ID 예시"
+                                >gemini-next-preview
+gemini-next-flash</textarea>
                                 <button
                                     class="menu_button cmr-add-button cmr-icon-button"
-                                    type="button"
+                                    type="submit"
                                     title="모델 등록"
                                     aria-label="입력한 모델 ID 등록"
-                                ><i aria-hidden="true">＋</i></button>
+                                ><i class="fa-solid fa-plus" aria-hidden="true"></i></button>
                             </div>
-                            <small>Google 모델 경로 한 구간만 입력합니다.</small>
+                            <small>
+                                <span class="cmr-sentence">모델 ID 하나를 입력하거나 여러 개면 한 줄에 하나씩 최대 200개를 입력합니다.</span>
+                                <span class="cmr-sentence">빈 줄·중복·SillyTavern 기본 모델은 건너뜁니다.</span>
+                            </small>
                         </form>
-
-                        <details id="cmr_bulk_add" class="cmr-inline-disclosure">
-                            <summary>여러 모델 ID 한꺼번에 등록</summary>
-                            <form id="cmr_bulk_add_form" class="cmr-bulk-add-form">
-                                <label for="cmr_bulk_model_ids">모델 ID 목록</label>
-                                <textarea id="cmr_bulk_model_ids" class="text_pole wide100p" rows="4" placeholder="한 줄에 모델 ID 하나"></textarea>
-                                <div class="cmr-inline-actions"><button type="button" class="menu_button">모두 등록</button></div>
-                            </form>
-                        </details>
 
                         <div class="cmr-feedback-row">
                             <div id="cmr_feedback" class="cmr-feedback" role="status" aria-live="polite"></div>
@@ -442,6 +450,10 @@
             }
 
             globalThis.getMetrics = getMetrics;
+
+            document.getElementById('cmr_add_form').addEventListener('submit', event => {
+                event.preventDefault();
+            });
 
             for (const button of document.querySelectorAll('[data-sandbox-width]')) {
                 button.addEventListener('click', () => setWidth(Number(button.dataset.sandboxWidth)));

@@ -25,18 +25,18 @@
     <form id="cmr_add_form" class="cmr-add-form">
         <label id="cmr_model_label" for="cmr_model_id">모델 ID</label>
         <div class="cmr-input-row">
-            <input
+            <textarea
                 id="cmr_model_id"
                 class="text_pole flex1"
-                type="text"
-                maxlength="256"
+                rows="3"
+                maxlength="65536"
                 autocomplete="off"
                 autocapitalize="none"
                 spellcheck="false"
-                placeholder="모델 ID"
+                placeholder="한 줄에 모델 ID 하나"
                 aria-describedby="cmr_provider_help cmr_model_help cmr_feedback"
                 required
-            >
+            ></textarea>
             <button
                 class="menu_button cmr-add-button cmr-icon-button"
                 type="submit"
@@ -46,35 +46,11 @@
                 <i class="fa-solid fa-plus" aria-hidden="true"></i>
             </button>
         </div>
-        <small id="cmr_model_help">제공업체를 선택하면 해당 모델 ID 규칙이 표시됩니다.</small>
+        <small id="cmr_model_help">
+            <span class="cmr-sentence">모델 ID 하나를 입력하거나 여러 개면 한 줄에 하나씩 최대 200개를 입력합니다.</span>
+            <span class="cmr-sentence">빈 줄·중복·SillyTavern 기본 모델은 건너뛰며, 잘못된 행이 하나라도 있으면 아무 모델도 등록하지 않습니다.</span>
+        </small>
     </form>
-
-    <details id="cmr_bulk_add" class="cmr-inline-disclosure">
-        <summary>여러 모델 ID 한꺼번에 등록</summary>
-        <form id="cmr_bulk_add_form" class="cmr-bulk-add-form">
-            <label for="cmr_bulk_model_ids">모델 ID 목록</label>
-            <textarea
-                id="cmr_bulk_model_ids"
-                class="text_pole wide100p"
-                rows="4"
-                maxlength="65536"
-                autocomplete="off"
-                autocapitalize="none"
-                spellcheck="false"
-                placeholder="한 줄에 모델 ID 하나"
-                aria-describedby="cmr_bulk_model_help cmr_feedback"
-                required
-            ></textarea>
-            <div class="cmr-inline-actions">
-                <button type="submit" class="menu_button">모두 등록</button>
-            </div>
-            <small id="cmr_bulk_model_help">
-                <span class="cmr-sentence">현재 선택한 제공업체에 한 번에 최대 200개를 등록합니다.</span>
-                <span class="cmr-sentence">잘못된 행이 하나라도 있으면 아무 모델도 등록하지 않습니다.</span>
-                <span class="cmr-sentence">입력 안의 중복과 이미 등록된 모델은 건너뜁니다.</span>
-            </small>
-        </form>
-    </details>
 
     <div class="cmr-feedback-row">
         <div id="cmr_feedback" class="cmr-feedback" role="status" aria-live="polite" aria-atomic="true"></div>
