@@ -739,6 +739,83 @@ test.describe('모델 등록·복구 흐름', () => {
     });
 });
 
+test.describe('외부 bridge provider 선택기 경계', () => {
+    test.use({ viewport: { width: 720, height: 900 } });
+
+    test('provider select는 보존하고 연결된 model select만 provider 전환에 맞춰 동기화한다', async ({ page }) => {
+        const nativeProviderValues = ['openai', 'anthropic', 'google', 'vertexai', 'custom'];
+        const readSnapshot = () => page.evaluate(() => globalThis.cmrSandboxSnapshot ?? null);
+        const setProvider = value => page.evaluate(
+            nextValue => globalThis.cmrSandbox.setCaptionProvider(nextValue),
+            value,
+        );
+        const expectProviderPreserved = (snapshot, value) => {
+            expect(snapshot.captionProviderTargeted).toBe(false);
+            expect(snapshot.captionProviderManagedCount).toBe(0);
+            expect(snapshot.captionProviderValue).toBe(value);
+            expect(snapshot.captionProviderValues).toEqual(nativeProviderValues);
+        };
+
+        await page.goto(fixtureServer.browserSandboxUrl, { waitUntil: 'networkidle' });
+        await expect.poll(() => readSnapshot()).not.toBeNull();
+
+        const initial = await readSnapshot();
+        expectProviderPreserved(initial, 'openai');
+        expect(initial.captionModelTargeted).toBe(true);
+        expect(initial.captionModelManagedCount).toBeGreaterThan(0);
+        expect(initial.captionModelSource).toBe('direct');
+        expect(initial.captionModelRisk).toBeNull();
+        const managedModelCount = initial.captionModelManagedCount;
+
+        const cleaned = await page.evaluate(
+            () => globalThis.cmrSandbox.cleanupStaleCaptionProviderModel(),
+        );
+        expectProviderPreserved(cleaned, 'vertexai');
+        expect(cleaned.captionModelTargeted).toBe(true);
+        expect(cleaned.captionModelManagedCount).toBe(managedModelCount);
+        expect(cleaned.captionModelSource).toBe('direct');
+        expect(cleaned.captionModelRisk).toBeNull();
+
+        const cleanOpenai = await setProvider('openai');
+        expectProviderPreserved(cleanOpenai, 'openai');
+        expect(cleanOpenai.captionModelManagedCount).toBe(managedModelCount);
+
+        const anthropic = await setProvider('anthropic');
+        expectProviderPreserved(anthropic, 'anthropic');
+        expect(anthropic.captionModelTargeted).toBe(true);
+        expect(anthropic.captionModelManagedCount).toBe(managedModelCount);
+        expect(anthropic.captionModelSource).toBe('direct');
+        expect(anthropic.captionModelRisk).toBeNull();
+
+        const custom = await setProvider('custom');
+        expectProviderPreserved(custom, 'custom');
+        expect(custom.captionModelTargeted).toBe(true);
+        expect(custom.captionModelManagedCount).toBe(0);
+        expect(custom.captionModelSource).toBe('risk-blocked');
+        expect(custom.captionModelRisk).toBe('caption-special-provider');
+
+        const restored = await setProvider('openai');
+        expectProviderPreserved(restored, 'openai');
+        expect(restored.captionModelTargeted).toBe(true);
+        expect(restored.captionModelManagedCount).toBe(managedModelCount);
+        expect(restored.captionModelSource).toBe('direct');
+        expect(restored.captionModelRisk).toBeNull();
+
+        const unsupported = await page.locator('#caption_model_provider').evaluate((provider, modelId) => {
+            provider.value = modelId;
+            return {
+                hasModelOption: [...provider.options].some(option => option.value === modelId),
+                value: provider.value,
+            };
+        }, 'gpt-5.9-preview');
+        expect(unsupported).toEqual({ hasModelOption: false, value: '' });
+
+        const finalSnapshot = await setProvider('openai');
+        expectProviderPreserved(finalSnapshot, 'openai');
+        expect(finalSnapshot.captionModelManagedCount).toBe(managedModelCount);
+    });
+});
+
 test.describe('Popup 닫기 계약', () => {
     test.use({ viewport: { width: 420, height: 800 } });
 

@@ -2,9 +2,9 @@
 
 마지막 업데이트: **2026-08-20**
 
-현재 릴리스: **v0.6.12**
+현재 릴리스: **v0.6.13**
 
-현재 단계: **v0.6.12의 숫자 배지 없는 런처와 정보 popover 중심 UI 문구 정리를 구현하고 자동 검사를 마친 뒤 실제 사용자 환경 검증 대기 중**
+현재 단계: **v0.6.13의 외부 provider/source 선택기 오탐 차단과 native 상태 보존을 구현하고 자동 검사를 마친 뒤 실제 사용자 환경 검증 대기 중**
 
 ## 상태 범례
 
@@ -27,12 +27,12 @@
 | 공개 Registry API | ✅ 완료 | API `1.1.0`, 불변 스냅샷·mutation·이벤트·수명주기, 현재 custom-only 모델 삭제 보호 |
 | 용도별 라우팅 | ✅ 완료 | 일반 UI 없이 Routing API `1.0.0`, Connection Profile 어댑터, route·backup 보존 |
 | 호환성 진단 | ✅ 완료 | ST·context·provider·런타임 진단, 복구 상세와 target별 native 중복 제외 후보 512개·전체 예상/실제 option 합계 2,048개 주의 |
-| 범용 외부 확장 브리지 | ✅ 완료 | 표준 select/input/datalist 탐지, 안전 대상 자동 주입, 실패·사용자 제외 기본 목록, 정상 대상 명시적 제외 선택기, 위험 대상 진단 집계 |
+| 범용 외부 확장 브리지 | ✅ 완료 | 표준 select/input/datalist 모델 target 탐지, provider/source 선택기 비대상 판별·metadata 감시, 안전 대상 자동 주입, 실패·사용자 제외 기본 목록, 정상 대상 명시적 제외 선택기, 위험 대상 진단 집계 |
 | 설정 백업·복구 | ✅ 완료 | Registry·route·외부 선택·사용자 제외 portable schema v2, 적용 전 추가·충돌·삭제 미리보기, legacy 이관·미래 schema 거부 |
 | 안정성 계측 | ✅ 완료 | source·profile 전환 표본의 core 자원과 외부 observer 제한 판정; 외부 target·binding·listener는 현재 진단 스냅샷에서 교차 확인 |
-| 자동 검사 | ✅ 완료 | 단위·통합·수명주기·보안 경계·버전 일치 검사 208개 통과 |
-| DOM·공개 API 샌드박스 | ✅ 완료 | 기본 24개·native 선택·외부 모델 컨트롤·개발자 route API와 정리 수명주기 확인 |
-| Chromium UI 회귀 검사 | ✅ 완료 | 실제 `settings.html`과 SillyTavern 1.18.0 고정 CSS를 결합한 Playwright Chromium UI 회귀 검사 10개 통과 |
+| 자동 검사 | ✅ 완료 | 단위·통합·수명주기·보안 경계·버전 일치 검사 209개 통과 |
+| DOM·공개 API 샌드박스 | ✅ 완료 | 기본 24개·native 선택·외부 모델 컨트롤, provider/source 선택기 보존·개발자 route API와 정리 수명주기 확인 |
+| Chromium UI 회귀 검사 | ✅ 완료 | 실제 `settings.html`과 SillyTavern 1.18.0 고정 CSS 및 브라우저 브리지 계약을 확인하는 Playwright Chromium UI 회귀 검사 11개 통과 |
 | 사용자 실제 계정 검증 | 🧪 대기 | [통합 체크리스트](./USER_CHECKLIST.md)를 사용하는 연결에서 한 번 수행 |
 
 ## 지원 기준
@@ -49,7 +49,7 @@
 
 | 외부 확장·기능 | 자동 검증 상태 | 사용자 검증 게이트 |
 |---|---|---|
-| Caption | ✅ provider/model DOM option, `data-type` provider metadata, 선택 이벤트·재렌더 계약 자동 검증 | 🧪 실제 `/caption-image` payload의 `model`, 계정 권한과 모델 멀티모달 호환 확인 대기 |
+| Caption | ✅ provider/source 선택기 비대상 판별·native 상태 보존, model DOM option, `data-type` metadata, 선택 이벤트·재렌더 계약 자동 검증 | 🧪 실제 `/caption-image` payload의 `model`, 계정 권한과 모델 멀티모달 호환 확인 대기 |
 | Vectors | ✅ embedding·벡터화 모델 컨트롤을 비채팅 위험 대상으로 안전 제외하고 진단에만 집계 | 해당 안전 제외는 Chat Completion 또는 Vectors API 호환 인증이 아님 |
 | Stable Diffusion | ✅ 이미지 생성 모델 컨트롤을 위험 대상으로 안전 제외하고 진단에만 집계 | 해당 안전 제외는 Chat Completion 또는 이미지 생성 API 호환 인증이 아님 |
 
@@ -515,6 +515,31 @@ Connection Profile 도구행의 관리 아이콘 옆 숫자 배지는 기능을 
 - [ ] 도움말을 열지 않아도 등록 단위·200개 한도·전체 취소, 비밀정보 제외와 실제 요청 확인 안내를 볼 수 있음
 - [ ] 오류·주의·백업 충돌·복구 상세 같은 동적 상태가 popover 안으로 숨지 않음
 
+## v0.6.13 — 외부 provider/source 선택기 오탐 차단
+
+상태: **✅ 구현·자동 검사 완료, 🧪 사용자 환경 검증 대기**
+
+### 수정 배경
+
+외부 확장의 provider/source 선택기 이름에 `model`이 포함되면 이를 실제 모델 control로 오인해 등록 모델 option을 주입할 수 있었습니다. 이 경우 사용자가 모델 ID를 provider 값처럼 선택하게 되어 외부 확장의 native provider 계약을 깨뜨릴 수 있었습니다.
+
+### 반영 결과
+
+- [x] 외부 provider/source 선택기는 이름에 `model`이 포함되어도 모델 target으로 분류하지 않음
+- [x] provider/source 선택기에 CMR option과 모델 선택 listener를 추가하지 않고 native option·현재 값·기존 이벤트를 보존
+- [x] 실제 모델 control에서는 연결된 provider/source 선택기를 provider metadata와 change/input 재동기화 감시에만 사용
+- [x] 같은 외부 확장 경계에 provider 후보가 여러 개면 첫 후보를 임의로 연결하지 않음
+- [x] provider/source 선택기를 진단 `targetCount`와 외부 모델 후보 partition에 포함하지 않음
+- [x] Node 자동 검사 209개와 Playwright Chromium UI 회귀 검사 11개로 provider 선택기 비오염과 실제 model control 주입을 검증
+
+### 사용자 검증 초점
+
+- [ ] `Model Provider`처럼 이름에 `model`이 있는 provider/source 선택기에도 native provider option만 보임
+- [ ] provider/source 선택의 현재 값이 CMR 활성화·재탐지 전후에 바뀌지 않음
+- [ ] 실제 model control에는 등록 모델이 표시되고 provider 전환 뒤 metadata·필터가 정상 갱신됨
+- [ ] provider 후보가 여러 개여도 임의 후보의 값이나 option이 변경되지 않음
+- [ ] 진단의 외부 `targetCount`가 provider/source 선택기를 모델 target으로 세지 않음
+
 ## 실제 사용자 검증 게이트
 
 다음 조건은 자동 검사만으로 완료 처리하지 않습니다.
@@ -536,8 +561,9 @@ Connection Profile 도구행의 관리 아이콘 옆 숫자 배지는 기능을 
 15. target별 native 중복 제외 후보 512개·전체 예상 또는 실제 CMR option 합계 2,048개 경고가 각각의 대량 조건에서 정확히 나타나며 native 선택지는 유지됩니다.
 16. 관리 런처에는 보이는 숫자 배지가 없고 스크린 리더용 등록 개수는 유지되며, 정보 아이콘 5곳은 키보드·터치·Escape로 조작할 수 있습니다.
 17. GitHub Actions의 UI 회귀 검사 증거와 실제 설치 화면을 비교해 SillyTavern 런타임에서만 생기는 차이가 없는지 확인합니다.
+18. 외부 provider/source 선택기는 이름에 `model`이 포함되어도 모델 target으로 세지 않고 native option·현재 값을 유지하며, 실제 model control의 metadata·변경 감시에만 사용합니다.
 
-실제 검증에서 발견되는 v0.6 범위의 후속 결함은 `v0.6.13`, `v0.6.14`, ... 패치 버전으로 수정합니다.
+실제 검증에서 발견되는 v0.6 범위의 후속 결함은 `v0.6.14`, `v0.6.15`, ... 패치 버전으로 수정합니다.
 
 ## 업데이트 규칙
 
@@ -570,4 +596,5 @@ Connection Profile 도구행의 관리 아이콘 옆 숫자 배지는 기능을 
 | v0.6.9 | ✅ 완료·🧪 사용자 검증 대기 | 정상 외부 목록 숨김, 조건부 문제 카드, 고급 제외·복구, 외부 설정 schema v2와 아이콘 전용 추가 버튼 |
 | v0.6.10 | ✅ 완료·🧪 사용자 검증 대기 | 대량 모델 관리, 삭제 실행 취소, 백업 미리보기·복구 상세, 예외 중심 외부 관리와 DOM option 경고 |
 | v0.6.11 | ✅ 완료·🧪 사용자 검증 대기 | 단일·여러 줄 모델 등록을 공용 textarea와 아이콘 버튼 하나로 통합 |
-| v0.6.12 | ✅ 현재 릴리스·🧪 사용자 검증 대기 | 런처 숫자 배지 제거, 핵심 한 줄 안내와 native popover 정보 아이콘 5곳, 지원·개인정보 문구 축약 |
+| v0.6.12 | ✅ 완료·🧪 사용자 검증 대기 | 런처 숫자 배지 제거, 핵심 한 줄 안내와 native popover 정보 아이콘 5곳, 지원·개인정보 문구 축약 |
+| v0.6.13 | ✅ 현재 릴리스·🧪 사용자 검증 대기 | 외부 provider/source 선택기 오탐 차단, native option·값 보존, 모호한 provider 후보 임의 연결 방지 |

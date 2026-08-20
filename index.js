@@ -70,7 +70,7 @@ import {
     shouldShowModelSearch,
 } from './src/model-management.js';
 
-const EXTENSION_VERSION = '0.6.12';
+const EXTENSION_VERSION = '0.6.13';
 const SETTINGS_KEY = 'customModelRouter';
 const ROUTES_SETTINGS_KEY = 'customModelRouterRouting';
 const EXTERNAL_SETTINGS_KEY = 'customModelRouterExternalIntegrations';
@@ -1484,9 +1484,30 @@ function onExternalSelectionChanged({ targetId, providerId, providerIds = [], mo
 }
 
 function onExternalSelectionInvalidated({ targetId, providerId, modelId, reason }) {
+    if (!context || !externalSettings) {
+        return;
+    }
+    // 과거 버전이 provider 선택기를 model target으로 오인해 저장한 선택은
+    // 실제 모델 선호가 아니므로 option 정리와 함께 target 전체 기록을 폐기한다.
+    if (reason === 'provider-control') {
+        const next = setExternalTargetExcluded(
+            removeExternalTargetSelections(externalSettings, targetId),
+            targetId,
+            false,
+        );
+        if (JSON.stringify(next) === JSON.stringify(externalSettings)) {
+            return;
+        }
+        externalSettings = next;
+        context.extensionSettings[EXTERNAL_SETTINGS_KEY] = externalSettings;
+        acceptedExternalSnapshot = normalizeAutomaticExternalSettings(externalSettings);
+        context.saveSettingsDebounced();
+        renderExternalIntegrations();
+        return;
+    }
     // 일시적인 외부 컨트롤 정리에는 마지막 선택을 보존한다.
     // Registry에서 실제 모델이 사라진 경우에만 더는 복원할 수 없는 provider 선택을 정리한다.
-    if (!context || !externalSettings || reason !== 'models-updated' || !providerId
+    if (reason !== 'models-updated' || !providerId
         || hasEnabledModel(settings, providerId, modelId)) {
         return;
     }

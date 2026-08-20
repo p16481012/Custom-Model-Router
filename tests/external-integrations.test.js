@@ -344,6 +344,124 @@ test('명시 속성·연결 provider select·식별자와 option data-type에서
     assert.equal(inferExternalProvider(glm).providerId, 'zai');
 });
 
+test('외부 확장의 provider 선택기는 모델 이름이 있어도 주입하지 않고 연결된 모델 칸만 관리한다', () => {
+    const documentRef = new FakeDocument();
+    const panel = documentRef.createElement('section');
+    panel.id = 'summary_extension_settings';
+
+    const providerLabel = documentRef.createElement('label');
+    providerLabel.setAttribute('for', 'summary_model_provider');
+    providerLabel.textContent = 'Model provider';
+    const provider = documentRef.createElement('select');
+    provider.id = 'summary_model_provider';
+    provider.name = 'model_provider';
+    provider.append(
+        option(documentRef, 'openai'),
+        option(documentRef, 'anthropic'),
+        option(documentRef, 'cohere'),
+        option(documentRef, 'vertexai'),
+        option(documentRef, 'openrouter'),
+        option(documentRef, 'deepseek'),
+    );
+    provider.value = 'openai';
+
+    const modelLabel = documentRef.createElement('label');
+    modelLabel.setAttribute('for', 'summary_model');
+    modelLabel.textContent = 'API model';
+    const model = documentRef.createElement('select');
+    model.id = 'summary_model';
+    model.setAttribute('data-provider-select', provider.id);
+    model.append(option(documentRef, 'gpt-4o-mini', { 'data-type': 'openai' }));
+    model.value = 'gpt-4o-mini';
+    panel.append(providerLabel, provider, modelLabel, model);
+
+    const optionDrivenLabel = documentRef.createElement('label');
+    optionDrivenLabel.setAttribute('for', 'generic_api_model');
+    optionDrivenLabel.textContent = 'API model';
+    const optionDrivenProvider = documentRef.createElement('select');
+    optionDrivenProvider.id = 'generic_api_model';
+    optionDrivenProvider.append(
+        option(documentRef, 'openai'),
+        option(documentRef, 'anthropic'),
+        option(documentRef, 'openrouter'),
+    );
+    panel.append(optionDrivenLabel, optionDrivenProvider);
+    documentRef.append(panel);
+
+    const genuineProviderModel = documentRef.createElement('select');
+    genuineProviderModel.id = 'provider_model';
+    genuineProviderModel.setAttribute('aria-label', 'Chat provider model');
+    genuineProviderModel.append(
+        option(documentRef, 'gpt-4o-mini'),
+        option(documentRef, 'claude-sonnet-4'),
+    );
+
+    assert.equal(isExternalModelControl(provider, { root: documentRef, documentRef }), false);
+    assert.equal(isExternalModelControl(optionDrivenProvider, { root: documentRef, documentRef }), false);
+    assert.equal(isExternalModelControl(model, { root: documentRef, documentRef }), true);
+    assert.equal(isExternalModelControl(genuineProviderModel, { root: documentRef, documentRef }), true);
+    assert.deepEqual(
+        discoverExternalModelTargets(documentRef, { documentRef }).map(target => target.control),
+        [model],
+    );
+
+    const providerValues = provider.options.map(item => item.value);
+    const staleGroup = documentRef.createElement('optgroup');
+    staleGroup.dataset.cmrExternalGroup = 'true';
+    staleGroup.dataset.cmrProvider = 'vertexai';
+    const staleOption = option(documentRef, 'gemini-3.7-flash');
+    staleOption.dataset.cmrExternalModel = 'true';
+    staleOption.dataset.cmrProvider = 'vertexai';
+    staleOption.selected = true;
+    staleGroup.append(staleOption);
+    provider.append(staleGroup);
+    provider.value = staleOption.value;
+    let providerChangeCount = 0;
+    const invalidatedSelections = [];
+    provider.addEventListener('change', () => {
+        providerChangeCount += 1;
+    });
+    const providerTargetId = createExternalTargetId(provider, { documentRef });
+    const controller = createExternalIntegrationController({
+        root: documentRef,
+        documentRef,
+        excludedTargetIds: [providerTargetId],
+        getModels: providerId => ({
+            openai: [{ provider: 'openai', id: 'gpt-5-mini' }],
+            vertexai: [{ provider: 'vertexai', id: 'gemini-3.7-flash' }],
+        })[providerId] ?? [],
+        getPreferredModels: targetId => targetId === providerTargetId
+            ? { vertexai: 'gemini-3.7-flash' }
+            : {},
+        onSelectionInvalidated: selection => invalidatedSelections.push(selection),
+        observerFactory: () => ({ observe() {}, disconnect() {} }),
+    });
+    try {
+        const [target] = controller.start();
+        assert.equal(target.control, model);
+        assert.equal(target.providerControl, provider);
+        assert.equal(provider.value, 'vertexai');
+        assert.equal(providerChangeCount, 1);
+        assert.deepEqual(controller.getExcludedTargetIds(), []);
+        assert.deepEqual(invalidatedSelections, [{
+            targetId: providerTargetId,
+            providerId: 'vertexai',
+            modelId: 'gemini-3.7-flash',
+            reason: 'provider-control',
+        }]);
+        assert.deepEqual(provider.options.map(item => item.value), providerValues);
+        assert.equal(provider.children.some(child => child.tagName === 'OPTGROUP'), false);
+        assert.deepEqual(
+            model.children.filter(child => child.tagName === 'OPTGROUP')
+                .map(group => group.dataset.cmrProvider),
+            ['openai', 'vertexai'],
+        );
+    } finally {
+        controller.destroy();
+    }
+    assert.deepEqual(provider.options.map(item => item.value), providerValues);
+});
+
 test('암시적 provider 탐색은 가장 가까운 확장 패널을 벗어나 이웃 control을 사용하지 않는다', () => {
     const documentRef = new FakeDocument();
     const commonRoot = documentRef.createElement('main');
@@ -370,6 +488,18 @@ test('암시적 provider 탐색은 가장 가까운 확장 패널을 벗어나 �
 
     assert.equal(inferExternalProvider(captionModel).providerId, 'openai');
     assert.equal(inferExternalProvider(unrelatedModel).providerId, null);
+
+    const secondProvider = documentRef.createElement('select');
+    secondProvider.id = 'caption_model_source';
+    secondProvider.setAttribute('aria-label', 'Model source');
+    secondProvider.append(option(documentRef, 'anthropic'));
+    secondProvider.value = 'anthropic';
+    captionPanel.prepend(secondProvider);
+    const ambiguousProviderTarget = discoverExternalModelTargets(documentRef, { documentRef })
+        .find(target => target.control === captionModel);
+    assert.equal(ambiguousProviderTarget.providerControl, null);
+    assert.equal(inferExternalProvider(captionModel).providerId, null);
+    assert.equal(isExternalModelControl(secondProvider, { root: documentRef, documentRef }), false);
 });
 
 test('provider 전환 직후에는 과거 selected model의 data-type보다 현재 provider control을 우선한다', () => {

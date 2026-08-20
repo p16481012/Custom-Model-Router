@@ -22,11 +22,13 @@
     <main id="external_extensions">
         <section id="caption_container" data-extension-name="caption">
             <h2>Caption 형태</h2>
-            <label for="caption_multimodal_api">Caption API provider</label>
-            <select id="caption_multimodal_api">
+            <label for="caption_model_provider">Caption model provider</label>
+            <select id="caption_model_provider" name="model_provider" aria-label="Caption model provider">
                 <option value="openai" selected>OpenAI</option>
                 <option value="anthropic">Anthropic</option>
                 <option value="google">Google</option>
+                <option value="vertexai">Vertex AI</option>
+                <option value="custom">Custom</option>
             </select>
             <label for="caption_multimodal_model">Caption multimodal model</label>
             <select id="caption_multimodal_model">
@@ -87,7 +89,7 @@
     <script type="module">
         import {
             createExternalIntegrationController,
-        } from '../src/external-integrations.js?browser-sandbox=0.6.12';
+        } from '../src/external-integrations.js?browser-sandbox=0.6.13';
 
         const models = {
             openai: [{ provider: 'openai', id: 'gpt-5.9-preview', enabled: true }],
@@ -114,7 +116,10 @@
         const collect = () => {
             const captionOptions = [...document.querySelectorAll('#caption_multimodal_model [data-cmr-external-model="true"]')];
             const captionControl = document.querySelector('#caption_multimodal_model');
+            const captionProvider = document.querySelector('#caption_model_provider');
             const input = document.querySelector('#vendor_model_id');
+            const captionTarget = controller.getTargets().find(item => item.control === captionControl);
+            const providerTarget = controller.getTargets().find(item => item.control === captionProvider);
             const unknownTarget = controller.getTargets().find(item => item.control.id === 'helper_model');
             const metrics = controller.getMetrics();
             const snapshot = {
@@ -126,7 +131,17 @@
                     type: option.dataset.type,
                     provider: option.dataset.cmrProvider,
                 })),
+                captionModelTargeted: Boolean(captionTarget),
+                captionModelManagedCount: captionOptions.length,
+                captionModelSource: captionTarget?.resolution?.source ?? null,
+                captionModelRisk: captionTarget?.risk?.excludedReason ?? null,
                 captionControlValue: captionControl?.value ?? null,
+                captionProviderTargeted: Boolean(providerTarget),
+                captionProviderManagedCount: captionProvider?.querySelectorAll(
+                    '[data-cmr-external-model="true"], [data-cmr-external-group="true"]',
+                ).length ?? 0,
+                captionProviderValue: captionProvider?.value ?? null,
+                captionProviderValues: [...(captionProvider?.options ?? [])].map(option => option.value),
                 inputList: input?.getAttribute('list') ?? null,
                 inputOptions: [...document.querySelectorAll('datalist [data-cmr-external-model="true"]')]
                     .map(option => option.value),
@@ -181,16 +196,45 @@
         attachCaptionExternalListener(document.querySelector('#caption_multimodal_model'));
         controller.start();
 
+        const waitForBridgeSync = () => new Promise(resolve => {
+            requestAnimationFrame(() => requestAnimationFrame(resolve));
+        });
+
         window.cmrSandbox = {
             controller,
             collect,
             changes,
             models,
             selectedModels,
-            switchCaptionProvider() {
-                const provider = document.querySelector('#caption_multimodal_api');
-                provider.value = provider.value === 'openai' ? 'anthropic' : 'openai';
+            async setCaptionProvider(value) {
+                const provider = document.querySelector('#caption_model_provider');
+                provider.value = value;
                 provider.dispatchEvent(new Event('change', { bubbles: true }));
+                await waitForBridgeSync();
+                return collect();
+            },
+            async switchCaptionProvider() {
+                const provider = document.querySelector('#caption_model_provider');
+                const value = provider.value === 'openai' ? 'anthropic' : 'openai';
+                return this.setCaptionProvider(value);
+            },
+            async cleanupStaleCaptionProviderModel() {
+                const provider = document.querySelector('#caption_model_provider');
+                const staleGroup = document.createElement('optgroup');
+                staleGroup.label = '구버전 사용자 모델';
+                staleGroup.dataset.cmrExternalGroup = 'true';
+                staleGroup.dataset.cmrProvider = 'vertexai';
+                const staleOption = document.createElement('option');
+                staleOption.value = 'gemini-stale';
+                staleOption.textContent = 'gemini-stale';
+                staleOption.dataset.cmrExternalModel = 'true';
+                staleOption.dataset.cmrProvider = 'vertexai';
+                staleOption.selected = true;
+                staleGroup.append(staleOption);
+                provider.append(staleGroup);
+                provider.value = staleOption.value;
+                controller.rescan();
+                await waitForBridgeSync();
                 return collect();
             },
             recreateCaptionModel() {
@@ -211,7 +255,9 @@
                 return collect();
             },
         };
-        document.querySelector('#switch_caption_provider').addEventListener('click', () => window.cmrSandbox.switchCaptionProvider());
+        document.querySelector('#switch_caption_provider').addEventListener('click', () => {
+            void window.cmrSandbox.switchCaptionProvider();
+        });
         document.querySelector('#recreate_caption').addEventListener('click', () => window.cmrSandbox.recreateCaptionModel());
         document.querySelector('#stop_bridge').addEventListener('click', () => window.cmrSandbox.stop());
         document.querySelector('#start_bridge').addEventListener('click', () => window.cmrSandbox.start());

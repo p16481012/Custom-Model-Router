@@ -1,8 +1,8 @@
 # 공개 Registry API
 
-Custom Model Router v0.6.12는 다른 SillyTavern 확장이 내부 파일 경로에 의존하지 않고 등록 모델과 용도별 라우팅을 사용할 수 있도록 `globalThis.CustomModelRouter`를 제공합니다. Registry API 계약 버전은 `1.1.0`, Routing API 계약 버전은 `1.0.0`이며 v0.5.0과 동일합니다.
+Custom Model Router v0.6.13은 다른 SillyTavern 확장이 내부 파일 경로에 의존하지 않고 등록 모델과 용도별 라우팅을 사용할 수 있도록 `globalThis.CustomModelRouter`를 제공합니다. Registry API 계약 버전은 `1.1.0`, Routing API 계약 버전은 `1.0.0`이며 v0.5.0과 동일합니다.
 
-v0.6.0의 범용 DOM 모델 브리지, 호환성 진단과 설정 백업·복구, v0.6.7의 Playwright UI 회귀 검사 인프라는 이 전역 API 계약에 포함되지 않습니다. v0.6.10의 조건부 모델 검색·일괄 등록·삭제 실행 취소·백업 미리보기와 예외 중심 외부 관리 UI, v0.6.11의 단일·여러 줄 공용 모델 등록 UI, v0.6.12의 런처 숫자 배지 제거와 정보 popover 중심 문구 정리도 공개 Registry/Routing API 버전을 바꾸지 않습니다. 대상별 제외·복구와 UI 주입 상태는 진단 섹션의 고급 외부 연결 관리에 있고, 실제 요청 반영은 별도로 확인해야 합니다. 외부 저장 schema v2 역시 공개 API 호출 계약과 별개입니다. Routing API는 개발자 또는 연동 확장이 명시적으로 사용하는 opt-in 계약이며 일반 라우팅 UI는 없습니다. 용도별 경로에는 Connection Profile ID만 저장되고 프로필 본문·API 키·endpoint는 복제되지 않습니다.
+v0.6.0의 범용 DOM 모델 브리지, 호환성 진단과 설정 백업·복구, v0.6.7의 Playwright UI 회귀 검사 인프라는 이 전역 API 계약에 포함되지 않습니다. v0.6.10의 조건부 모델 검색·일괄 등록·삭제 실행 취소·백업 미리보기와 예외 중심 외부 관리 UI, v0.6.11의 단일·여러 줄 공용 모델 등록 UI, v0.6.12의 런처 숫자 배지 제거와 정보 popover 중심 문구 정리, v0.6.13의 외부 provider/source 선택기 오탐 차단도 공개 Registry/Routing API 버전을 바꾸지 않습니다. 대상별 제외·복구와 UI 주입 상태는 진단 섹션의 고급 외부 연결 관리에 있고, 실제 요청 반영은 별도로 확인해야 합니다. 외부 저장 schema v2 역시 공개 API 호출 계약과 별개입니다. Routing API는 개발자 또는 연동 확장이 명시적으로 사용하는 opt-in 계약이며 일반 라우팅 UI는 없습니다. 용도별 경로에는 Connection Profile ID만 저장되고 프로필 본문·API 키·endpoint는 복제되지 않습니다.
 
 ## 호환성 확인
 
@@ -76,11 +76,13 @@ v0.5.0의 Registry/Routing API는 소비 확장이 직접 호출해야 하는 op
 
 1. 표준 `select`, 텍스트 `input`, `datalist` 중 model/LLM 의미를 가진 외부 컨트롤을 찾습니다.
 2. ID·name·label, 상위 확장 표식과 모델 control 구조를 조합해 Chat Completion 모델 칸인지 판별합니다.
-3. 안전한 대상에는 native option과 중복되지 않는 Registry provider 모델을 target별 최대 512개까지 provider별 optgroup으로 추가합니다. 사용자가 schema v2에서 명시적으로 제외한 target은 주입하지 않습니다.
-4. Vectors·embedding 등 위험 분류로 제외한 대상과 사용자가 제외한 대상은 서로 다른 상태로 유지합니다.
-5. 외부 provider select와 option의 `data-type`이 있으면 CMR option에도 provider alias를 보존해 외부 확장의 자체 필터가 동작하게 합니다.
-6. 외부 확장이 컨트롤을 다시 렌더링하면 CMR option을 다시 추가합니다. 동일 target의 새 컨트롤 값이 비어 있을 때만 마지막 CMR 선택을 provider 식별자와 함께 복원하며, 외부 확장이 둔 유효한 현재값은 덮어쓰지 않습니다.
-7. 비활성화 시 CMR이 추가한 option, observer와 listener만 제거합니다.
+3. 외부 provider/source 선택기는 이름에 `model`이 포함되어도 모델 target으로 세지 않고 CMR option을 넣지 않습니다. native provider option과 현재 값은 보존하며 실제 모델 control의 metadata·change/input 감시에만 사용합니다.
+4. 같은 외부 확장 경계에 provider 후보가 여러 개면 첫 후보를 임의로 모델 control에 연결하지 않습니다.
+5. 안전한 모델 대상에는 native option과 중복되지 않는 Registry provider 모델을 target별 최대 512개까지 provider별 optgroup으로 추가합니다. 사용자가 schema v2에서 명시적으로 제외한 target은 주입하지 않습니다.
+6. Vectors·embedding 등 위험 분류로 제외한 대상과 사용자가 제외한 대상은 서로 다른 상태로 유지합니다.
+7. 연결이 확인된 외부 provider select와 option의 `data-type`이 있으면 실제 모델 control의 CMR option에도 provider alias를 보존해 외부 확장의 자체 필터가 동작하게 합니다.
+8. 외부 확장이 컨트롤을 다시 렌더링하면 CMR option을 다시 추가합니다. 동일 target의 새 컨트롤 값이 비어 있을 때만 마지막 CMR 선택을 provider 식별자와 함께 복원하며, 외부 확장이 둔 유효한 현재값은 덮어쓰지 않습니다.
+9. 비활성화 시 CMR이 추가한 option, observer와 listener만 제거합니다.
 
 대표 provider alias는 다음과 같습니다.
 
@@ -93,7 +95,7 @@ v0.5.0의 Registry/Routing API는 소비 확장이 직접 호출해야 하는 op
 | `zai`, `Z.AI`, `GLM` | `zai` |
 | `openai-compatible`, `LM Studio`, `Ollama`, `local api` | `custom` |
 
-Caption처럼 하나의 model select에 provider별 option이 함께 들어 있고 `data-type`으로 구분하는 경우에는 외부 provider 값을 CMR option에도 보존합니다. target별 512개 한도 안에서 주입한 provider 모델은 `제공업체 이름 · 사용자 모델` optgroup으로 구분합니다. 단, CMR Registry는 모델의 vision 능력을 저장하지 않으므로 실제 Caption 호환성은 모델과 계정에서 확인해야 합니다.
+Caption처럼 provider/source 선택기와 별도 model select가 있거나 하나의 model select에 provider별 option이 함께 들어 있고 `data-type`으로 구분하는 경우에는 확인된 외부 provider 값을 실제 model control의 CMR option에도 보존합니다. provider/source 선택기 자체에는 CMR option을 추가하지 않고 native option·현재 값을 유지합니다. target별 512개 한도 안에서 주입한 provider 모델은 `제공업체 이름 · 사용자 모델` optgroup으로 구분합니다. 단, CMR Registry는 모델의 vision 능력을 저장하지 않으므로 실제 Caption 호환성은 모델과 계정에서 확인해야 합니다.
 
 ### 네트워크 경계
 
@@ -101,12 +103,13 @@ DOM 브리지는 전역 `fetch` 또는 `XMLHttpRequest`를 monkey patch하지 �
 
 ### 관리 UI와 option 한도
 
-고급 외부 연결 관리의 기본 목록에는 bridge 실패 대상과 schema v2에서 사용자가 제외한 대상만 나타납니다. 정상 direct 대상은 사용자가 **문제가 생긴 모델 칸 제외**를 펼쳤을 때만 선택기에 표시합니다. Vectors·embedding·TTS·Stable Diffusion 같은 위험 대상은 두 관리 목록 모두에 행을 만들지 않고 진단 집계에만 포함합니다.
+고급 외부 연결 관리의 기본 목록에는 bridge 실패 대상과 schema v2에서 사용자가 제외한 대상만 나타납니다. 정상 direct 대상은 사용자가 **문제가 생긴 모델 칸 제외**를 펼쳤을 때만 선택기에 표시합니다. Vectors·embedding·TTS·Stable Diffusion 같은 위험 대상은 두 관리 목록 모두에 행을 만들지 않고 진단 집계에만 포함합니다. provider/source 선택기는 모델 target이 아니므로 두 목록과 진단 `targetCount` 모두에 포함하지 않습니다.
 
 외부 target 하나에는 native option과 중복되는 항목을 제외한 표시 가능한 CMR 후보 중 최대 512개만 주입합니다. 이 target별 후보가 512개를 넘으면 용량 주의를 표시합니다. 모든 direct target의 예상 CMR option 합계 또는 실제 CMR option 합계가 2,048개를 넘으면 별도의 성능 주의를 표시합니다. 위험 분류 대상과 native option은 CMR option 예산에서 제외합니다. 이 한도와 경고는 DOM 브리지 구현 계약이며 `CustomModelRouter.listModels()` 결과를 줄이지 않습니다. 따라서 활성 Registry 모델 총수가 512개를 넘는다는 사실만으로 target별 용량 경고가 발생하지는 않습니다.
 
 ### 의도적 제외
 
+- 외부 provider/source 선택기. 실제 모델 control의 metadata·변경 감시에는 사용할 수 있지만 모델 target으로 등록하거나 CMR option을 주입하지 않습니다.
 - Vectors·embedding·rerank 모델
 - TTS·voice·speech 모델
 - Stable Diffusion·이미지 생성 모델

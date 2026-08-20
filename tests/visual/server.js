@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 const TEST_DIR = dirname(fileURLToPath(import.meta.url));
 const REPOSITORY_ROOT = resolve(TEST_DIR, '..', '..');
+const SOURCE_ROOT = resolve(REPOSITORY_ROOT, 'src');
 const REQUIRED_ST_VERSION = '1.18.0';
 
 const MIME_TYPES = Object.freeze({
@@ -710,6 +711,10 @@ export async function startUiRegressionServer() {
     const sillyTavernRoot = await findSillyTavernRoot();
     const sillyTavernPublic = resolve(sillyTavernRoot, 'public');
     const settingsHtml = await readFile(resolve(REPOSITORY_ROOT, 'settings.html'), 'utf8');
+    const browserSandboxHtml = await readFile(
+        resolve(REPOSITORY_ROOT, 'tests', 'browser-sandbox.html'),
+        'utf8',
+    );
     const fixtureHtml = buildFixture(settingsHtml);
 
     const server = createServer(async (request, response) => {
@@ -722,8 +727,26 @@ export async function startUiRegressionServer() {
             response.end(fixtureHtml);
             return;
         }
+        if (url.pathname === '/browser-sandbox') {
+            response.writeHead(200, {
+                'cache-control': 'no-store',
+                'content-type': 'text/html; charset=utf-8',
+            });
+            response.end(browserSandboxHtml);
+            return;
+        }
         if (url.pathname === '/cmr/style.css') {
             await sendFile(response, resolve(REPOSITORY_ROOT, 'style.css'));
+            return;
+        }
+        if (url.pathname.startsWith('/src/')) {
+            const sourcePath = safePublicPath(SOURCE_ROOT, url.pathname.slice('/src/'.length));
+            if (!sourcePath) {
+                response.writeHead(403, { 'content-type': 'text/plain; charset=utf-8' });
+                response.end('Forbidden');
+                return;
+            }
+            await sendFile(response, sourcePath);
             return;
         }
 
@@ -748,8 +771,10 @@ export async function startUiRegressionServer() {
         throw new Error('UI 회귀 검사 서버 주소를 확인하지 못했습니다.');
     }
 
+    const origin = `http://127.0.0.1:${address.port}`;
     return Object.freeze({
-        url: `http://127.0.0.1:${address.port}/ui-regression`,
+        url: `${origin}/ui-regression`,
+        browserSandboxUrl: `${origin}/browser-sandbox`,
         sillyTavernRoot,
         close: () => new Promise((resolveClose, reject) => {
             server.close(error => error ? reject(error) : resolveClose());

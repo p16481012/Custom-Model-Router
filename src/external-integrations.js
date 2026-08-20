@@ -31,6 +31,8 @@ let stableExternalTargetIdentitySequence = 0;
 const SAFE_TARGET_ID_PATTERN = /^cmr-ext-[a-f0-9]{8}$/;
 const MODEL_WORD_PATTERN = /(?:^|[^a-z0-9])(model|models|llm|engine)(?:$|[^a-z0-9])/i;
 const PROVIDER_WORD_PATTERN = /(?:^|[^a-z0-9])(provider|source|vendor|api)(?:$|[^a-z0-9])/i;
+const PROVIDER_CONTROL_WORD_PATTERN = /(?:^|[^a-z0-9])(provider|source|vendor)(?:$|[^a-z0-9])/i;
+const MODEL_THEN_PROVIDER_CONTROL_PATTERN = /(?:^|[^a-z0-9])(?:model|models|llm|engine)[^a-z0-9]+(?:provider|source|vendor)(?:$|[^a-z0-9])/i;
 const NON_MODEL_FIELD_PATTERN = /(?:^|[^a-z0-9])(azure|url|endpoint|api key|apikey|token|secret|deployment|account|project|region)(?:$|[^a-z0-9])/i;
 const UNSAFE_INPUT_TYPES = new Set(['button', 'checkbox', 'color', 'date', 'file', 'hidden', 'image', 'month', 'number', 'password', 'radio', 'range', 'reset', 'submit', 'time', 'week']);
 const NON_CHAT_MODEL_PATTERNS = Object.freeze([
@@ -339,6 +341,95 @@ function isSensitiveNonModelField(control, documentRef) {
     return NON_MODEL_FIELD_PATTERN.test(searchableText(getControlText(control, documentRef)));
 }
 
+function isExplicitModelControl(control) {
+    return Boolean(
+        getAttribute(control, 'data-model-provider')
+        || getAttribute(control, 'data-provider-select')
+        || getAttribute(control, 'data-source-select'),
+    );
+}
+
+function isReferencedProviderControl(control, root, documentRef) {
+    const controlId = normalizeText(control?.id ?? getAttribute(control, 'id'));
+    if (!controlId) {
+        return false;
+    }
+    return getAll(root ?? documentRef, 'select,input,datalist').some(candidate => (
+        candidate !== control
+        && (
+            getAttribute(candidate, 'data-provider-select') === controlId
+            || getAttribute(candidate, 'data-source-select') === controlId
+        )
+    ));
+}
+
+function optionIsExactProviderChoice(option) {
+    return [option?.value, option?.textContent, option?.label]
+        .map(searchableText)
+        .filter(Boolean)
+        .some(value => (
+            isSupportedProvider(normalizeProviderId(value))
+            || PROVIDER_ALIASES.some(([alias]) => searchableText(alias) === value)
+        ));
+}
+
+function optionMatchesProviderChoice(option, providerId) {
+    const normalizedProviderId = normalizeProviderId(providerId);
+    const expectedExternalValue = normalizeProviderId(DEFAULT_EXTERNAL_PROVIDER_VALUES[normalizedProviderId]);
+    return [option?.value, option?.textContent, option?.label]
+        .map(normalizeText)
+        .filter(Boolean)
+        .some(value => (
+            normalizeProviderId(value) === normalizedProviderId
+            || (expectedExternalValue && normalizeProviderId(value) === expectedExternalValue)
+            || findProviderAliases(value).includes(normalizedProviderId)
+        ));
+}
+
+function isLikelyProviderControl(control, options = {}) {
+    if (tagName(control) !== 'SELECT' || isExplicitModelControl(control)) {
+        return false;
+    }
+    const documentRef = getRootDocument(control, options.documentRef);
+    if (isReferencedProviderControl(control, options.root, documentRef)) {
+        return true;
+    }
+
+    const semanticParts = [
+        control?.id,
+        control?.name,
+        control?.title,
+        getAttribute(control, 'aria-label'),
+        getAttribute(control, 'data-role'),
+        getAttribute(control, 'data-control'),
+        getAttribute(control, 'data-field'),
+        ...getLabels(control, documentRef),
+    ].map(searchableText).filter(Boolean);
+    const hasProviderOnlyPart = semanticParts.some(part => (
+        PROVIDER_CONTROL_WORD_PATTERN.test(part) && !MODEL_WORD_PATTERN.test(part)
+    ));
+    const hasModelThenProviderPart = semanticParts.some(part => (
+        MODEL_THEN_PROVIDER_CONTROL_PATTERN.test(part)
+    ));
+    if (hasProviderOnlyPart || hasModelThenProviderPart) {
+        return true;
+    }
+
+    // label이 단순히 "API"인 provider 선택기도 있으므로 native option 구성을 함께 본다.
+    // CMR이 이전 scan에서 넣은 모델 option은 판정에서 제외해 hot reload에서도 정리된다.
+    const nativeOptions = getOptions(control).filter(option => (
+        !isManagedOption(option)
+        && !isManagedGroup(option?.parentElement)
+        && normalizeText(option?.value ?? option?.textContent)
+    ));
+    if (nativeOptions.length < 2) {
+        return false;
+    }
+    const providerOptionCount = nativeOptions.filter(optionIsExactProviderChoice).length;
+    return providerOptionCount >= 2
+        && providerOptionCount / nativeOptions.length >= 0.6;
+}
+
 export function isExternalModelControl(control, options = {}) {
     const documentRef = getRootDocument(control, options.documentRef);
     if (!control || isExcludedControl(control, options)) {
@@ -361,7 +452,8 @@ export function isExternalModelControl(control, options = {}) {
     }
 
     if (tag === 'SELECT') {
-        return isModelSemantic(control, documentRef);
+        return !isLikelyProviderControl(control, { ...options, documentRef })
+            && isModelSemantic(control, documentRef);
     }
 
     if (tag !== 'INPUT') {
@@ -468,11 +560,13 @@ function getConnectedProviderSelect(control, documentRef) {
     // 공통 Extensions root까지 올라가면 이웃 확장의 provider를 잘못 연결할 수 있다.
     // 가장 가까운 확장/패널 경계 안에서만 암시적 provider control을 찾는다.
     const boundary = getExternalControlBoundary(control);
-    return getAll(boundary, 'select')
+    const candidates = getAll(boundary, 'select')
         .filter(candidate => candidate !== control)
-        .find(candidate => (
-            PROVIDER_WORD_PATTERN.test(searchableText(getControlText(candidate, documentRef)))
-        )) ?? null;
+        .filter(candidate => isLikelyProviderControl(candidate, {
+            root: boundary,
+            documentRef,
+        }));
+    return candidates.length === 1 ? candidates[0] : null;
 }
 
 function getConnectedProviderEvidence(control, documentRef, store) {
@@ -667,7 +761,8 @@ function isPotentialExternalIdentityControl(control, options = {}) {
     }
     const tag = tagName(control);
     if (tag === 'SELECT') {
-        return isModelSemantic(control, documentRef);
+        return !isLikelyProviderControl(control, { ...options, documentRef })
+            && isModelSemantic(control, documentRef);
     }
     if (tag !== 'INPUT') {
         return false;
@@ -1497,7 +1592,7 @@ export function createExternalIntegrationController(options = {}) {
         };
     }
 
-    function selectNativeFallbackAndNotify(target) {
+    function selectNativeFallbackAndNotify(target, preferredProviderId = null) {
         const control = target?.control;
         if (tagName(control) !== 'SELECT') {
             return false;
@@ -1510,7 +1605,10 @@ export function createExternalIntegrationController(options = {}) {
         const currentOption = remainingOptions.find(option => (
             String(option.value) === String(control.value ?? '')
         ));
-        const fallbackOption = currentOption ?? remainingOptions[0] ?? null;
+        const providerOption = preferredProviderId
+            ? remainingOptions.find(option => optionMatchesProviderChoice(option, preferredProviderId))
+            : null;
+        const fallbackOption = providerOption ?? currentOption ?? remainingOptions[0] ?? null;
         for (const option of getOptions(control)) {
             option.selected = option === fallbackOption;
         }
@@ -1558,7 +1656,10 @@ export function createExternalIntegrationController(options = {}) {
         if (!removedSelection) {
             return removed;
         }
-        selectNativeFallbackAndNotify(target);
+        selectNativeFallbackAndNotify(
+            target,
+            cleanupOptions.preferNativeProvider === true ? removedSelection.providerId : null,
+        );
         // 명시적 제외는 외부 확장의 현재 값만 native로 복구하고,
         // 다시 연결했을 때 쓸 CMR 모델 선호 설정은 보존한다.
         if (cleanupOptions.preservePreference !== true) {
@@ -1728,6 +1829,54 @@ export function createExternalIntegrationController(options = {}) {
     }
 
     function scanAndSync() {
+        // 구버전이 Model Provider 같은 provider 선택기를 model target으로 오인해
+        // 넣어 둔 CMR option도 첫 scan에서 즉시 제거하고 native provider로 복구한다.
+        for (const providerControl of getAll(root, 'select').filter(control => (
+            isLikelyProviderControl(control, { root, documentRef: options.documentRef })
+        ))) {
+            const providerTargetId = createExternalTargetId(providerControl, {
+                documentRef: options.documentRef,
+            });
+            const hasManagedModels = getOptions(providerControl).some(option => (
+                isManagedOption(option) || isManagedGroup(option?.parentElement)
+            ));
+            let hasStoredPreference = false;
+            try {
+                hasStoredPreference = Object.keys(options.getPreferredModels?.(providerTargetId) ?? {}).length > 0;
+            } catch {
+                hasStoredPreference = false;
+            }
+            const wasExcluded = excludedTargetIds.delete(providerTargetId);
+            if (!hasManagedModels && !hasStoredPreference && !wasExcluded) {
+                continue;
+            }
+            const staleTarget = managedTargets.get(providerControl) ?? {
+                targetId: providerTargetId,
+                control: providerControl,
+                optionHost: providerControl,
+            };
+            const managedSelection = getManagedSelectionIdentity(staleTarget);
+            if (hasManagedModels) {
+                removeManagedModelsAndNotify(staleTarget, {
+                    removeOwnedHost: false,
+                    preferNativeProvider: true,
+                }, 'provider-control');
+            }
+            if (!managedSelection && (hasStoredPreference || wasExcluded)) {
+                try {
+                    options.onSelectionInvalidated?.({
+                        targetId: providerTargetId,
+                        providerId: null,
+                        modelId: null,
+                        reason: 'provider-control',
+                    });
+                } catch {
+                    // 잘못 저장된 과거 target 정리 콜백 실패가 다른 모델 연결을 막지 않게 한다.
+                }
+            }
+            managedTargets.delete(providerControl);
+        }
+
         const nextTargets = discoverExternalModelTargets(root, options);
         stabilizeTargetIds(nextTargets);
         const nextControls = new Set(nextTargets.map(target => target.control));

@@ -73,8 +73,18 @@ test('브라우저 샌드박스는 안전 대상 자동 연결·provider metadat
 
     assert.match(html, /id="switch_caption_provider"/);
     assert.match(html, /switchCaptionProvider\(\)/);
+    assert.match(html, /id="caption_model_provider"[^>]*name="model_provider"/);
+    assert.match(html, /captionProviderTargeted/);
+    assert.match(html, /captionProviderManagedCount/);
+    assert.match(html, /captionModelTargeted/);
+    assert.match(html, /captionModelManagedCount/);
+    assert.match(html, /setCaptionProvider\(value\)/);
+    assert.match(html, /cleanupStaleCaptionProviderModel\(\)/);
+    assert.match(html, /staleGroup\.dataset\.cmrExternalGroup\s*=\s*'true'/);
+    assert.match(html, /staleOption\.dataset\.cmrExternalModel\s*=\s*'true'/);
+    assert.match(html, /controller\.rescan\(\)/);
     assert.match(html, /data-extension-name="unknown helper"/);
-    assert.match(html, /browser-sandbox=0\.6\.12/);
+    assert.match(html, /browser-sandbox=0\.6\.13/);
     assert.match(html, /제공업체 선택기가 없어도 안전하게 자동 연결/);
 });
 

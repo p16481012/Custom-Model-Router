@@ -96,6 +96,7 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
     assert.match(roadmap, /## v0\.6\.10 — 대량 모델 관리·안전한 복구와 외부 UI 정리/);
     assert.match(roadmap, /## v0\.6\.11 — 단일·여러 줄 모델 등록 UI 통합/);
     assert.match(roadmap, /## v0\.6\.12 — 런처 배지 제거와 설명 정보 구조 정리/);
+    assert.match(roadmap, /## v0\.6\.13 — 외부 provider\/source 선택기 오탐 차단/);
     assert.match(settingsHtml, /<textarea[\s\S]*?id="cmr_model_id"/);
     assert.match(settingsHtml, /id="cmr_add_form"/);
     assert.doesNotMatch(settingsHtml, /cmr_bulk_/);
@@ -156,6 +157,7 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
     assert.match(apiDocument, /Portable backup schema v2/);
     assert.match(apiDocument, /v0\.6\.7의 Playwright UI 회귀 검사 인프라/);
     assert.match(apiDocument, /v0\.6\.12의 런처 숫자 배지 제거와 정보 popover 중심 문구 정리/);
+    assert.match(apiDocument, /v0\.6\.13의 외부 provider\/source 선택기 오탐 차단/);
     assert.match(apiDocument, /모두 새 객체로 만들고 순서까지 뒤집으면/);
     assert.match(apiDocument, /DOM 브리지 내부 저장 schema v2/);
     assert.match(apiDocument, /excludedTargets/);
@@ -171,6 +173,15 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
         assert.match(document, /추가·충돌·삭제/);
         assert.match(document, /2,048개/);
     }
+    for (const document of [readme, roadmap, checklist, apiDocument]) {
+        assert.match(document, /provider\/source 선택기/);
+        assert.match(document, /targetCount/);
+        assert.match(document, /provider(?:\/source)? 후보가 여러 개/);
+    }
+    assert.match(readme, /native provider option과 현재 값(?:은|을) 보존/);
+    assert.match(roadmap, /native option·현재 값·기존 이벤트를 보존/);
+    assert.match(checklist, /native provider option·현재 값은 유지/);
+    assert.match(apiDocument, /native provider option과 현재 값은 보존/);
     for (const document of [readme, roadmap]) {
         assert.match(document, /검증 상태별 외부 확장 목록/);
         assert.match(document, /Caption/);
@@ -286,7 +297,7 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
         return Number(match[1]);
     });
     assert.equal(new Set(documentedUiCounts).size, 1, '세 문서의 Playwright UI 검사 개수가 같아야 한다');
-    assert.ok(documentedUiCounts[0] > 0, 'Playwright UI 검사 개수는 1개 이상이어야 한다');
+    assert.equal(documentedUiCounts[0], 11, 'v0.6.13 Playwright UI 검사 개수는 11개여야 한다');
 
     const checklistIds = Array.from(
         checklist.matchAll(/\*\*\[(?:필수|조건부|권장|선택)\]\[([A-Z0-9-]+)\]/g),

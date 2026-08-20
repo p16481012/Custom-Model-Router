@@ -1,6 +1,6 @@
-# v0.6.12 통합 사용자 검증 체크리스트
+# v0.6.13 통합 사용자 검증 체크리스트
 
-대상 버전: **v0.6.12**
+대상 버전: **v0.6.13**
 
 이 문서는 v0.1~v0.6 기능을 한 번에 확인하는 최종 수동 검증 순서입니다. 위에서 아래로 진행하고, 사용하지 않는 제공업체·외부 확장·개발자 API 항목은 `해당 없음`으로 표시하세요.
 
@@ -17,7 +17,7 @@
 
 ## 자동 검사 완료 범위
 
-v0.6.12 저장소에서는 Node 자동 검사 208개와 Playwright Chromium UI 회귀 검사 10개를 별도로 실행합니다. Node 검사는 숫자 배지 없는 단일 런처와 스크린 리더용 등록 개수, 12개 초과 조건부 검색, 공용 textarea의 단일·최대 200줄 원자 등록, 삭제 실행 취소, 백업 추가·충돌·삭제 미리보기, 진단 schema v2의 구체적 복구 사유, 예외 중심 외부 관리, target별 native 중복 제외 후보 512개·전체 예상/실제 CMR option 합계 2,048개 경고와 기존 schema·수명주기·보안 계약을 포함합니다. UI 검사는 실제 `settings.html`과 SillyTavern 1.18.0 고정 commit의 core·Popup CSS를 결합해 좁은 화면 배치, 공용 textarea와 아이콘 등록 버튼, native popover 정보 아이콘 5곳, 핵심 힌트·경고의 상시 표시, 대량 모델 관리, 백업 미리보기, 조건부 문제 카드→고급 관리 이동, 명시적 제외 대상 선택기, 공백 단위 줄바꿈과 숨은 스크롤바 조작을 확인합니다. GitHub Actions의 `ui-regression-evidence-*` artifact에는 성공·실패 PNG와 HTML report가 14일 보관됩니다.
+v0.6.13 저장소에서는 Node 자동 검사 209개와 Playwright Chromium UI 회귀 검사 11개를 별도로 실행합니다. Node 검사는 provider/source 선택기 비대상 판별, native provider option·값 보존과 모호한 provider 후보의 임의 연결 방지를 비롯해 숫자 배지 없는 단일 런처와 스크린 리더용 등록 개수, 12개 초과 조건부 검색, 공용 textarea의 단일·최대 200줄 원자 등록, 삭제 실행 취소, 백업 추가·충돌·삭제 미리보기, 진단 schema v2의 구체적 복구 사유, 예외 중심 외부 관리, target별 native 중복 제외 후보 512개·전체 예상/실제 CMR option 합계 2,048개 경고와 기존 schema·수명주기·보안 계약을 포함합니다. UI 검사는 실제 `settings.html`과 SillyTavern 1.18.0 고정 commit의 core·Popup CSS를 결합한 설정 화면 검사와 브라우저 브리지 회귀를 통해 좁은 화면 배치, 공용 textarea와 아이콘 등록 버튼, native popover 정보 아이콘 5곳, 핵심 힌트·경고의 상시 표시, provider/source 선택기 비오염, 대량 모델 관리, 백업 미리보기, 조건부 문제 카드→고급 관리 이동, 명시적 제외 대상 선택기, 공백 단위 줄바꿈과 숨은 스크롤바 조작을 확인합니다. GitHub Actions의 `ui-regression-evidence-*` artifact에는 성공·실패 PNG와 HTML report가 14일 보관됩니다.
 
 이 자동 검사는 전체 SillyTavern JavaScript 런타임이나 실제 외부 확장·API 요청을 실행하지 않습니다. 아래 체크리스트에서 실제 설치 화면, 외부 확장의 선택 저장, Network payload와 제공업체 요청 성공을 계속 확인해야 합니다. API 키나 Service Account를 자동 검사에 제공할 필요는 없습니다.
 
@@ -26,7 +26,7 @@ v0.6.12 저장소에서는 Node 자동 검사 208개와 Playwright Chromium UI �
 ```text
 검증 날짜:
 SillyTavern 버전:
-Custom Model Router 버전: v0.6.12
+Custom Model Router 버전: v0.6.13
 브라우저·OS:
 설치 방식: 신규 / 업데이트
 이전 확장 버전:
@@ -113,13 +113,14 @@ Connection Profile 사용 여부:
 
 ## 4. 다른 확장 모델 UI 주입과 실제 요청 확인
 
-먼저 CMR Registry에 서로 다른 제공업체의 사용자 모델을 하나씩 등록합니다. 감지된 안전한 외부 Chat Completion 모델 칸에는 별도의 모드 설정 없이 native option과 중복되지 않는 등록 모델이 target별 최대 512개까지 제공업체별로 표시됩니다. 기본 팝업은 정상 대상 목록을 노출하지 않습니다. 진단 섹션의 고급 관리 기본 목록에는 실패·사용자 제외만 나타나고, 정상 target은 사용자가 **문제가 생긴 모델 칸 제외**를 펼쳤을 때만 선택기에 나타납니다. 안전상 제외 대상은 관리 행이 아니라 진단 집계로만 확인합니다.
+먼저 CMR Registry에 서로 다른 제공업체의 사용자 모델을 하나씩 등록합니다. 감지된 안전한 외부 Chat Completion 모델 칸에는 별도의 모드 설정 없이 native option과 중복되지 않는 등록 모델이 target별 최대 512개까지 제공업체별로 표시됩니다. provider/source 선택기는 이름에 `model`이 포함되어도 모델 target이 아니며, native option·현재 값을 유지한 채 실제 모델 control의 metadata·change/input 감시에만 사용합니다. 기본 팝업은 정상 대상 목록을 노출하지 않습니다. 진단 섹션의 고급 관리 기본 목록에는 실패·사용자 제외만 나타나고, 정상 target은 사용자가 **문제가 생긴 모델 칸 제외**를 펼쳤을 때만 선택기에 나타납니다. 안전상 제외 대상은 관리 행이 아니라 진단 집계로만 확인합니다.
 
 - [ ] **[필수][EXT-01] 정상 상태의 기본 팝업에는 외부 target 목록이 없고 `자동 연결`, `직접 연결`, `연결 안 함` 선택기와 수동 모델 새로고침 버튼도 없다. 안전 target에는 CMR 선택지가 자동 표시된다.**
 - [ ] **[필수][EXT-01A] `호환성 진단 및 CMR 설정 백업 → 고급: 외부 연결 관리`의 기본 목록에는 bridge 실패와 사용자가 제외한 target만 보이며, 각 행에 외부 확장 이름과 실제 모델 control 이름이 함께 표시된다.**
 - [ ] **[필수][EXT-01B] 정상 target은 `문제가 생긴 모델 칸 제외`를 사용자가 직접 펼쳤을 때만 선택기에 나타난다. 선택기의 `선택지 연결됨`은 CMR option 주입 성공만 뜻하며 `실제 요청 확인 필요` 안내와 구분되고, 이를 실제 API 호환성 통과로 기록하지 않는다.**
 - [ ] **[조건부][EXT-01C] 안전 target의 제외 아이콘을 누르면 그 대상에서만 CMR 선택지가 정리되고 native option·현재 값·다른 target은 유지된다. 다시 연결 아이콘을 누르면 CMR 선택지가 복원된다.**
 - [ ] **[필수][EXT-01D] Vectors·embedding·TTS·Stable Diffusion 등 안전상 제외 target은 고급 기본 목록과 정상 대상 선택기 모두에 행을 만들지 않으며, 진단 복사 JSON에서 사용자 제외와 다른 사유·개수로만 집계된다. 강제 연결·복구 컨트롤은 없다.**
+- [ ] **[필수][EXT-01E] 외부 provider/source 선택기는 이름·label에 `model`이 포함되어도 CMR 모델 target, 고급 관리 행 또는 진단 `targetCount`에 포함되지 않는다. CMR option이 추가되지 않고 native provider option·현재 값은 유지되며, 실제 모델 control만 등록 모델을 받는다.**
 - [ ] **[조건부][EXT-02] native 중복 제외 CMR 후보가 512개 이하인 표준 Chat Completion `select`에는 그 후보 전체가 제공업체별 그룹으로 표시되고 native option과 현재 값은 유지된다.**
 - [ ] **[조건부][EXT-03] native 중복 제외 CMR 후보가 512개 이하인 텍스트 `input` 또는 `datalist` 기반 외부 모델 컨트롤에는 그 후보 전체가 나타나며 기존 입력값과 기존 datalist option은 유지된다.**
 - [ ] **[필수][EXT-04] 제공업체 선택기가 없더라도 안전한 표준 Chat Completion 모델 컨트롤에는 native 중복 제외 등록 모델이 target별 최대 512개까지 표시된다. 모델 컨트롤인지 안전하게 판별할 수 없는 대상은 원래 값과 option을 유지한다.**
@@ -127,7 +128,8 @@ Connection Profile 사용 여부:
 - [ ] **[조건부][EXT-06] mapping 제거 뒤에도 같은 target과 provider의 마지막 CMR 모델 선택 기록은 보존된다.**
 - [ ] **[조건부][EXT-06A] 제거된 확장의 stale 외부 선택 512개로 저장이 포화된 상태에서 현재 감지 target의 CMR 모델을 선택하면, 감지되지 않은 가장 오래된 target 기록 하나만 교체되고 나머지 기존 선택은 보존된다.**
 - [ ] **[조건부][EXT-06B] stale legacy mapping 512개와 별도 target의 선택 기록이 함께 있어도 mapping은 제거되고 정상 선택 기록은 우선 보존된다.**
-- [ ] **[조건부][EXT-07] Caption의 Multimodal provider/model control에서 `Anthropic→claude`, `Google AI Studio→makersuite`, `Mistral→mistralai` 같은 provider metadata가 올바른 CMR option에 유지된다.**
+- [ ] **[조건부][EXT-07] Caption의 Multimodal provider/model control에서 provider/source 선택기는 metadata·change/input 감시에만 사용되고, `Anthropic→claude`, `Google AI Studio→makersuite`, `Mistral→mistralai` 같은 provider metadata가 실제 model control의 CMR option에 올바르게 유지된다.**
+- [ ] **[조건부][EXT-07A] 같은 외부 확장 영역에 provider/source 후보가 여러 개면 첫 후보를 임의로 실제 model control에 연결하지 않으며 모든 후보의 native option·현재 값이 유지된다.**
 - [ ] **[필수][EXT-08] 외부 `select`에는 target별 512개 한도 안에서 주입된 provider 모델이 `제공업체 이름 · 사용자 모델` optgroup으로 구분되어 나타나며 같은 모델 ID도 provider별로 구분된다.**
 - [ ] **[조건부][EXT-08A] Caption처럼 option `data-type`을 쓰는 확장에서 CMR option에 올바른 외부 provider 값이 유지된다.**
 - [ ] **[필수][EXT-08B] 관리 팝업을 닫거나 페이지를 다시 열어도 대상별 모드 선택 없이 같은 안전한 외부 모델 칸에 CMR 선택지가 다시 한 번만 나타난다.**
@@ -143,7 +145,7 @@ Connection Profile 사용 여부:
 - [ ] **[필수][EXT-13] Vectors·embedding·rerank 모델 컨트롤이 자동 주입 대상에 포함되지 않는다.**
 - [ ] **[필수][EXT-14] TTS·voice·speech 모델 컨트롤이 자동 주입 대상에 포함되지 않는다.**
 - [ ] **[필수][EXT-15] Stable Diffusion·이미지 생성 모델 컨트롤이 자동 주입 대상에 포함되지 않는다.**
-- [ ] **[권장][EXT-16] 진단 결과가 `후보 = 연결 정책 + 사용자 제외 + 비채팅·비호환 제외`로 일치하고, 연결 정책은 다시 `연결됨 + 등록 모델 없음 + 연결 실패`로 나뉘며 실제 외부 컨트롤과 맞는다.**
+- [ ] **[권장][EXT-16] provider/source 선택기를 제외한 진단 결과가 `후보 = 연결 정책 + 사용자 제외 + 비채팅·비호환 제외`로 일치하고, 연결 정책은 다시 `연결됨 + 등록 모델 없음 + 연결 실패`로 나뉘며 실제 외부 모델 컨트롤과 맞는다.**
 - [ ] **[조건부][EXT-16A] 각 안전한 direct target에서 native option과 중복되는 항목을 제외한 표시 가능 CMR 후보가 512개를 넘을 때만 해당 모델 칸의 일부 선택지만 표시된다는 용량 경고가 나타난다. 활성 Registry 모델 총수가 512개를 넘더라도 target별 후보가 512개 이하이면 이 경고는 나타나지 않는다.**
 - [ ] **[조건부][EXT-16B] 모든 direct target의 예상 CMR DOM option 합계 또는 실제 CMR DOM option 합계가 2,048개를 넘으면 성능 주의 카드와 진단 경고가 나타나고, Vectors·Stable Diffusion 같은 위험 대상과 native option은 이 CMR option 합계에 포함되지 않는다.**
 - [ ] **[필수][EXT-17] 외부 브리지 동작 전후 메인 Chat Completion source·모델·API 키·endpoint가 바뀌지 않는다.**
@@ -228,8 +230,8 @@ CMR 외부 브리지는 best-effort UI 선택지 주입 기능이며 전역 `fet
 - [ ] **[필수][DIAG-02] SillyTavern 1.18.0이면 버전 계약이 통과로 표시된다.**
 - [ ] **[필수][DIAG-03] 현재 화면의 공개 context·event·provider control 결과에 설명 없는 실패가 없다.**
 - [ ] **[필수][DIAG-04] 런처·observer·listener·사용자 모델 그룹 중복이 없다고 표시된다. 서로 다른 모델 선택기에 같은 제공업체 그룹이 하나씩 있는 것은 중복으로 오인하지 않는다.**
-- [ ] **[필수][DIAG-04A] 복사 JSON에서 외부 브리지 observer·listener·target 수, 활성 Registry 모델 수, 예상·실제 CMR option 수와 연결 정책·사용자 제외·비채팅·비호환 제외 수를 확인하고 설명 없는 증가가 없다.**
-- [ ] **[필수][DIAG-04B] 외부 모델 칸 집계가 `후보 = 연결 정책 + 사용자 제외 + 비채팅·비호환 제외` 및 `연결 정책 = 연결됨 + 등록 모델 없음 + 연결 실패`로 일치하며 observer·listener·binding 불일치가 통과로 표시되지 않는다.**
+- [ ] **[필수][DIAG-04A] 복사 JSON에서 외부 브리지 observer·listener·target 수, 활성 Registry 모델 수, 예상·실제 CMR option 수와 연결 정책·사용자 제외·비채팅·비호환 제외 수를 확인하고 설명 없는 증가가 없다. provider/source 선택기는 모델 `targetCount`에 포함되지 않는다.**
+- [ ] **[필수][DIAG-04B] provider/source 선택기를 제외한 외부 모델 칸 집계가 `후보 = 연결 정책 + 사용자 제외 + 비채팅·비호환 제외` 및 `연결 정책 = 연결됨 + 등록 모델 없음 + 연결 실패`로 일치하며 observer·listener·binding 불일치가 통과로 표시되지 않는다.**
 - [ ] **[필수][DIAG-05] 경고가 있다면 `진단 복사` JSON의 check ID·코드와 사유를 결과 메모에 기록한다. 화면 목록에 별도 코드가 보이지 않으면 복사 JSON을 기준으로 한다.**
 - [ ] **[필수][DIAG-06] `진단 복사` 결과를 텍스트 편집기에서 열어 API 키·endpoint·project/account ID·Service Account가 없는지 확인한다.**
 - [ ] **[권장][DIAG-07] 1.18.0보다 새 버전에서는 미검증 경고가 표시되고 확장이 무조건 호환이라고 단정하지 않는다.**
@@ -248,11 +250,11 @@ CMR 외부 브리지는 best-effort UI 선택지 주입 기능이며 전역 `fet
 - [ ] **[필수][STAB-04] 반복 뒤 관리 아이콘·팝업·각 provider의 CMR 그룹이 하나씩만 존재한다.**
 - [ ] **[필수][STAB-05] 반복 뒤 선택 이벤트가 한 번의 클릭에 한 번만 발생하고 화면이 멈추지 않는다.**
 - [ ] **[권장][STAB-06] 진단의 observer·listener·binding·group 개수가 최초 기준보다 계속 증가하지 않는다.**
-- [ ] **[권장][STAB-07] 외부 확장 provider 전환과 모델 목록 재렌더를 20회 반복해도 외부 CMR group·option·listener가 중복되지 않는다.**
+- [ ] **[권장][STAB-07] 외부 확장 provider 전환과 모델 목록 재렌더를 20회 반복해도 provider/source 선택기의 native option·값은 유지되고 실제 model control의 CMR group·option·listener가 중복되지 않는다.**
 
 ## 10. 확장 전용 백업·복구
 
-- [ ] **[필수][BKP-01] `백업 내보내기`로 `custom-model-router-backup-v0.6.12.json`을 저장한다. 최대 허용 범위인 UTF-8 8,000,000바이트·모델 5,000개·route 256개 안에서 성공한 백업은 다시 가져올 수 있다.**
+- [ ] **[필수][BKP-01] `백업 내보내기`로 `custom-model-router-backup-v0.6.13.json`을 저장한다. 최대 허용 범위인 UTF-8 8,000,000바이트·모델 5,000개·route 256개 안에서 성공한 백업은 다시 가져올 수 있다.**
 - [ ] **[필수][BKP-02] JSON 최상위에 `format`, `schemaVersion`, `createdAt`, `registry`, `purposeRoutes`, `externalIntegrations`만 있고 portable schemaVersion이 `2`인지 확인한다.**
 - [ ] **[필수][BKP-03] Registry에는 provider·model ID·protocol·enabled·선택 상태만 있는지 확인한다.**
 - [ ] **[필수][BKP-04] route에는 provider·model ID·adapter ID·Connection Profile ID만 있는지 확인한다.**
@@ -289,10 +291,10 @@ CMR 외부 브리지는 best-effort UI 선택지 주입 기능이며 전역 `fet
 ## 결과 보고 양식
 
 ```text
-제목: [v0.6.12][제공업체 또는 기능][항목 ID] 짧은 증상
+제목: [v0.6.13][제공업체 또는 기능][항목 ID] 짧은 증상
 
 SillyTavern 버전:
-Custom Model Router 버전: v0.6.12
+Custom Model Router 버전: v0.6.13
 OS / 브라우저:
 신규 설치 또는 업데이트:
 이전 CMR 버전:
@@ -309,6 +311,7 @@ source/Profile 반복 횟수:
 진단 상태·경고 코드:
 백업 가져오기 결과:
 외부 target 선택지 주입/사용자 제외/비채팅·비호환 제외 상태:
+외부 provider/source 선택기 native option·값 보존 상태:
 고급 목록의 확장 이름과 control 이름:
 외부 control 종류(select/input/datalist/기타):
 Network payload의 model 확인 결과:
@@ -317,4 +320,4 @@ Caption /caption-image payload의 model 확인 결과:
 민감정보를 제거한 스크린샷:
 ```
 
-실패 항목이 있어도 데이터 손실·무한 반복·비밀 노출이 아니라면 나머지 독립 항목은 계속 확인해도 됩니다. 결과를 모으면 같은 v0.6 범위의 후속 수정은 `v0.6.13`, `v0.6.14`, ...로 반영합니다.
+실패 항목이 있어도 데이터 손실·무한 반복·비밀 노출이 아니라면 나머지 독립 항목은 계속 확인해도 됩니다. 결과를 모으면 같은 v0.6 범위의 후속 수정은 `v0.6.14`, `v0.6.15`, ...로 반영합니다.
