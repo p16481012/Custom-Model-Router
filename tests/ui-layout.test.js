@@ -89,20 +89,67 @@ test('모델 목록은 6개 초과 표식에서만 내부 스크롤하고 스크
     assert.match(index, /const models = normalizeSettings\(settings\)\.models/);
 });
 
-test('한국어 설명은 문장 블록과 공백 기준 줄바꿈을 사용한다', async () => {
+test('정보 도움말은 다섯 개 native popover와 접근 가능한 아이콘 버튼으로 연결된다', async () => {
+    const [html, css] = await readUiFiles();
+    const helpPairs = [
+        ['cmr_provider_help_trigger', 'cmr_provider_help', '제공업체 선택 도움말'],
+        ['cmr_model_help_trigger', 'cmr_model_help', '모델 ID 등록 규칙'],
+        ['cmr_model_list_help_trigger', 'cmr_model_list_help', '등록 모델 목록 도움말'],
+        ['cmr_operations_help_trigger', 'cmr_operations_help', '진단 및 백업 도움말'],
+        ['cmr_external_help_trigger', 'cmr_external_help', '외부 모델 연결 도움말'],
+    ];
+
+    assert.equal((html.match(/class="cmr-info-button"/g) ?? []).length, helpPairs.length);
+    assert.equal((html.match(/class="fa-solid fa-circle-info" aria-hidden="true"/g) ?? []).length, helpPairs.length);
+    assert.equal((html.match(/class="cmr-help-popover" popover="auto"/g) ?? []).length, helpPairs.length);
+
+    for (const [triggerId, helpId, label] of helpPairs) {
+        const triggerStart = html.indexOf(`id="${triggerId}"`);
+        const buttonStart = html.lastIndexOf('<button', triggerStart);
+        const buttonEnd = html.indexOf('</button>', triggerStart) + '</button>'.length;
+        const button = html.slice(buttonStart, buttonEnd);
+        const helpStart = html.indexOf(`id="${helpId}"`);
+        const helpOpenStart = html.lastIndexOf('<div', helpStart);
+        const helpOpenEnd = html.indexOf('>', helpStart) + 1;
+        const helpOpeningTag = html.slice(helpOpenStart, helpOpenEnd);
+
+        assert.ok(triggerStart >= 0, `${triggerId} trigger가 있어야 합니다.`);
+        assert.match(button, /class="cmr-info-button"/);
+        assert.match(button, /type="button"/);
+        assert.match(button, new RegExp(`popovertarget="${helpId}"`));
+        assert.match(button, new RegExp(`aria-describedby="${helpId}"`));
+        assert.match(button, new RegExp(`aria-label="${label}"`));
+        assert.match(button, /class="fa-solid fa-circle-info" aria-hidden="true"/);
+        assert.match(helpOpeningTag, /class="cmr-help-popover"/);
+        assert.match(helpOpeningTag, /popover="auto"/);
+    }
+
+    const summaryContent = [...html.matchAll(/<summary(?:\s[^>]*)?>([\s\S]*?)<\/summary>/g)]
+        .map(match => match[1])
+        .join('\n');
+    assert.doesNotMatch(summaryContent, /<button\b/);
+    assert.match(css, /\.cmr-help-popover\s*{[^}]*display:\s*none[^}]*max-inline-size:\s*min\(22rem,\s*calc\(100dvw - 1rem\)\)[^}]*word-break:\s*keep-all[^}]*overflow-wrap:\s*normal/s);
+    assert.match(css, /\.cmr-help-popover:popover-open\s*{[^}]*display:\s*block/s);
+    assert.match(css, /\.cmr-info-button:focus-visible\s*{[^}]*outline:/s);
+});
+
+test('상시 안내는 짧게 유지하고 긴 도움말을 입력 컨트롤에 직접 연결하지 않는다', async () => {
     const [html, css, index] = await readUiFiles();
 
-    const expectedSentenceCounts = {
-        cmr_provider_help: 2,
-        cmr_model_list_help: 4,
-        cmr_operations_description: 2,
-    };
-    for (const [id, expectedCount] of Object.entries(expectedSentenceCounts)) {
-        const closingTag = id === 'cmr_operations_description' ? 'p' : 'small';
-        const content = html.match(new RegExp(`id="${id}"[^>]*>([\\s\\S]*?)<\\/${closingTag}>`))?.[1] ?? '';
-        assert.equal((content.match(/class="cmr-sentence"/g) ?? []).length, expectedCount);
-    }
-    assert.match(index, /\$\{getProviderHelp\(provider\)\}[^`]*한 줄에 하나씩 최대 200개/);
+    assert.match(html, /class="cmr-description">목록에 없는 모델을 등록하고, 실제 선택은 API Connections에서 합니다\.<\/p>/);
+    assert.match(html, /id="cmr_provider_hint">등록 위치만 정하며 현재 모델은 바뀌지 않습니다\.<\/small>/);
+    assert.match(html, /id="cmr_model_hint">한 줄에 하나 · 최대 200개 · 오류가 있으면 전체 취소<\/small>/);
+    assert.match(html, /id="cmr_operations_description"[^>]*>CMR 상태를 진단하고 비밀정보를 제외한 설정을 백업·복구합니다\.<\/p>/);
+    assert.match(html, /class="cmr-tool-description">실제 요청 적용은 외부 기능에서 직접 확인하세요\.<\/p>/);
+    assert.match(html, /<select id="cmr_provider"[^>]*aria-describedby="cmr_provider_hint"[^>]*>/);
+    assert.match(html, /<textarea[\s\S]*?id="cmr_model_id"[\s\S]*?aria-describedby="cmr_model_hint cmr_feedback"[\s\S]*?<\/textarea>/);
+    assert.match(html, /<ul id="cmr_model_list"[^>]*aria-labelledby="cmr_list_title"[^>]*><\/ul>/);
+    assert.doesNotMatch(html, /<select id="cmr_provider"[^>]*aria-describedby="[^"]*cmr_provider_help/);
+    assert.doesNotMatch(html, /<textarea[\s\S]*?id="cmr_model_id"[\s\S]*?aria-describedby="[^"]*cmr_(?:provider|model)_help/);
+    assert.doesNotMatch(html, /<ul id="cmr_model_list"[^>]*aria-describedby=/);
+    assert.match(index, /help\.textContent = formatUiSentences\(/);
+    assert.match(index, /\$\{getProviderHelp\(provider\)\}[^`]*빈 줄·중복·SillyTavern 기본 모델은 건너뛰며/);
+    assert.match(css, /#cmr_settings #cmr_model_help[\s\S]*?white-space:\s*pre-line/);
     assert.match(css, /word-break:\s*keep-all/);
     assert.match(css, /overflow-wrap:\s*normal/);
     assert.match(css, /\.cmr-sentence\s*{[^}]*display:\s*block/s);
@@ -134,8 +181,9 @@ test('외부 연결 UI는 평상시 숨기고 문제 경고와 고급 제외 관
     assert.match(operations, /연결 실패와 사용자가 제외한 대상만 기본 목록에 표시합니다/);
     assert.match(operations, /문제가 생긴 모델 칸 제외/);
     assert.match(operations, /id="cmr_external_picker_list"[^>]*aria-label="연결에서 제외할 외부 모델 칸"[^>]*tabindex="0"/);
-    assert.match(operations, /외부 기능에서 문제가 생긴 모델 칸만 선택해 제외하세요/);
-    assert.match(operations, /실제 요청에 해당 모델이 사용된다는 사실은 다릅니다/);
+    assert.match(operations, /문제가 생긴 모델 칸만 제외하세요/);
+    assert.match(operations, /실제 요청 적용은 외부 기능에서 직접 확인하세요/);
+    assert.match(operations, /선택지가 보여도 실제 요청에 사용됐다는 뜻은 아닙니다/);
     assert.match(index, /const directTargets = targets\.filter\(target => target\.resolution\?\.source === 'direct'\)/);
     assert.match(index, /const failedTargets = directTargets\.filter\(target => target\.bridge\?\.status === 'failed'\)/);
     assert.match(index, /const userExcludedTargets = targets\.filter\(target => target\.resolution\?\.source === 'user-excluded'\)/);
@@ -165,9 +213,11 @@ test('외부 연결 UI는 평상시 숨기고 문제 경고와 고급 제외 관
 test('모델 추가 버튼은 접근 가능한 아이콘 전용 정사각형 버튼이다', async () => {
     const [html, css] = await readUiFiles();
     const addForm = html.match(/<form id="cmr_add_form"[\s\S]*?<\/form>/)?.[0] ?? '';
-    const button = addForm.match(/<button[\s\S]*?class="menu_button cmr-add-button cmr-icon-button"[\s\S]*?<\/button>/)?.[0] ?? '';
+    const button = addForm.match(/<button(?=[^>]*class="menu_button cmr-add-button cmr-icon-button")[^>]*>[\s\S]*?<\/button>/)?.[0] ?? '';
 
-    assert.equal((addForm.match(/<button\b/g) ?? []).length, 1);
+    assert.equal((addForm.match(/<button\b/g) ?? []).length, 2);
+    assert.equal((addForm.match(/class="cmr-info-button"/g) ?? []).length, 1);
+    assert.equal((addForm.match(/class="menu_button cmr-add-button cmr-icon-button"/g) ?? []).length, 1);
     assert.equal((addForm.match(/<textarea\b/g) ?? []).length, 1);
     assert.match(button, /type="submit"/);
     assert.match(button, /title="모델 등록"/);

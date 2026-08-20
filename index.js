@@ -70,7 +70,7 @@ import {
     shouldShowModelSearch,
 } from './src/model-management.js';
 
-const EXTENSION_VERSION = '0.6.11';
+const EXTENSION_VERSION = '0.6.12';
 const SETTINGS_KEY = 'customModelRouter';
 const ROUTES_SETTINGS_KEY = 'customModelRouterRouting';
 const EXTERNAL_SETTINGS_KEY = 'customModelRouterExternalIntegrations';
@@ -145,7 +145,6 @@ let syncScheduled = false;
 let settingsRoot = null;
 let settingsTemplateHtml = '';
 let launcherButton = null;
-let launcherCount = null;
 let activePopup = null;
 let activeProviderId = null;
 let registryApiController = null;
@@ -345,14 +344,6 @@ function renderLauncher() {
         `사용자 모델 관리, ${modelCount}개 등록됨${detectedCount ? '' : ', 지원 모델 컨트롤을 찾지 못함'}`,
     );
     launcherButton.title = settingsTemplateHtml ? '사용자 모델 관리' : '모델 관리 패널을 불러오는 중';
-
-    if (launcherCount) {
-        const countText = modelCount > 99 ? '99+' : String(modelCount);
-        if (launcherCount.textContent !== countText) {
-            launcherCount.textContent = countText;
-        }
-        launcherCount.hidden = modelCount === 0;
-    }
 }
 
 function ensureLauncher() {
@@ -374,10 +365,7 @@ function ensureLauncher() {
         const icon = document.createElement('i');
         icon.className = 'fa-solid fa-route';
         icon.setAttribute('aria-hidden', 'true');
-        launcherCount = document.createElement('span');
-        launcherCount.className = 'cmr-launcher-count';
-        launcherCount.setAttribute('aria-hidden', 'true');
-        launcherButton.append(icon, launcherCount);
+        launcherButton.append(icon);
         launcherButton.addEventListener('click', openSettingsPanel);
     }
 
@@ -651,7 +639,7 @@ function renderModelList() {
     }
 
     const providers = getProviders();
-    // 관리 목록과 런처 개수는 비활성 레코드까지 포함한다. 실제 SillyTavern
+    // 관리 목록의 개수는 비활성 레코드까지 포함한다. 실제 SillyTavern
     // 및 외부 모델 선택지 주입은 synchronize 경로의 getEnabledModels만 쓴다.
     const models = normalizeSettings(settings).models;
     const providerLabels = new Map(providers.map(provider => [provider.id, provider.label]));
@@ -2265,7 +2253,6 @@ function teardownRuntime({ applyNativeFallback = false } = {}) {
     launcherButton?.removeEventListener('click', openSettingsPanel);
     launcherButton?.remove();
     launcherButton = null;
-    launcherCount = null;
     settingsTemplateHtml = '';
     uninstallRegistryApi?.();
     uninstallRegistryApi = null;

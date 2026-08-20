@@ -7,6 +7,38 @@ const VIEWPORTS = Object.freeze([
     { width: 420, height: 800 },
     { width: 720, height: 900 },
 ]);
+const HELP_POPOVERS = Object.freeze([
+    {
+        trigger: '#cmr_provider_help_trigger',
+        popover: '#cmr_provider_help',
+        label: '제공업체 선택 도움말',
+        description: /선택한 제공업체가 모델 ID 형식과 등록 위치를 결정합니다/,
+    },
+    {
+        trigger: '#cmr_model_help_trigger',
+        popover: '#cmr_model_help',
+        label: '모델 ID 등록 규칙',
+        description: /잘못된 행이 하나라도 있으면 아무 모델도 등록하지 않습니다/,
+    },
+    {
+        trigger: '#cmr_model_list_help_trigger',
+        popover: '#cmr_model_list_help',
+        label: '등록 모델 목록 도움말',
+        description: /비활성 모델은 이 목록에만 남고 선택기에는 표시되지 않습니다/,
+    },
+    {
+        trigger: '#cmr_operations_help_trigger',
+        popover: '#cmr_operations_help',
+        label: '진단 및 백업 도움말',
+        description: /등록 모델·경로·외부 선택 기록만 백업합니다/,
+    },
+    {
+        trigger: '#cmr_external_help_trigger',
+        popover: '#cmr_external_help',
+        label: '외부 모델 연결 도움말',
+        description: /선택지가 보여도 실제 요청에 사용됐다는 뜻은 아닙니다/,
+    },
+]);
 
 let fixtureServer;
 
@@ -203,6 +235,120 @@ async function expectRegistrationControlsAligned(page) {
     expect(metrics.iconAfter).toBe('none');
 }
 
+async function expectHelpPopoverWithinViewport(page, selector) {
+    const metrics = await page.locator(selector).evaluate(element => {
+        const rect = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        return {
+            bottom: rect.bottom,
+            clientWidth: element.clientWidth,
+            display: style.display,
+            documentClientWidth: document.documentElement.clientWidth,
+            documentScrollWidth: document.documentElement.scrollWidth,
+            height: rect.height,
+            left: rect.left,
+            overflowWrap: style.overflowWrap,
+            right: rect.right,
+            scrollWidth: element.scrollWidth,
+            sentenceDisplays: [...element.querySelectorAll('.cmr-sentence')]
+                .map(sentence => getComputedStyle(sentence).display),
+            top: rect.top,
+            viewportHeight: window.innerHeight,
+            viewportWidth: window.innerWidth,
+            width: rect.width,
+            wordBreak: style.wordBreak,
+        };
+    });
+
+    expect(metrics.display).toBe('block');
+    expect(metrics.width).toBeGreaterThan(0);
+    expect(metrics.height).toBeGreaterThan(0);
+    expect(metrics.left).toBeGreaterThanOrEqual(-1);
+    expect(metrics.top).toBeGreaterThanOrEqual(-1);
+    expect(metrics.right).toBeLessThanOrEqual(metrics.viewportWidth + 1);
+    expect(metrics.bottom).toBeLessThanOrEqual(metrics.viewportHeight + 1);
+    expect(metrics.scrollWidth).toBeLessThanOrEqual(metrics.clientWidth + 1);
+    expect(metrics.documentScrollWidth).toBeLessThanOrEqual(metrics.documentClientWidth + 1);
+    expect(metrics.wordBreak).toBe('keep-all');
+    expect(metrics.overflowWrap).toBe('normal');
+    expect(metrics.sentenceDisplays.length).toBeGreaterThan(0);
+    expect(new Set(metrics.sentenceDisplays)).toEqual(new Set(['block']));
+}
+
+async function exerciseHelpPopovers(page) {
+    const dialog = page.locator('#cmr_manager_dialog');
+    const openPopovers = page.locator('.cmr-help-popover:popover-open');
+
+    await expect(page.locator('.cmr-info-button')).toHaveCount(HELP_POPOVERS.length);
+    await expect(page.locator('.cmr-help-popover')).toHaveCount(HELP_POPOVERS.length);
+    await expect(openPopovers).toHaveCount(0);
+
+    for (const item of HELP_POPOVERS) {
+        const trigger = page.locator(item.trigger);
+        const popover = page.locator(item.popover);
+        await expect(trigger).toHaveAttribute('type', 'button');
+        await expect(trigger).toHaveAttribute('popovertarget', item.popover.slice(1));
+        await expect(trigger).toHaveAttribute('aria-describedby', item.popover.slice(1));
+        await expect(trigger).toHaveAccessibleName(item.label);
+        await expect(trigger).toHaveAccessibleDescription(item.description);
+        await expect(trigger.locator(':scope > .fa-circle-info[aria-hidden="true"]')).toHaveCount(1);
+        await expect(popover).toHaveAttribute('popover', 'auto');
+        await expect(popover).toBeHidden();
+    }
+
+    await expect(page.locator('.cmr-description')).toHaveText(
+        '목록에 없는 모델을 등록하고, 실제 선택은 API Connections에서 합니다.',
+    );
+    await expect(page.locator('#cmr_provider_hint')).toHaveText('등록 위치만 정하며 현재 모델은 바뀌지 않습니다.');
+    await expect(page.locator('#cmr_model_hint')).toHaveText('한 줄에 하나 · 최대 200개 · 오류가 있으면 전체 취소');
+    await expect(page.locator('#cmr_operations_description')).toHaveText(
+        'CMR 상태를 진단하고 비밀정보를 제외한 설정을 백업·복구합니다.',
+    );
+    await expect(page.locator('#cmr_external_advanced .cmr-context-row > .cmr-tool-description')).toHaveText(
+        '실제 요청 적용은 외부 기능에서 직접 확인하세요.',
+    );
+
+    const provider = page.locator(HELP_POPOVERS[0].trigger);
+    await provider.click();
+    await expect(page.locator(HELP_POPOVERS[0].popover)).toBeVisible();
+    await expect(openPopovers).toHaveCount(1);
+    await expectHelpPopoverWithinViewport(page, HELP_POPOVERS[0].popover);
+
+    const model = page.locator(HELP_POPOVERS[1].trigger);
+    await model.focus();
+    await page.keyboard.press('Enter');
+    await expect(page.locator(HELP_POPOVERS[0].popover)).toBeHidden();
+    await expect(page.locator(HELP_POPOVERS[1].popover)).toBeVisible();
+    await expect(openPopovers).toHaveCount(1);
+    await expectHelpPopoverWithinViewport(page, HELP_POPOVERS[1].popover);
+
+    const list = page.locator(HELP_POPOVERS[2].trigger);
+    await list.focus();
+    await page.keyboard.press('Space');
+    await expect(page.locator(HELP_POPOVERS[1].popover)).toBeHidden();
+    await expect(page.locator(HELP_POPOVERS[2].popover)).toBeVisible();
+    await expect(openPopovers).toHaveCount(1);
+    await expectHelpPopoverWithinViewport(page, HELP_POPOVERS[2].popover);
+
+    await page.locator('#cmr_panel_title').click();
+    await expect(openPopovers).toHaveCount(0);
+
+    for (const item of HELP_POPOVERS.slice(3)) {
+        const trigger = page.locator(item.trigger);
+        await trigger.click();
+        await expect(page.locator(item.popover)).toBeVisible();
+        await expect(openPopovers).toHaveCount(1);
+        await expectHelpPopoverWithinViewport(page, item.popover);
+    }
+
+    const external = page.locator(HELP_POPOVERS[4].trigger);
+    await page.keyboard.press('Escape');
+    await expect(page.locator(HELP_POPOVERS[4].popover)).toBeHidden();
+    await expect(openPopovers).toHaveCount(0);
+    await expect(external).toBeFocused();
+    await expect(dialog).toBeVisible();
+}
+
 async function expectHiddenScrollbarCanScroll(page, selector, { keyboard = true, hoverAtStart = false } = {}) {
     const target = page.locator(selector);
     await target.scrollIntoViewIfNeeded();
@@ -265,6 +411,8 @@ for (const viewport of VIEWPORTS) {
             await expectNoHorizontalOverflow(page);
             await expectButtonsAligned(page, viewport.width === 720 ? 4 : 2);
             await expectRegistrationControlsAligned(page);
+            await exerciseHelpPopovers(page);
+            await expectNoHorizontalOverflow(page);
 
             const wrapping = await page.evaluate(() => ({
                 sentenceDisplay: getComputedStyle(document.querySelector('.cmr-sentence')).display,
@@ -594,10 +742,20 @@ test.describe('모델 등록·복구 흐름', () => {
 test.describe('Popup 닫기 계약', () => {
     test.use({ viewport: { width: 420, height: 800 } });
 
-    test('Escape 키로 실제 modal dialog를 닫는다', async ({ page }) => {
+    test('첫 Escape는 도움말만 닫고 두 번째 Escape는 실제 modal dialog를 닫는다', async ({ page }) => {
         await openScenario(page, { modelCount: 7, externalCount: 4, openDetails: true });
         const dialog = page.locator('#cmr_manager_dialog');
+        const trigger = page.locator('#cmr_provider_help_trigger');
+        const popover = page.locator('#cmr_provider_help');
         await expect(dialog).toBeVisible();
+
+        await trigger.click();
+        await expect(popover).toBeVisible();
+        await page.keyboard.press('Escape');
+        await expect(popover).toBeHidden();
+        await expect(trigger).toBeFocused();
+        await expect(dialog).toBeVisible();
+
         await page.keyboard.press('Escape');
         await expect(dialog).toBeHidden();
     });

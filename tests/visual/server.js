@@ -558,6 +558,12 @@ function fixtureScript() {
                 }
             }
 
+            function closeHelpPopovers() {
+                for (const popover of document.querySelectorAll('.cmr-help-popover:popover-open')) {
+                    popover.hidePopover();
+                }
+            }
+
             document.getElementById('cmr_import_preview_cancel').addEventListener('click', () => {
                 renderImportPreview(false);
                 document.getElementById('cmr_feedback').textContent = '백업 가져오기를 취소했습니다.';
@@ -585,6 +591,7 @@ function fixtureScript() {
                 openAdvanced = openDetails,
                 openPicker = false,
             } = {}) => {
+                closeHelpPopovers();
                 configureModels(modelCount);
                 configureExternal({
                     total: externalCount,

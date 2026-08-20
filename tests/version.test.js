@@ -95,6 +95,7 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
     assert.match(roadmap, /## v0\.6\.9 — 외부 연결 예외 중심 UI와 schema v2/);
     assert.match(roadmap, /## v0\.6\.10 — 대량 모델 관리·안전한 복구와 외부 UI 정리/);
     assert.match(roadmap, /## v0\.6\.11 — 단일·여러 줄 모델 등록 UI 통합/);
+    assert.match(roadmap, /## v0\.6\.12 — 런처 배지 제거와 설명 정보 구조 정리/);
     assert.match(settingsHtml, /<textarea[\s\S]*?id="cmr_model_id"/);
     assert.match(settingsHtml, /id="cmr_add_form"/);
     assert.doesNotMatch(settingsHtml, /cmr_bulk_/);
@@ -102,6 +103,9 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
     assert.doesNotMatch(entrypoint, /cmr_bulk_/);
     assert.match(entrypoint, /new context\.Popup/);
     assert.match(entrypoint, /#cmr_open_manager/);
+    assert.doesNotMatch(entrypoint, /className = 'cmr-launcher-count'/);
+    assert.doesNotMatch(settingsHtml, /cmr-launcher-count/);
+    assert.match(entrypoint, /사용자 모델 관리, \$\{modelCount\}개 등록됨/);
     assert.doesNotMatch(entrypoint, /#extensions_settings2|#extensions_settings/);
     assert.doesNotMatch(settingsHtml, /inline-drawer/);
     assert.match(entrypoint, /installRegistryApi\(globalThis/);
@@ -114,6 +118,26 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
     assert.match(settingsHtml, /cmr_run_diagnostics/);
     assert.match(settingsHtml, /cmr_export_backup/);
     assert.match(settingsHtml, /호환성 진단 및 CMR 설정 백업/);
+    assert.equal((settingsHtml.match(/class="cmr-info-button"/g) ?? []).length, 5);
+    assert.equal((settingsHtml.match(/popover="auto"/g) ?? []).length, 5);
+    for (const helpId of [
+        'cmr_provider_help',
+        'cmr_model_help',
+        'cmr_model_list_help',
+        'cmr_operations_help',
+        'cmr_external_help',
+    ]) {
+        assert.match(settingsHtml, new RegExp(`popovertarget="${helpId}"`));
+        assert.match(settingsHtml, new RegExp(`id="${helpId}"[^>]*popover="auto"`));
+    }
+    assert.match(settingsHtml, /id="cmr_provider_hint"[^>]*>등록 위치만 정하며 현재 모델은 바뀌지 않습니다/);
+    assert.match(settingsHtml, /id="cmr_model_hint"[^>]*>한 줄에 하나 · 최대 200개 · 오류가 있으면 전체 취소/);
+    assert.match(settingsHtml, /실제 요청 적용은 외부 기능에서 직접 확인하세요/);
+    const scopeContent = settingsHtml.match(/<details class="cmr-scope-note">([\s\S]*?)<\/details>/)?.[1] ?? '';
+    assert.equal((scopeContent.match(/<p class="cmr-sentence">/g) ?? []).length, 3);
+    assert.match(scopeContent, /표준 Chat Completion 모델 칸만 지원합니다/);
+    assert.match(scopeContent, /비채팅 모델 칸과 자체 위젯은 변경하지 않습니다/);
+    assert.match(scopeContent, /API 키·계정·엔드포인트는 저장하거나 백업하지 않습니다/);
     assert.doesNotMatch(settingsHtml, /id="cmr_external_section"/);
     assert.match(settingsHtml, /id="cmr_external_warning"[^>]*hidden/);
     assert.match(settingsHtml, /id="cmr_external_advanced"/);
@@ -131,6 +155,7 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
     assert.match(apiDocument, /v0\.6 범용 DOM 모델 브리지/);
     assert.match(apiDocument, /Portable backup schema v2/);
     assert.match(apiDocument, /v0\.6\.7의 Playwright UI 회귀 검사 인프라/);
+    assert.match(apiDocument, /v0\.6\.12의 런처 숫자 배지 제거와 정보 popover 중심 문구 정리/);
     assert.match(apiDocument, /모두 새 객체로 만들고 순서까지 뒤집으면/);
     assert.match(apiDocument, /DOM 브리지 내부 저장 schema v2/);
     assert.match(apiDocument, /excludedTargets/);
@@ -175,6 +200,8 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
     assert.match(uiRegressionSpec, /#cmr_external_warning_open/);
     assert.match(uiRegressionSpec, /#cmr_external_advanced/);
     assert.match(uiRegressionSpec, /\.fa-plus/);
+    assert.match(uiRegressionSpec, /cmr-info-button|cmr_provider_help_trigger/);
+    assert.match(uiRegressionSpec, /popover-open|showPopover/);
     assert.match(uiRegressionServer, /REQUIRED_ST_VERSION = '1\.18\.0'/);
     assert.match(uiRegressionServer, /readFile\(resolve\(REPOSITORY_ROOT, 'settings\.html'\)/);
     assert.match(uiRegressionServer, /public', 'style\.css'/);

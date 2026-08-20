@@ -1075,7 +1075,10 @@ test('init은 24개 제공업체를 연결하고 API Connections Popup을 한 �
         assert.equal(launcher.getAttribute('aria-haspopup'), 'dialog');
         assert.equal(launcher.getAttribute('aria-expanded'), 'false');
         assert.match(launcher.getAttribute('aria-label'), /1개 등록됨/);
-        assert.equal(launcher.querySelector('.cmr-launcher-count')?.textContent, '1');
+        assert.equal(launcher.children.length, 1);
+        assert.equal(launcher.children[0].className, 'fa-solid fa-route');
+        assert.equal(launcher.children[0].getAttribute('aria-hidden'), 'true');
+        assert.equal(launcher.querySelector('.cmr-launcher-count'), null);
         assert.equal(harness.documentRef.querySelector('#cmr_settings'), null);
         assert.equal(harness.fetchCallCount, 1);
         assert.equal(harness.eventSource.onCalls.length, 7);
@@ -1084,7 +1087,7 @@ test('init은 24개 제공업체를 연결하고 API Connections Popup을 한 �
         assert.ok(harness.observers.some(observer => observer.target === harness.observerRoot));
         assert.ok(harness.observers.some(observer => observer.target === harness.documentRef.body));
         assert.equal(globalThis.CustomModelRouter.apiVersion, '1.1.0');
-        assert.equal(globalThis.CustomModelRouter.extensionVersion, '0.6.11');
+        assert.equal(globalThis.CustomModelRouter.extensionVersion, '0.6.12');
         assert.equal(globalThis.CustomModelRouter.routing.apiVersion, '1.0.0');
         assert.equal(globalThis.CustomModelRouter.getSnapshot().models.length, 1);
 
@@ -1103,6 +1106,7 @@ test('init은 24개 제공업체를 연결하고 API Connections Popup을 한 �
         assert.equal(panel.querySelector('#cmr_provider').value, 'vertexai');
         assert.equal(panel.querySelector('#cmr_model_label').textContent, 'Google Vertex AI 모델 ID');
         assert.match(panel.querySelector('#cmr_model_help').textContent, /모델 경로 한 구간/);
+        assert.match(panel.querySelector('#cmr_model_help').textContent, /\.\n\S/, '동적 제공업체 도움말도 문장 종결부호 뒤에서 줄을 바꾼다');
         assert.equal(panel.querySelector('#cmr_list_title').textContent, '전체 등록 모델');
         assert.equal(panel.querySelector('#cmr_model_list').children.length, 1);
         assert.equal(panel.querySelector('#cmr_model_list').children[0].className, 'cmr-provider-group');
@@ -1274,23 +1278,22 @@ test('공개 API도 SillyTavern select에서 현재 사용 중인 사용자 모�
     }
 });
 
-test('런처 숫자 변경은 MutationObserver 자기 반복 없이 한 번만 복구한다', async () => {
+test('런처는 모델 수가 바뀌어도 숫자 배지 없이 아이콘 하나와 접근 가능한 개수를 유지한다', async () => {
     const harness = createHarness();
     const restoreGlobals = installBrowserGlobals(harness);
     try {
         await init();
-        const count = harness.documentRef.querySelector('#cmr_open_manager').querySelector('.cmr-launcher-count');
-        const coreObserver = harness.observers.find(observer => observer.target === harness.observerRoot);
-        assert.ok(coreObserver);
-        const initialCoreCallbacks = coreObserver.callbackCount;
-        count.textContent = '999';
-        await flushMicrotasks();
-        assert.equal(count.textContent, '1');
-        assert.ok(coreObserver.callbackCount <= initialCoreCallbacks + 2);
-        const settledCoreCallbacks = coreObserver.callbackCount;
+        const launcher = harness.documentRef.querySelector('#cmr_open_manager');
+        assert.equal(launcher.children.length, 1);
+        assert.equal(launcher.querySelector('.cmr-launcher-count'), null);
+        assert.match(launcher.getAttribute('aria-label'), /1개 등록됨/);
+
+        globalThis.CustomModelRouter.registerModel('zai', 'glm-launcher-accessibility');
         await flushMicrotasks(8);
-        assert.equal(coreObserver.callbackCount, settledCoreCallbacks);
-        assert.equal(coreObserver.target, harness.observerRoot);
+        assert.equal(launcher.children.length, 1);
+        assert.equal(launcher.children[0].className, 'fa-solid fa-route');
+        assert.equal(launcher.querySelector('.cmr-launcher-count'), null);
+        assert.match(launcher.getAttribute('aria-label'), /2개 등록됨/);
     } finally {
         await destroy();
         restoreGlobals();
@@ -1574,7 +1577,7 @@ test('비활성 등록 모델도 런처·전체 목록·검색에 남고 주입 
         const launcher = harness.documentRef.querySelector('#cmr_open_manager');
         const injectedIds = getCustomGroup(harness.controls.get('vertexai'), 'vertexai')
             .children.map(option => option.value);
-        assert.equal(launcher.querySelector('.cmr-launcher-count').textContent, '13');
+        assert.equal(launcher.querySelector('.cmr-launcher-count'), null);
         assert.match(launcher.getAttribute('aria-label'), /13개 등록됨/);
         assert.equal(injectedIds.length, enabledModels.length);
         assert.equal(injectedIds.includes(disabledModelId), false);
@@ -3089,7 +3092,7 @@ test('설정 UI fetch 지연 중 destroy해도 런처와 provider 옵션이 되�
     }
 });
 
-test('모델 100개는 런처에 99+로 축약하고 Popup의 provider별 압축 목록에 모두 렌더링한다', async () => {
+test('모델 100개는 런처에 숫자 배지 없이 안내하고 Popup의 provider별 압축 목록에 모두 렌더링한다', async () => {
     const modelIds = Array.from({ length: 100 }, (_, index) => (
         `gemini-bulk-${String(index + 1).padStart(3, '0')}`
     ));
@@ -3101,7 +3104,7 @@ test('모델 100개는 런처에 99+로 축약하고 Popup의 provider별 압축
     try {
         await init();
         const launcher = harness.documentRef.querySelector('#cmr_open_manager');
-        assert.equal(launcher.querySelector('.cmr-launcher-count').textContent, '99+');
+        assert.equal(launcher.querySelector('.cmr-launcher-count'), null);
         assert.match(launcher.getAttribute('aria-label'), /100개 등록됨/);
 
         const panel = openPanel(harness);

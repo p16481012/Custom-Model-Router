@@ -32,7 +32,8 @@ test('모델 관리 기본 화면은 등록·삭제에 집중하고 외부 연�
     assert.match(html, /id="cmr_external_picker"/);
     assert.match(html, /id="cmr_external_picker_list"/);
     assert.match(html, /연결 실패와 사용자가 제외한 대상만 기본 목록에 표시합니다/);
-    assert.match(html, /실제 요청에 해당 모델이 사용된다는 사실은 다릅니다/);
+    assert.match(html, /실제 요청 적용은 외부 기능에서 직접 확인하세요/);
+    assert.match(html, /선택지가 보여도 실제 요청에 사용됐다는 뜻은 아닙니다/);
     assert.doesNotMatch(html, /id="cmr_external_refresh"|data-cmr-external-mode/);
     assert.doesNotMatch(html, /<dt>자동 연결|<dt>연결 안 함/);
     assert.doesNotMatch(html, /id="cmr_rout(?:ing_section|e_(?:form|purpose|model|profile|clear|test|status))"/);
@@ -73,7 +74,7 @@ test('브라우저 샌드박스는 안전 대상 자동 연결·provider metadat
     assert.match(html, /id="switch_caption_provider"/);
     assert.match(html, /switchCaptionProvider\(\)/);
     assert.match(html, /data-extension-name="unknown helper"/);
-    assert.match(html, /browser-sandbox=0\.6\.11/);
+    assert.match(html, /browser-sandbox=0\.6\.12/);
     assert.match(html, /제공업체 선택기가 없어도 안전하게 자동 연결/);
 });
 
@@ -89,9 +90,20 @@ test('수동 UI 샌드박스도 모델 등록·복구 미리보기·외부 목�
         'cmr_import_preview',
         'cmr_external_picker',
         'cmr_external_picker_list',
+        'cmr_provider_help_trigger',
+        'cmr_model_help_trigger',
+        'cmr_model_list_help_trigger',
+        'cmr_operations_help_trigger',
+        'cmr_external_help_trigger',
     ]) {
         assert.match(html, new RegExp(`id="${id}"`));
     }
+    assert.equal((html.match(/class="cmr-info-button"/g) ?? []).length, 5);
+    assert.equal((html.match(/class="cmr-help-popover" popover="auto"/g) ?? []).length, 5);
+    assert.match(html, /목록에 없는 모델을 등록하고, 실제 선택은 API Connections에서 합니다/);
+    assert.match(html, /등록 위치만 정하며 현재 모델은 바뀌지 않습니다/);
+    assert.match(html, /한 줄에 하나 · 최대 200개 · 오류가 있으면 전체 취소/);
+    assert.match(html, /실제 요청 적용은 외부 기능에서 직접 확인하세요/);
     assert.match(actionList, /선택지 연결 실패/);
     assert.match(actionList, /사용자 제외/);
     assert.doesNotMatch(actionList, /선택지 연결됨/);

@@ -46,6 +46,10 @@
             content: "+";
         }
 
+        .cmr-info-button > .fa-circle-info::before {
+            content: "ⓘ";
+        }
+
         /* SillyTavern 전역 충돌 재현: 확장 스타일의 #cmr_settings 규칙이 이를 방어해야 한다. */
         .menu_button {
             align-items: flex-start;
@@ -175,14 +179,25 @@
                             </div>
                         </header>
 
-                        <p class="cmr-description">
-                            <span class="cmr-sentence">SillyTavern 목록에 없는 모델 ID를 등록합니다.</span>
-                            <span class="cmr-sentence">실제 선택과 요청 성공은 이 샌드박스에서 검증하지 않습니다.</span>
-                        </p>
+                        <p class="cmr-description">목록에 없는 모델을 등록하고, 실제 선택은 API Connections에서 합니다.</p>
 
                         <div class="cmr-provider-field">
-                            <label for="cmr_provider">등록할 제공업체</label>
-                            <select id="cmr_provider" class="text_pole wide100p">
+                            <div class="cmr-label-row">
+                                <label for="cmr_provider">등록할 제공업체</label>
+                                <button
+                                    id="cmr_provider_help_trigger"
+                                    class="cmr-info-button"
+                                    type="button"
+                                    popovertarget="cmr_provider_help"
+                                    aria-label="제공업체 선택 도움말"
+                                    aria-describedby="cmr_provider_help"
+                                ><i class="fa-solid fa-circle-info" aria-hidden="true"></i></button>
+                                <div id="cmr_provider_help" class="cmr-help-popover" popover="auto">
+                                    <span class="cmr-sentence">선택한 제공업체가 모델 ID 형식과 등록 위치를 결정합니다.</span>
+                                    <span class="cmr-sentence">실제 사용 모델은 API Connections에서 선택합니다.</span>
+                                </div>
+                            </div>
+                            <select id="cmr_provider" class="text_pole wide100p" aria-describedby="cmr_provider_hint">
                                 <optgroup label="모델 개발사 API">
                                     <option>Google Vertex AI</option>
                                     <option>Z.AI (GLM)</option>
@@ -191,14 +206,26 @@
                                     <option>OpenRouter</option>
                                 </optgroup>
                             </select>
-                            <small>
-                                <span class="cmr-sentence">모델을 등록할 제공업체를 선택합니다.</span>
-                                <span class="cmr-sentence">여기서 현재 모델은 바뀌지 않습니다.</span>
-                            </small>
+                            <small id="cmr_provider_hint">등록 위치만 정하며 현재 모델은 바뀌지 않습니다.</small>
                         </div>
 
                         <form id="cmr_add_form" class="cmr-add-form">
-                            <label for="cmr_model_id">Google Vertex AI 모델 ID</label>
+                            <div class="cmr-label-row">
+                                <label for="cmr_model_id">Google Vertex AI 모델 ID</label>
+                                <button
+                                    id="cmr_model_help_trigger"
+                                    class="cmr-info-button"
+                                    type="button"
+                                    popovertarget="cmr_model_help"
+                                    aria-label="모델 ID 등록 규칙"
+                                    aria-describedby="cmr_model_help"
+                                ><i class="fa-solid fa-circle-info" aria-hidden="true"></i></button>
+                                <div id="cmr_model_help" class="cmr-help-popover" popover="auto">
+                                    <span class="cmr-sentence">제공업체가 허용하는 정확한 모델 ID를 입력합니다.</span>
+                                    <span class="cmr-sentence">빈 줄·중복·SillyTavern 기본 모델은 건너뜁니다.</span>
+                                    <span class="cmr-sentence">잘못된 행이 하나라도 있으면 아무 모델도 등록하지 않습니다.</span>
+                                </div>
+                            </div>
                             <div class="cmr-input-row">
                                 <textarea
                                     id="cmr_model_id"
@@ -206,7 +233,7 @@
                                     rows="3"
                                     maxlength="65536"
                                     placeholder="한 줄에 모델 ID 하나"
-                                    aria-label="모델 ID 예시"
+                                    aria-describedby="cmr_model_hint cmr_feedback"
                                 >gemini-next-preview
 gemini-next-flash</textarea>
                                 <button
@@ -216,10 +243,7 @@ gemini-next-flash</textarea>
                                     aria-label="입력한 모델 ID 등록"
                                 ><i class="fa-solid fa-plus" aria-hidden="true"></i></button>
                             </div>
-                            <small>
-                                <span class="cmr-sentence">모델 ID 하나를 입력하거나 여러 개면 한 줄에 하나씩 최대 200개를 입력합니다.</span>
-                                <span class="cmr-sentence">빈 줄·중복·SillyTavern 기본 모델은 건너뜁니다.</span>
-                            </small>
+                            <small id="cmr_model_hint">한 줄에 하나 · 최대 200개 · 오류가 있으면 전체 취소</small>
                         </form>
 
                         <div class="cmr-feedback-row">
@@ -229,7 +253,23 @@ gemini-next-flash</textarea>
 
                         <section class="cmr-list-region" data-cmr-list-scope="all" aria-labelledby="cmr_list_title">
                             <div class="cmr-list-header">
-                                <h3 id="cmr_list_title">전체 등록 모델</h3>
+                                <div class="cmr-title-row">
+                                    <h3 id="cmr_list_title">전체 등록 모델</h3>
+                                    <button
+                                        id="cmr_model_list_help_trigger"
+                                        class="cmr-info-button"
+                                        type="button"
+                                        popovertarget="cmr_model_list_help"
+                                        aria-label="등록 모델 목록 도움말"
+                                        aria-describedby="cmr_model_list_help"
+                                    ><i class="fa-solid fa-circle-info" aria-hidden="true"></i></button>
+                                    <div id="cmr_model_list_help" class="cmr-help-popover" popover="auto">
+                                        <span class="cmr-sentence">등록 모델은 제공업체별로 정리됩니다.</span>
+                                        <span class="cmr-sentence">지원되는 SillyTavern·외부 확장 모델 칸에 추가됩니다.</span>
+                                        <span class="cmr-sentence">비활성 모델은 이 목록에만 남고 선택기에는 표시되지 않습니다.</span>
+                                        <span class="cmr-sentence">자유 입력 방식은 기존 입력란에 모델 ID를 직접 입력합니다.</span>
+                                    </div>
+                                </div>
                                 <span id="cmr_model_count" class="cmr-list-count">제공업체 3곳 · 모델 7개</span>
                             </div>
                             <div id="cmr_model_search_region" class="cmr-model-search" hidden>
@@ -237,7 +277,7 @@ gemini-next-flash</textarea>
                                 <span aria-hidden="true">⌕</span>
                                 <input id="cmr_model_search" class="text_pole wide100p" type="search" placeholder="제공업체 또는 모델 ID 검색">
                             </div>
-                            <ul id="cmr_model_list" class="cmr-model-list" data-scrollable="true">
+                            <ul id="cmr_model_list" class="cmr-model-list" data-scrollable="true" aria-labelledby="cmr_list_title">
                                 <li class="cmr-provider-group">
                                     <div class="cmr-provider-group-header">
                                         <span class="cmr-provider-group-label">Google Vertex AI</span>
@@ -291,7 +331,6 @@ gemini-next-flash</textarea>
                                     </ul>
                                 </li>
                             </ul>
-                            <small>모델 7개 예시를 제공업체별로 표시합니다.</small>
                         </section>
 
                         <aside id="cmr_external_warning" class="cmr-warning-card" role="status" aria-live="polite" hidden>
@@ -306,7 +345,22 @@ gemini-next-flash</textarea>
                         <details id="cmr_operations_section" class="cmr-tool-section" open>
                             <summary>호환성 진단 및 CMR 설정 백업</summary>
                             <div class="cmr-tool-body">
-                                <p class="cmr-tool-description">버튼 중앙 정렬과 두 열 배치를 확인하는 정적 예시입니다.</p>
+                                <div class="cmr-context-row">
+                                    <p id="cmr_operations_description" class="cmr-tool-description">CMR 상태를 진단하고 비밀정보를 제외한 설정을 백업·복구합니다.</p>
+                                    <button
+                                        id="cmr_operations_help_trigger"
+                                        class="cmr-info-button"
+                                        type="button"
+                                        popovertarget="cmr_operations_help"
+                                        aria-label="진단 및 백업 도움말"
+                                        aria-describedby="cmr_operations_help"
+                                    ><i class="fa-solid fa-circle-info" aria-hidden="true"></i></button>
+                                    <div id="cmr_operations_help" class="cmr-help-popover" popover="auto">
+                                        <span class="cmr-sentence">SillyTavern 공개 API·모델 컨트롤·런타임 자원을 검사합니다.</span>
+                                        <span class="cmr-sentence">등록 모델·경로·외부 선택 기록만 백업합니다.</span>
+                                        <span class="cmr-sentence">저장값은 확장을 불러올 때 검사하고 안전한 범위에서 정리합니다.</span>
+                                    </div>
+                                </div>
                                 <div class="cmr-operation-actions">
                                     <button type="button" class="menu_button">진단 실행</button>
                                     <button type="button" class="menu_button">진단 복사</button>
@@ -332,10 +386,22 @@ gemini-next-flash</textarea>
                                         <span id="cmr_external_count" class="cmr-list-count">문제 1개 · 사용자 제외 1개</span>
                                     </summary>
                                     <div class="cmr-advanced-body">
-                                        <p class="cmr-tool-description">
-                                            <span class="cmr-sentence">안전한 Chat Completion 모델 칸에는 등록 모델을 자동으로 표시합니다.</span>
-                                            <span class="cmr-sentence">연결 실패와 사용자가 제외한 대상만 기본 목록에 표시합니다.</span>
-                                        </p>
+                                        <div class="cmr-context-row">
+                                            <p class="cmr-tool-description">실제 요청 적용은 외부 기능에서 직접 확인하세요.</p>
+                                            <button
+                                                id="cmr_external_help_trigger"
+                                                class="cmr-info-button"
+                                                type="button"
+                                                popovertarget="cmr_external_help"
+                                                aria-label="외부 모델 연결 도움말"
+                                                aria-describedby="cmr_external_help"
+                                            ><i class="fa-solid fa-circle-info" aria-hidden="true"></i></button>
+                                            <div id="cmr_external_help" class="cmr-help-popover" popover="auto">
+                                                <span class="cmr-sentence">안전한 Chat Completion 모델 칸에는 등록 모델을 자동으로 표시합니다.</span>
+                                                <span class="cmr-sentence">연결 실패와 사용자가 제외한 대상만 기본 목록에 표시합니다.</span>
+                                                <span class="cmr-sentence">선택지가 보여도 실제 요청에 사용됐다는 뜻은 아닙니다.</span>
+                                            </div>
+                                        </div>
                                         <div id="cmr_external_status" class="cmr-feedback" data-state="error" role="status" aria-live="polite">1개 대상의 선택지 연결을 확인해야 합니다.</div>
                                         <ul id="cmr_external_list" class="cmr-external-list" tabindex="0" aria-label="외부 확장 모델 연결 관리">
                                             <li class="cmr-model-row cmr-external-row">
@@ -362,7 +428,7 @@ gemini-next-flash</textarea>
                                         <details id="cmr_external_picker" class="cmr-inline-disclosure cmr-external-picker" open>
                                             <summary>문제가 생긴 모델 칸 제외</summary>
                                             <div class="cmr-external-picker-body">
-                                                <p class="cmr-tool-description">외부 기능에서 문제가 생긴 모델 칸만 선택해 제외하세요.</p>
+                                                <p class="cmr-tool-description">문제가 생긴 모델 칸만 제외하세요.</p>
                                                 <ul id="cmr_external_picker_list" class="cmr-external-list" tabindex="0" aria-label="연결에서 제외할 외부 모델 칸">
                                                     <li class="cmr-model-row cmr-external-row">
                                                         <div class="cmr-model-summary">
@@ -377,10 +443,6 @@ gemini-next-flash</textarea>
                                                 </ul>
                                             </div>
                                         </details>
-                                        <small>
-                                            <span class="cmr-sentence">선택지가 보인다는 사실과 실제 요청에 해당 모델이 사용된다는 사실은 다릅니다.</span>
-                                            <span class="cmr-sentence">실제 기능을 한 번 실행한 뒤 요청 또는 결과를 확인하세요.</span>
-                                        </small>
                                     </div>
                                 </details>
                             </div>
@@ -389,8 +451,9 @@ gemini-next-flash</textarea>
                         <details class="cmr-scope-note">
                             <summary>지원 범위 및 개인정보</summary>
                             <div class="cmr-tool-body">
-                                <p><span class="cmr-sentence">이 문장은 한국어 글자 단위가 아닌 공백에서 줄바꿈되는지 확인합니다.</span></p>
-                                <p><span class="cmr-sentence">이 샌드박스는 API 키나 연결 설정을 읽거나 저장하지 않습니다.</span></p>
+                                <p class="cmr-sentence">표준 Chat Completion 모델 칸만 지원합니다.</p>
+                                <p class="cmr-sentence">비채팅 모델 칸과 자체 위젯은 변경하지 않습니다.</p>
+                                <p class="cmr-sentence">CMR 모델·경로·외부 선택에 필요한 식별자와 상태만 저장하고 API 키·계정·엔드포인트는 저장하거나 백업하지 않습니다.</p>
                             </div>
                         </details>
                     </section>
@@ -434,6 +497,9 @@ gemini-next-flash</textarea>
                     requestedWidth: Number(viewport.dataset.width),
                     panelVisible: !panel.hidden,
                     providerGroupCount: document.querySelectorAll('.cmr-provider-group').length,
+                    infoButtonCount: document.querySelectorAll('.cmr-info-button').length,
+                    helpPopoverCount: document.querySelectorAll('.cmr-help-popover').length,
+                    openHelpPopoverCount: document.querySelectorAll('.cmr-help-popover:popover-open').length,
                     modelRowCount: document.querySelectorAll('#cmr_model_list .cmr-model-row').length,
                     externalActionRowCount: document.querySelectorAll('#cmr_external_list .cmr-external-row').length,
                     externalPickerRowCount: document.querySelectorAll('#cmr_external_picker_list .cmr-external-row').length,
@@ -460,6 +526,9 @@ gemini-next-flash</textarea>
             }
 
             document.getElementById('sandbox_popup_close').addEventListener('click', () => {
+                for (const popover of document.querySelectorAll('.cmr-help-popover:popover-open')) {
+                    popover.hidePopover();
+                }
                 panel.hidden = true;
                 reopenButton.hidden = false;
             });
