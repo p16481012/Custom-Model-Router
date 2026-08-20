@@ -76,7 +76,7 @@ import {
     shouldShowModelSearch,
 } from './src/model-management.js';
 
-const EXTENSION_VERSION = '0.6.15';
+const EXTENSION_VERSION = '0.6.16';
 const SETTINGS_KEY = 'customModelRouter';
 const ROUTES_SETTINGS_KEY = 'customModelRouterRouting';
 const EXTERNAL_SETTINGS_KEY = 'customModelRouterExternalIntegrations';
@@ -2105,6 +2105,25 @@ function handlePopupShowFailure(popup, root, error) {
     console.error('[Custom Model Router] 모델 관리 패널을 열지 못했습니다.', error);
 }
 
+function configurePopupCloseButton(popup) {
+    const closeButton = popup?.closeButton
+        ?? popup?.dlg?.querySelector?.('.popup-button-close');
+    if (!closeButton) {
+        return;
+    }
+    closeButton.setAttribute?.('role', 'button');
+    closeButton.setAttribute?.('tabindex', '0');
+    closeButton.setAttribute?.('aria-label', '모델 관리 닫기');
+    closeButton.addEventListener?.('keydown', event => {
+        if (event.key !== 'Enter' && event.key !== ' ') {
+            return;
+        }
+        event.preventDefault?.();
+        event.stopPropagation?.();
+        closeButton.click?.();
+    });
+}
+
 function openSettingsPanel() {
     if (!context || !settingsTemplateHtml) {
         return;
@@ -2131,6 +2150,7 @@ function openSettingsPanel() {
         popup.dlg.id = 'cmr_manager_dialog';
         popup.dlg.classList?.add('cmr-manager-dialog');
         popup.dlg.setAttribute?.('aria-labelledby', 'cmr_panel_title');
+        configurePopupCloseButton(popup);
         activePopup = popup;
         renderUi();
         let showResult;

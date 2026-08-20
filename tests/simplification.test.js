@@ -98,7 +98,7 @@ test('브라우저 샌드박스는 안전 대상 자동 연결·native provider 
     assert.match(html, /verificationRequired/);
     assert.match(html, /endpointUnchanged/);
     assert.match(html, /apiKeyUnchanged/);
-    assert.match(html, /browser-sandbox=0\.6\.15/);
+    assert.match(html, /browser-sandbox=0\.6\.16/);
     assert.match(html, /제공업체 선택기가 없어도 안전하게 자동 연결/);
 });
 

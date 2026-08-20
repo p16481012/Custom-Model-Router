@@ -25,6 +25,17 @@
     min-width: 0;
 }
 
+/* SillyTavern positions its shared close control just outside Popup borders.
+ * Keep that single control, but place it inside the CMR panel so it cannot
+ * overlap the app toolbar or escape narrow viewports. */
+.cmr-manager-dialog.popup > .popup-button-close {
+    right: auto;
+    top: auto;
+    inset-block-start: 0.75rem;
+    inset-inline-end: 0.5rem;
+    z-index: 2;
+}
+
 #cmr_settings {
     box-sizing: border-box;
     container-type: inline-size;
@@ -73,6 +84,7 @@
 
 #cmr_settings .cmr-panel-header {
     gap: 0.75rem;
+    padding-inline-end: 2.75rem;
 }
 
 #cmr_settings .cmr-label-row,

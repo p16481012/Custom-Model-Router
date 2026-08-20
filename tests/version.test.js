@@ -106,6 +106,7 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
     assert.match(roadmap, /## v0\.6\.13 — 외부 provider\/source 선택기 오탐 차단/);
     assert.match(roadmap, /## v0\.6\.14 — 선택된 Connection Profile 기반 공용 provider 연동/);
     assert.match(roadmap, /## v0\.6\.15 — Hookless native provider option 모델 재사용/);
+    assert.match(roadmap, /## v0\.6\.16 — Popup 공식 닫기 내부 배치/);
     assert.match(settingsHtml, /<textarea[\s\S]*?id="cmr_model_id"/);
     assert.match(settingsHtml, /id="cmr_add_form"/);
     assert.doesNotMatch(settingsHtml, /cmr_bulk_/);
@@ -171,7 +172,7 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
     assert.match(providerIntegrations, /PROVIDER_INTEGRATION_OWNED_ATTRIBUTE = 'data-cmr-provider-hook-owned'/);
     assert.match(providerIntegrations, /installHandler/);
     assert.match(providerIntegrations, /publishModels/);
-    assert.match(providerIntegrationSandbox, /src\/provider-integrations\.js\?provider-sandbox=0\.6\.15/);
+    assert.match(providerIntegrationSandbox, /src\/provider-integrations\.js\?provider-sandbox=0\.6\.16/);
     assert.match(providerIntegrationSandbox, /ConnectionManagerRequestService/);
     assert.match(providerIntegrationSandbox, /provider-integrations\/echo/);
     assert.match(providerIntegrationSandbox, /data-cmr-provider-hook-owned="true"/);
@@ -366,8 +367,8 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
     assert.match(checklist, new RegExp(`Node 자동 검사 ${testCount}개`));
     const currentUiCountPatterns = [
         /Playwright Chromium UI 회귀 검사 (\d+)개는 제품/,
-        /## v0\.6\.15[\s\S]*?Node 자동 검사 \d+개와 Playwright Chromium UI 회귀 검사 (\d+)개로/,
-        /v0\.6\.15 저장소에서는 Node 자동 검사 \d+개와 Playwright Chromium UI 회귀 검사 (\d+)개를/,
+        /## v0\.6\.16[\s\S]*?Node 자동 검사 \d+개와 Playwright Chromium UI 회귀 검사 (\d+)개로/,
+        /v0\.6\.16 저장소에서는 Node 자동 검사 \d+개와 Playwright Chromium UI 회귀 검사 (\d+)개를/,
     ];
     const documentedUiCounts = [readme, roadmap, checklist].map((document, index) => {
         const match = document.match(currentUiCountPatterns[index]);
@@ -375,7 +376,7 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
         return Number(match[1]);
     });
     assert.equal(new Set(documentedUiCounts).size, 1, '세 문서의 Playwright UI 검사 개수가 같아야 한다');
-    assert.equal(documentedUiCounts[0], 15, 'v0.6.15 Playwright UI 검사 개수는 15개여야 한다');
+    assert.equal(documentedUiCounts[0], 15, 'v0.6.16 Playwright UI 검사 개수는 15개여야 한다');
 
     const checklistIds = Array.from(
         checklist.matchAll(/\*\*\[(?:필수|조건부|권장|선택)\]\[([A-Z0-9-]+)\]/g),

@@ -132,6 +132,79 @@ async function expectNoHorizontalOverflow(page) {
     expect(report.offenders).toEqual([]);
 }
 
+async function expectPopupCloseButtonInset(page) {
+    const dialog = page.locator('#cmr_manager_dialog');
+    const close = dialog.locator(':scope > .popup-button-close');
+
+    await expect(page.locator('.popup-button-close')).toHaveCount(1);
+    await expect(close).toHaveCount(1);
+    await expect(page.locator('#cmr_settings .popup-button-close')).toHaveCount(0);
+    await expect(close).toBeVisible();
+    await expect(close).toHaveAttribute('role', 'button');
+    await expect(close).toHaveAttribute('tabindex', '0');
+    await expect(close).toHaveAccessibleName('모델 관리 닫기');
+    await close.click({ trial: true });
+    await close.focus();
+    await expect(close).toBeFocused();
+
+    const metrics = await page.evaluate(() => {
+        const dialogElement = document.getElementById('cmr_manager_dialog');
+        const closeElement = dialogElement.querySelector(':scope > .popup-button-close');
+        const heading = document.querySelector('#cmr_settings .cmr-panel-heading');
+        const dialogRect = dialogElement.getBoundingClientRect();
+        const closeRect = closeElement.getBoundingClientRect();
+        const headingRect = heading.getBoundingClientRect();
+        const helpRects = [...document.querySelectorAll('#cmr_settings .cmr-info-button')]
+            .map(element => element.getBoundingClientRect());
+        const interactiveRects = [...document.querySelectorAll('#cmr_settings button, #cmr_settings summary')]
+            .filter(element => !element.hidden && getComputedStyle(element).display !== 'none')
+            .map(element => element.getBoundingClientRect())
+            .filter(rect => rect.bottom > dialogRect.top && rect.top < dialogRect.bottom);
+        const overlaps = (first, second) => first.left < second.right
+            && first.right > second.left
+            && first.top < second.bottom
+            && first.bottom > second.top;
+        const centerX = closeRect.left + closeRect.width / 2;
+        const centerY = closeRect.top + closeRect.height / 2;
+        const hitTarget = document.elementFromPoint(centerX, centerY);
+
+        return {
+            blockStartInset: closeRect.top - dialogRect.top,
+            closeHeight: closeRect.height,
+            closeWidth: closeRect.width,
+            hitTargetIsClose: hitTarget === closeElement || closeElement.contains(hitTarget),
+            inlineEndInset: dialogRect.right - closeRect.right,
+            insideDialog: closeRect.left >= dialogRect.left
+                && closeRect.top >= dialogRect.top
+                && closeRect.right <= dialogRect.right
+                && closeRect.bottom <= dialogRect.bottom,
+            overlapsHelp: helpRects.some(rect => overlaps(closeRect, rect)),
+            overlapsHeading: overlaps(closeRect, headingRect),
+            overlapsInteractive: interactiveRects.some(rect => overlaps(closeRect, rect)),
+            topRight: closeRect.left >= dialogRect.right - 64
+                && closeRect.top <= dialogRect.top + 32,
+            viewportContained: closeRect.left >= 0
+                && closeRect.top >= 0
+                && closeRect.right <= window.innerWidth
+                && closeRect.bottom <= window.innerHeight,
+        };
+    });
+
+    expect(metrics.closeWidth).toBeGreaterThanOrEqual(24);
+    expect(metrics.closeHeight).toBeGreaterThanOrEqual(24);
+    expect(metrics.blockStartInset).toBeGreaterThanOrEqual(8);
+    expect(metrics.blockStartInset).toBeLessThanOrEqual(24);
+    expect(metrics.inlineEndInset).toBeGreaterThanOrEqual(8);
+    expect(metrics.inlineEndInset).toBeLessThanOrEqual(24);
+    expect(metrics.insideDialog).toBe(true);
+    expect(metrics.topRight).toBe(true);
+    expect(metrics.viewportContained).toBe(true);
+    expect(metrics.overlapsHeading).toBe(false);
+    expect(metrics.overlapsHelp).toBe(false);
+    expect(metrics.overlapsInteractive).toBe(false);
+    expect(metrics.hitTargetIsClose).toBe(true);
+}
+
 async function expectButtonsAligned(page, expectedColumns) {
     const metrics = await page.evaluate(() => {
         function info(button) {
@@ -405,8 +478,7 @@ for (const viewport of VIEWPORTS) {
 
             const dialog = page.locator('#cmr_manager_dialog');
             await expect(dialog).toBeVisible();
-            await expect(page.locator('.popup-button-close:visible')).toHaveCount(1);
-            await expect(page.locator('#cmr_settings .popup-button-close')).toHaveCount(0);
+            await expectPopupCloseButtonInset(page);
 
             await expectNoHorizontalOverflow(page);
             await expectButtonsAligned(page, viewport.width === 720 ? 4 : 2);
@@ -530,6 +602,7 @@ for (const viewport of VIEWPORTS) {
             await page.locator('.popup-content').evaluate(element => {
                 element.scrollTop = element.scrollHeight;
             });
+            await expectPopupCloseButtonInset(page);
             await attachViewportScreenshot(page, testInfo, `ui-${viewport.width}x${viewport.height}-bottom`);
 
             await page.locator('.popup-button-close').click();

@@ -21,6 +21,11 @@ test('패널 헤더는 버전 배지와 중복 닫기 버튼을 만들지 않는
     assert.doesNotMatch(html, /cmr-version|>v0\.\d+\.\d+</);
     assert.doesNotMatch(css, /\.popup-button-close\s*{[^}]*display:\s*none/s);
     assert.doesNotMatch(css, /\.cmr-panel-close\b/);
+    assert.match(
+        css,
+        /\.cmr-manager-dialog\.popup > \.popup-button-close\s*{[^}]*right:\s*auto[^}]*top:\s*auto[^}]*inset-block-start:\s*0\.75rem[^}]*inset-inline-end:\s*0\.5rem[^}]*z-index:\s*2/s,
+    );
+    assert.match(css, /#cmr_settings \.cmr-panel-header\s*{[^}]*padding-inline-end:\s*2\.75rem/s);
 });
 
 test('등록 모델 영역은 전체 보기와 12개 초과 검색 계약을 사용한다', async () => {

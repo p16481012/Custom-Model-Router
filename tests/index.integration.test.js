@@ -1138,7 +1138,7 @@ test('init은 24개 제공업체를 연결하고 API Connections Popup을 한 �
         assert.ok(harness.observers.some(observer => observer.target === harness.observerRoot));
         assert.ok(harness.observers.some(observer => observer.target === harness.documentRef.body));
         assert.equal(globalThis.CustomModelRouter.apiVersion, '1.2.0');
-        assert.equal(globalThis.CustomModelRouter.extensionVersion, '0.6.15');
+        assert.equal(globalThis.CustomModelRouter.extensionVersion, '0.6.16');
         assert.equal(globalThis.CustomModelRouter.routing.apiVersion, '1.0.0');
         assert.equal(globalThis.CustomModelRouter.getSnapshot().models.length, 1);
 
@@ -1151,6 +1151,12 @@ test('init은 24개 제공업체를 연결하고 API Connections Popup을 한 �
         assert.equal(popup.dlg.id, 'cmr_manager_dialog');
         assert.ok(popup.dlg.classList.contains('cmr-manager-dialog'));
         assert.ok(popup.dlg.contains(panel));
+        assert.equal(popup.dlg.querySelectorAll('.popup-button-close').length, 1);
+        assert.equal(popup.closeButton.parentElement, popup.dlg);
+        assert.equal(panel.querySelector('.popup-button-close'), null);
+        assert.equal(popup.closeButton.getAttribute('role'), 'button');
+        assert.equal(popup.closeButton.getAttribute('tabindex'), '0');
+        assert.equal(popup.closeButton.getAttribute('aria-label'), '모델 관리 닫기');
         assert.equal(harness.context.mainApi, 'openai');
         assert.equal(harness.context.chatCompletionSettings.chat_completion_source, 'vertexai');
         assert.equal(panel.querySelector('#cmr_provider').options.length, 24);
@@ -1186,8 +1192,11 @@ test('init은 24개 제공업체를 연결하고 API Connections Popup을 한 �
         assert.equal(panel.querySelector('#cmr_panel_close'), null);
         assert.equal(popup.closeButton.hidden, false);
         assert.notEqual(popup.closeButton.getAttribute('aria-hidden'), 'true');
-        popup.closeButton.dispatchEvent(new FakeEvent('click'));
+        const closeKeyEvent = new FakeEvent('keydown', { key: 'Enter' });
+        popup.closeButton.dispatchEvent(closeKeyEvent);
         await flushMicrotasks();
+        assert.equal(closeKeyEvent.defaultPrevented, true);
+        assert.equal(closeKeyEvent.propagationStopped, true);
         assert.equal(popup.completeCancelledCallCount, 1);
         assert.equal(harness.documentRef.querySelector('#cmr_settings'), null);
         assert.equal(harness.documentRef.querySelector('#cmr_manager_dialog'), null);

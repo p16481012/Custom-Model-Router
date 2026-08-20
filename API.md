@@ -1,6 +1,6 @@
 # 공개 Registry 및 Provider Integration API
 
-Custom Model Router v0.6.15는 다른 SillyTavern 확장이 내부 파일 경로에 의존하지 않고 등록 모델, 공용 provider 연동과 용도별 라우팅을 사용할 수 있도록 `globalThis.CustomModelRouter`를 제공합니다. Registry API 계약 버전은 `1.2.0`, `CustomModelRouter.integrations`의 Provider Integration API 계약 버전은 `1.0.0`, Routing API 계약 버전은 `1.0.0`입니다. Registry `1.2.0`은 Integration API를 추가한 하위 호환 minor 갱신이며 Routing API는 v0.5.0의 `1.0.0` 계약을 유지합니다.
+Custom Model Router v0.6.16은 다른 SillyTavern 확장이 내부 파일 경로에 의존하지 않고 등록 모델, 공용 provider 연동과 용도별 라우팅을 사용할 수 있도록 `globalThis.CustomModelRouter`를 제공합니다. Registry API 계약 버전은 `1.2.0`, `CustomModelRouter.integrations`의 Provider Integration API 계약 버전은 `1.0.0`, Routing API 계약 버전은 `1.0.0`입니다. Registry `1.2.0`은 Integration API를 추가한 하위 호환 minor 갱신이며 Routing API는 v0.5.0의 `1.0.0` 계약을 유지합니다.
 
 v0.6.0의 범용 DOM 모델 브리지, v0.6.15의 hookless native provider option 재사용, 호환성 진단과 설정 백업·복구, v0.6.7의 Playwright UI 회귀 검사 인프라는 Registry/Routing 호출 계약에 포함되지 않습니다. v0.6.14의 Provider Integration API는 공개 hook을 명시적으로 등록한 소비 확장에만 적용되며 hookless native 재사용과 별도 경로입니다. 대상별 제외·복구와 기존 UI 선택지 주입 상태는 진단 섹션의 고급 외부 연결 관리에 있고, 실제 요청 반영은 별도로 확인해야 합니다. 외부 저장 schema v2 역시 공개 API 호출 계약과 별개입니다. Routing API는 개발자 또는 연동 확장이 명시적으로 사용하는 opt-in 계약이며 일반 라우팅 UI는 없습니다. 용도별 경로에는 Connection Profile ID만 저장되고 프로필 본문·API 키·endpoint는 복제되지 않습니다.
 
