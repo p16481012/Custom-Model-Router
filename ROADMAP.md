@@ -2,9 +2,9 @@
 
 마지막 업데이트: **2026-08-20**
 
-현재 릴리스: **v0.6.14**
+현재 릴리스: **v0.6.15**
 
-현재 단계: **v0.6.14의 선택된 Connection Manager 프로필 기반 공용 provider 연동과 공개 hook 계약을 구현하고 자동 검사를 마친 뒤 실제 사용자 환경 검증 대기 중**
+현재 단계: **v0.6.15의 hookless native Custom·SillyTavern 현재 연결 모델 projection을 구현하고 실제 외부 확장 handler 검증 대기 중**
 
 ## 상태 범례
 
@@ -26,14 +26,15 @@
 | 관리 팝업과 기본 컨트롤 | ✅ 완료 | 숫자 배지 없는 단일 런처, 24개 제공업체 모델 등록·삭제, 단일·여러 줄 공용 textarea와 아이콘 버튼 하나, 핵심 한 줄 안내와 native popover 도움말 5곳, 전체 provider 목록, 12개 초과 조건부 검색, 최대 200줄 원자 등록, 삭제 실행 취소와 6개 초과 숨은 스크롤 |
 | 공개 Registry API | ✅ 완료 | API `1.2.0`, 불변 스냅샷·mutation·이벤트·수명주기, Provider Integration API 노출, 현재 custom-only 모델 삭제 보호 |
 | 공용 provider 연동 | ✅ 완료 | Integration API `1.0.0`, 선택된 일반·Custom Connection Profile 전략, 공개 hook의 handler 설치→모델 게시 2단계 준비 계약 |
+| hookless native provider 재사용 | ✅ 완료 | 기존 exact Custom/OpenAI-compatible에는 `custom` 모델만, exact SillyTavern 현재 연결에는 활성 ST provider 모델만 투영; provider option·연결 설정·요청 handler 불변 |
 | 용도별 라우팅 | ✅ 완료 | 일반 UI 없이 Routing API `1.0.0`, Connection Profile 어댑터, route·backup 보존 |
-| 호환성 진단 | ✅ 완료 | ST·context·provider·런타임 진단, 복구 상세와 target별 native 중복 제외 후보 512개·전체 예상/실제 option 합계 2,048개 주의 |
+| 호환성 진단 | ✅ 완료 | ST·context·provider·런타임 진단, native Custom·현재 연결·projection·확인 불가 집계, 복구 상세와 target별 native 중복 제외 후보 512개·전체 예상/실제 option 합계 2,048개 주의 |
 | 범용 외부 확장 브리지 | ✅ 완료 | 표준 select/input/datalist 모델 target 탐지, provider/source 선택기 비대상 판별·metadata 감시, 안전 대상 자동 주입, 실패·사용자 제외 기본 목록, 정상 대상 명시적 제외 선택기, 위험 대상 진단 집계 |
 | 설정 백업·복구 | ✅ 완료 | Registry·route·외부 선택·사용자 제외 portable schema v2, 적용 전 추가·충돌·삭제 미리보기, legacy 이관·미래 schema 거부 |
 | 안정성 계측 | ✅ 완료 | source·profile 전환 표본의 core 자원과 외부 observer 제한 판정; 외부 target·binding·listener는 현재 진단 스냅샷에서 교차 확인 |
-| 자동 검사 | ✅ 완료 | 단위·통합·수명주기·보안 경계·버전 일치 검사 232개 통과 |
+| 자동 검사 | ✅ 완료 | 단위·통합·수명주기·보안 경계·버전 일치 검사 240개 통과 |
 | DOM·공개 API 샌드박스 | ✅ 완료 | 기본 24개·native 선택·외부 모델 컨트롤, provider/source 선택기 보존·개발자 route API와 정리 수명주기 확인 |
-| Chromium UI 회귀 검사 | ✅ 완료 | 실제 `settings.html`, SillyTavern 1.18.0 고정 CSS, 브라우저 브리지와 공용 provider 연동 fixture를 확인하는 Playwright Chromium UI 회귀 검사 14개 통과 |
+| Chromium UI 회귀 검사 | ✅ 완료 | 실제 `settings.html`, SillyTavern 1.18.0 고정 CSS, 브라우저 native 재사용과 공용 provider hook fixture를 확인하는 Playwright Chromium UI 회귀 검사 15개 통과 |
 | 사용자 실제 계정 검증 | 🧪 대기 | [통합 체크리스트](./USER_CHECKLIST.md)를 사용하는 연결에서 한 번 수행 |
 
 ## 지원 기준
@@ -44,13 +45,13 @@
 | `1.18.0` 미만 | ❌ 비지원 | manifest 최소 버전과 진단에서 중단 |
 | `1.18.0` 초과 | ⚠️ 최소 버전 충족·미검증 | 진단을 실행하고 실제 요청을 체크리스트로 확인 |
 
-샌드박스와 UI 회귀 검사는 DOM·공개 API 계약, 실제 설정 마크업과 SillyTavern CSS의 배치·상호작용을 확인합니다. v0.6.14 provider fixture는 실제 제품 모듈과 wiring을 사용하지만 Connection Manager 서비스와 네트워크는 가짜 구현입니다. 전체 SillyTavern 런타임, 실제 외부 확장 코드, 제공업체 인증·원격 네트워크 요청 성공을 대신하지 않습니다.
+샌드박스와 UI 회귀 검사는 DOM·공개 API 계약, 실제 설정 마크업과 SillyTavern CSS의 배치·상호작용을 확인합니다. v0.6.15 native reuse fixture는 기존 provider option의 정확한 분류와 provider별 모델 projection만 검증하며 실제 외부 handler를 실행하지 않습니다. 공개 hook fixture는 별도로 실제 제품 모듈과 wiring을 사용하지만 Connection Manager 서비스와 네트워크는 가짜 구현입니다. 전체 SillyTavern 런타임, 실제 외부 확장 코드, 제공업체 인증·원격 네트워크 요청 성공을 대신하지 않습니다.
 
 ### 검증 상태별 외부 확장 목록
 
 | 외부 확장·기능 | 자동 검증 상태 | 사용자 검증 게이트 |
 |---|---|---|
-| Caption | ✅ provider/source 선택기 비대상 판별·native 상태 보존, model DOM option, `data-type` metadata, 선택 이벤트·재렌더 계약 자동 검증 | 🧪 실제 `/caption-image` payload의 `model`, 계정 권한과 모델 멀티모달 호환 확인 대기 |
+| Caption | ✅ 실제 1.18.0 `.caption_settings` 경계와 `caption_multimodal_api`/`caption_multimodal_model`, native 상태 보존, Custom exact projection, `data-type` metadata, 선택 이벤트·재렌더 계약 자동 검증 | 🧪 실제 `/caption-image` handler의 Custom 모델 사용, payload의 `model`, 계정 권한과 모델 멀티모달 호환 확인 대기 |
 | Vectors | ✅ embedding·벡터화 모델 컨트롤을 비채팅 위험 대상으로 안전 제외하고 진단에만 집계 | 해당 안전 제외는 Chat Completion 또는 Vectors API 호환 인증이 아님 |
 | Stable Diffusion | ✅ 이미지 생성 모델 컨트롤을 위험 대상으로 안전 제외하고 진단에만 집계 | 해당 안전 제외는 Chat Completion 또는 이미지 생성 API 호환 인증이 아님 |
 
@@ -572,6 +573,37 @@ Connection Profile 도구행의 관리 아이콘 옆 숫자 배지는 기능을 
 - [ ] 공개 hook이 없는 외부 확장의 provider UI는 변경되지 않지만, 기존 DOM 브리지 대상인 표준 모델 컨트롤에는 종전과 같은 CMR 모델 선택지가 유지됨
 - [ ] 진단 JSON에는 consumer·pending·ready·failed·published model 개수만 보이고 profile ID·endpoint·API 키는 나타나지 않음
 
+## v0.6.15 — Hookless native provider option 모델 재사용
+
+상태: **✅ 구현·자동 검사 완료, 🧪 실제 외부 확장 handler·요청 검증 대기**
+
+### 수정 배경
+
+공개 hook이 없는 확장이라도 자체 Custom/OpenAI-compatible 또는 SillyTavern 현재 연결 option을 이미 제공하는 경우가 있습니다. 이때 새 provider handler나 credential bridge를 강제로 설치할 필요는 없지만, 기존 v0.6 DOM 브리지가 모든 provider 모델을 함께 표시하면 그 native handler와 맞지 않는 선택지가 생길 수 있습니다. DOM option은 실제 요청 구현을 증명하지 않으므로, 이번 범위는 확인 가능한 exact 선택에 맞는 Registry 모델만 보수적으로 투영하는 데 한정합니다.
+
+### 반영 결과
+
+- [x] hookless native 재사용을 Provider Integration API의 공개 hook·handler 경로와 분리
+- [x] 정확한 Custom/OpenAI-compatible provider 선택에는 활성 `custom` Registry 모델만 model control에 투영
+- [x] 정확한 SillyTavern/current-connection provider 선택에는 현재 활성 SillyTavern provider와 같은 Registry 모델만 투영
+- [x] `main`, `current`, `inherit`, `openai`, `st` 같은 단독·모호한 토큰과 충돌하는 값·라벨은 native 재사용으로 분류하지 않음
+- [x] exact 현재 연결 option인데 활성 ST provider가 없거나 지원 provider로 확정되지 않으면 `sillytavern-current` 분류를 유지한 `current-connection-unavailable` 실패로 표시하고, 모델을 넣거나 전체 provider·`custom`으로 fallback하지 않음
+- [x] 외부 확장의 native provider option·option value·현재 선택, endpoint·API 키와 기존 모델 값을 보존
+- [x] 전역 `fetch`·`XMLHttpRequest`, 외부 요청 함수와 SillyTavern 메인 source·모델·Connection Profile을 patch하거나 전환하지 않음
+- [x] 분류 결과를 새 handler·provider 지원 또는 요청 호환성으로 보고하지 않고 실제 기능 실행과 request payload 확인을 사용자 검증 게이트로 유지
+- [x] 진단에 native Custom·현재 연결 대상, projection 성공과 현재 연결 확인 불가 개수를 불변식과 함께 집계하고 option 원문·endpoint·API 키는 제외
+- [x] Node 자동 검사 240개와 Playwright Chromium UI 회귀 검사 15개로 exact 분류·provider별 projection·모호성 거부·불변 경계를 검증
+
+### 사용자 검증 초점
+
+- [ ] 외부 확장의 exact Custom/OpenAI-compatible option을 선택하면 Custom Registry 모델만 표시되고 다른 provider 모델은 나타나지 않음
+- [ ] 외부 확장의 exact SillyTavern 현재 연결 option을 선택하면 현재 메인 provider와 같은 Registry 모델만 표시됨
+- [ ] provider option·값, endpoint·API 키와 메인 Chat Completion source·모델이 모델 투영 전후에 동일함
+- [ ] `main`, `current`, `inherit`, `openai`, `st` 단독 표식은 native 재사용 특화 대상으로 오인되지 않음
+- [ ] exact 현재 연결 option에서 활성 ST provider를 확인할 수 없으면 확인 필요 실패로 나타나고 어떤 Registry 모델도 표시되지 않으며, provider가 다시 유효해진 뒤 해당 provider 모델만 복원됨
+- [ ] 표시된 모델을 선택해 외부 기능을 실행한 뒤 실제 request payload의 `model`과 성공·실패 결과를 직접 확인함
+- [ ] 공개 hook 소비 확장의 `installHandler`→`publishModels` 준비·정리 계약은 native 재사용과 섞이지 않고 계속 동작함
+
 ## 실제 사용자 검증 게이트
 
 다음 조건은 자동 검사만으로 완료 처리하지 않습니다.
@@ -597,8 +629,10 @@ Connection Profile 도구행의 관리 아이콘 옆 숫자 배지는 기능을 
 19. 공개 provider hook 소비 확장은 handler 설치와 모델 게시를 모두 확인한 뒤에만 준비 상태를 표시하고, 둘 중 하나라도 실패하면 provider UI를 공개하지 않습니다.
 20. SillyTavern 연결 상속은 선택된 비-Custom Connection Profile과 같은 Registry provider에만, OpenAI-compatible 특화는 선택된 `Custom` 프로필과 `custom` Registry 모델에만 적용됩니다.
 21. hookless 임의 확장 provider UI는 변경되지 않고 기존 DOM 모델 브리지는 계속 독립적으로 동작하며, CMR 설정·진단·이벤트에는 API 키와 endpoint가 복제되지 않습니다.
+22. hookless exact Custom/OpenAI-compatible 선택에는 `custom` Registry 모델만, exact SillyTavern 현재 연결 선택에는 현재 활성 ST provider 모델만 투영됩니다.
+23. native 재사용 전후 provider option·값·endpoint·API 키·전역 요청 함수·메인 설정은 바뀌지 않고, 외부 handler의 실제 `model` 사용은 기능 실행으로 별도 확인합니다.
 
-실제 검증에서 발견되는 v0.6 범위의 후속 결함은 `v0.6.15`, `v0.6.16`, ... 패치 버전으로 수정합니다.
+실제 검증에서 발견되는 v0.6 범위의 후속 결함은 `v0.6.16`, `v0.6.17`, ... 패치 버전으로 수정합니다.
 
 ## 업데이트 규칙
 
@@ -633,4 +667,5 @@ Connection Profile 도구행의 관리 아이콘 옆 숫자 배지는 기능을 
 | v0.6.11 | ✅ 완료·🧪 사용자 검증 대기 | 단일·여러 줄 모델 등록을 공용 textarea와 아이콘 버튼 하나로 통합 |
 | v0.6.12 | ✅ 완료·🧪 사용자 검증 대기 | 런처 숫자 배지 제거, 핵심 한 줄 안내와 native popover 정보 아이콘 5곳, 지원·개인정보 문구 축약 |
 | v0.6.13 | ✅ 완료·🧪 사용자 검증 대기 | 외부 provider/source 선택기 오탐 차단, native option·값 보존, 모호한 provider 후보 임의 연결 방지 |
-| v0.6.14 | ✅ 현재 릴리스·🧪 사용자 검증 대기 | 선택된 Connection Manager 프로필 기반 일반·Custom 공용 handler, Provider Integration API `1.0.0`, 2단계 준비·정리 계약 |
+| v0.6.14 | ✅ 완료·🧪 사용자 검증 대기 | 선택된 Connection Manager 프로필 기반 일반·Custom 공용 handler, Provider Integration API `1.0.0`, 2단계 준비·정리 계약 |
+| v0.6.15 | ✅ 현재 릴리스·🧪 사용자 검증 대기 | hookless 기존 Custom·SillyTavern 현재 연결 provider option의 보수적인 provider별 모델 projection |

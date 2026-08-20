@@ -1,6 +1,6 @@
-# v0.6.14 통합 사용자 검증 체크리스트
+# v0.6.15 통합 사용자 검증 체크리스트
 
-대상 버전: **v0.6.14**
+대상 버전: **v0.6.15**
 
 이 문서는 v0.1~v0.6 기능을 한 번에 확인하는 최종 수동 검증 순서입니다. 위에서 아래로 진행하고, 사용하지 않는 제공업체·외부 확장·개발자 API 항목은 `해당 없음`으로 표시하세요.
 
@@ -17,7 +17,7 @@
 
 ## 자동 검사 완료 범위
 
-v0.6.14 저장소에서는 Node 자동 검사 232개와 Playwright Chromium UI 회귀 검사 14개를 별도로 실행합니다. Node 검사는 기존 UI·Registry·Routing·DOM 브리지·진단 schema v2·백업 계약에 더해 Provider Integration API `1.0.0`의 capability 협상, 선택된 일반·Custom Connection Profile 경계, handler 설치→모델 게시 순서, 실패·취소·종료 정리, 요청 allowlist, 메인 채팅 설정 불변, 비밀정보 비노출과 hookless provider UI 비변경을 포함합니다. UI 검사는 실제 `settings.html`과 SillyTavern 1.18.0 고정 commit의 core·Popup CSS를 결합한 설정 화면 검사와 브라우저 브리지 회귀에 더해, 실제 제품 provider integration 모듈·wiring을 가짜 Connection Manager 서비스와 로컬 echo 요청으로 실행합니다. GitHub Actions의 `ui-regression-evidence-*` artifact에는 성공·실패 PNG와 HTML report가 14일 보관됩니다.
+v0.6.15 저장소에서는 Node 자동 검사 240개와 Playwright Chromium UI 회귀 검사 15개를 별도로 실행합니다. Node 검사는 기존 UI·Registry·Routing·DOM 브리지·진단 schema v2·백업·Provider Integration API 계약에 더해 hookless native Custom·현재 연결 exact 분류, provider별 모델 projection, 모호한 토큰 미분류, provider option·연결 설정·전역 요청·메인 설정 불변을 포함합니다. UI 검사는 실제 `settings.html`과 SillyTavern 1.18.0 고정 commit의 core·Popup CSS를 결합한 설정 화면 검사와 브라우저 브리지 회귀에 더해 native 재사용과 공개 hook fixture를 서로 분리해 실행합니다. 이 검사는 실제 외부 확장의 handler나 원격 요청 성공을 대신하지 않습니다. GitHub Actions의 `ui-regression-evidence-*` artifact에는 성공·실패 PNG와 HTML report가 14일 보관됩니다.
 
 provider integration 브라우저 fixture는 실제 제품 모듈과 공개 wiring을 실행하지만 Connection Manager와 네트워크는 더미입니다. 자동 검사는 전체 SillyTavern JavaScript 런타임, 실제 외부 확장 코드, 실제 제공업체 API 요청을 실행하지 않습니다. 아래 체크리스트에서 실제 설치 화면, 외부 확장의 provider/model 게시, Network payload와 제공업체 요청 성공을 계속 확인해야 합니다. API 키나 Service Account를 자동 검사에 제공할 필요는 없습니다.
 
@@ -26,7 +26,7 @@ provider integration 브라우저 fixture는 실제 제품 모듈과 공개 wiri
 ```text
 검증 날짜:
 SillyTavern 버전:
-Custom Model Router 버전: v0.6.14
+Custom Model Router 버전: v0.6.15
 브라우저·OS:
 설치 방식: 신규 / 업데이트
 이전 확장 버전:
@@ -113,7 +113,7 @@ Connection Profile 사용 여부:
 
 ## 4. 다른 확장 모델 UI 주입과 실제 요청 확인
 
-먼저 CMR Registry에 서로 다른 제공업체의 사용자 모델을 하나씩 등록합니다. 감지된 안전한 외부 Chat Completion 모델 칸에는 별도의 모드 설정 없이 native option과 중복되지 않는 등록 모델이 target별 최대 512개까지 제공업체별로 표시됩니다. provider/source 선택기는 이름에 `model`이 포함되어도 모델 target이 아니며, native option·현재 값을 유지한 채 실제 모델 control의 metadata·change/input 감시에만 사용합니다. 기본 팝업은 정상 대상 목록을 노출하지 않습니다. 진단 섹션의 고급 관리 기본 목록에는 실패·사용자 제외만 나타나고, 정상 target은 사용자가 **문제가 생긴 모델 칸 제외**를 펼쳤을 때만 선택기에 나타납니다. 안전상 제외 대상은 관리 행이 아니라 진단 집계로만 확인합니다.
+먼저 CMR Registry에 서로 다른 제공업체와 Custom 사용자 모델을 하나씩 등록합니다. 감지된 안전한 외부 Chat Completion 모델 칸에는 별도의 모드 설정 없이 native option과 중복되지 않는 등록 모델이 target별 최대 512개까지 제공업체별로 표시됩니다. provider/source 선택기는 이름에 `model`이 포함되어도 모델 target이 아니며, native option·현재 값을 유지한 채 실제 모델 control의 metadata·change/input 감시에만 사용합니다. 다만 선택된 기존 provider option이 정확한 Custom/OpenAI-compatible 또는 SillyTavern 현재 연결 계약이면 v0.6.15는 새 handler를 만들지 않고 각각 Custom Registry 또는 현재 활성 ST provider 모델만 투영합니다. 기본 팝업은 정상 대상 목록을 노출하지 않습니다. 진단 섹션의 고급 관리 기본 목록에는 실패·사용자 제외만 나타나고, 정상 target은 사용자가 **문제가 생긴 모델 칸 제외**를 펼쳤을 때만 선택기에 나타납니다. 안전상 제외 대상은 관리 행이 아니라 진단 집계로만 확인합니다.
 
 - [ ] **[필수][EXT-01] 정상 상태의 기본 팝업에는 외부 target 목록이 없고 `자동 연결`, `직접 연결`, `연결 안 함` 선택기와 수동 모델 새로고침 버튼도 없다. 안전 target에는 CMR 선택지가 자동 표시된다.**
 - [ ] **[필수][EXT-01A] `호환성 진단 및 CMR 설정 백업 → 고급: 외부 연결 관리`의 기본 목록에는 bridge 실패와 사용자가 제외한 target만 보이며, 각 행에 외부 확장 이름과 실제 모델 control 이름이 함께 표시된다.**
@@ -128,7 +128,7 @@ Connection Profile 사용 여부:
 - [ ] **[조건부][EXT-06] mapping 제거 뒤에도 같은 target과 provider의 마지막 CMR 모델 선택 기록은 보존된다.**
 - [ ] **[조건부][EXT-06A] 제거된 확장의 stale 외부 선택 512개로 저장이 포화된 상태에서 현재 감지 target의 CMR 모델을 선택하면, 감지되지 않은 가장 오래된 target 기록 하나만 교체되고 나머지 기존 선택은 보존된다.**
 - [ ] **[조건부][EXT-06B] stale legacy mapping 512개와 별도 target의 선택 기록이 함께 있어도 mapping은 제거되고 정상 선택 기록은 우선 보존된다.**
-- [ ] **[조건부][EXT-07] Caption의 Multimodal provider/model control에서 provider/source 선택기는 metadata·change/input 감시에만 사용되고, `Anthropic→claude`, `Google AI Studio→makersuite`, `Mistral→mistralai` 같은 provider metadata가 실제 model control의 CMR option에 올바르게 유지된다.**
+- [ ] **[조건부][EXT-07] Caption 1.18.0의 `.caption_settings` 안 `#caption_multimodal_api`/`#caption_multimodal_model`에서 provider/source 선택기는 metadata·change/input 감시에만 사용되고, `Anthropic→claude`, `Google AI Studio→makersuite`, `Mistral→mistralai` 같은 provider metadata가 실제 model control의 CMR option에 올바르게 유지된다.**
 - [ ] **[조건부][EXT-07A] 같은 외부 확장 영역에 provider/source 후보가 여러 개면 첫 후보를 임의로 실제 model control에 연결하지 않으며 모든 후보의 native option·현재 값이 유지된다.**
 - [ ] **[필수][EXT-08] 외부 `select`에는 target별 512개 한도 안에서 주입된 provider 모델이 `제공업체 이름 · 사용자 모델` optgroup으로 구분되어 나타나며 같은 모델 ID도 provider별로 구분된다.**
 - [ ] **[조건부][EXT-08A] Caption처럼 option `data-type`을 쓰는 확장에서 CMR option에 올바른 외부 provider 값이 유지된다.**
@@ -150,8 +150,14 @@ Connection Profile 사용 여부:
 - [ ] **[조건부][EXT-16B] 모든 direct target의 예상 CMR DOM option 합계 또는 실제 CMR DOM option 합계가 2,048개를 넘으면 성능 주의 카드와 진단 경고가 나타나고, Vectors·Stable Diffusion 같은 위험 대상과 native option은 이 CMR option 합계에 포함되지 않는다.**
 - [ ] **[필수][EXT-17] 외부 브리지 동작 전후 메인 Chat Completion source·모델·API 키·endpoint가 바뀌지 않는다.**
 - [ ] **[선택][EXT-18] React 자체 위젯, iframe, 닫힌 Shadow DOM과 모델 control 없는 확장은 대상 목록에도 나타나지 않으며 전용 opt-in API 연동이 필요하다는 안내를 확인한다.**
+- [ ] **[조건부][EXT-19] 외부 확장의 기존 provider option이 정확한 Custom/OpenAI-compatible 선택일 때 실제 model control에는 활성 `custom` Registry 모델만 나타나고 OpenAI·Anthropic·Vertex 등 다른 provider 모델은 나타나지 않는다.**
+- [ ] **[조건부][EXT-20] 외부 확장의 기존 provider option이 정확한 SillyTavern/current-connection 선택일 때 실제 model control에는 현재 활성 SillyTavern provider와 같은 Registry 모델만 나타난다. ST source를 바꾸면 새 provider 모델로 다시 투영된다.**
+- [ ] **[조건부][EXT-20A] exact SillyTavern/current-connection option인데 활성 ST provider가 없거나 CMR 지원 provider로 확정되지 않으면 `current-connection-unavailable` 확인 필요 실패가 나타나고 CMR 모델은 하나도 표시되지 않는다. 전체 provider·`custom` 모델로 fallback하지 않으며 유효한 ST provider를 다시 선택하면 그 provider 모델만 복원된다.**
+- [ ] **[필수][EXT-21] `main`, `current`, `inherit`, `openai`, `st` 단독 option과 값·라벨이 충돌하는 option은 native 재사용으로 분류되지 않으며 임의의 Custom 또는 현재 ST provider로 고정되지 않는다.**
+- [ ] **[필수][EXT-22] native 재사용 분류와 모델 투영 전후 외부 provider option 목록·option value·현재 provider 값·endpoint·API 키·기존 모델 값과 SillyTavern 메인 source·모델이 동일하다. 전역 `fetch`·`XMLHttpRequest` 교체도 없다.**
+- [ ] **[조건부][EXT-23] EXT-19 또는 EXT-20에서 투영된 모델을 선택해 실제 외부 기능을 실행하고 Network payload의 `model`과 성공·실패 결과를 확인한다. 선택지가 보이는 것만으로 handler 또는 요청 호환성을 통과 처리하지 않는다.**
 
-CMR 외부 브리지는 best-effort UI 선택지 주입 기능이며 전역 `fetch`나 `XMLHttpRequest`를 monkey patch하지 않습니다. `선택지 연결됨`과 실제 요청 반영은 별도 항목이며, `EXT-10`과 Caption 전용 `EXT-10A`에서 반드시 구분해 확인합니다. 저장소의 DOM 샌드박스는 option과 이벤트 전달을, Playwright UI 회귀 검사는 실제 설정 마크업과 SillyTavern CSS의 배치·상호작용을 확인합니다. 어느 검사도 실제 `/caption-image` 요청을 대신하지 않습니다.
+CMR 외부 브리지는 best-effort UI 선택지 주입 기능이며 전역 `fetch`나 `XMLHttpRequest`를 monkey patch하지 않습니다. v0.6.15 native 재사용도 기존 provider option에 맞는 모델 projection일 뿐 새 handler·credential bridge가 아닙니다. `선택지 연결됨`과 실제 요청 반영은 별도 항목이며, `EXT-10`, Caption 전용 `EXT-10A`, native 재사용 `EXT-23`에서 반드시 구분해 확인합니다. 저장소의 DOM 샌드박스는 option과 이벤트 전달을, Playwright UI 회귀 검사는 실제 설정 마크업과 SillyTavern CSS의 배치·상호작용을 확인합니다. 어느 검사도 실제 `/caption-image` 또는 외부 확장 요청을 대신하지 않습니다.
 
 ## 5. 실제 제공업체 요청
 
@@ -213,6 +219,7 @@ CMR 외부 브리지는 best-effort UI 선택지 주입 기능이며 전역 `fet
 - [ ] **[조건부][INT-07] handler 설치 또는 모델 게시가 거부·예외·취소되면 provider UI가 준비 상태로 노출되지 않고 다른 provider·등록 모델·메인 모델로 자동 대체되지 않는다.**
 - [ ] **[조건부][INT-08] 공용 handler 요청 전후 메인 Chat Completion source·모델이 같고, CMR 설정·이벤트·진단에는 Connection Profile ID·API 키·전체 endpoint가 나타나지 않는다.**
 - [ ] **[조건부][INT-09] hook 소유 provider UI 루트가 `data-cmr-provider-hook-owned`로 표시되어 기존 DOM 모델 브리지가 같은 모델을 중복 주입하지 않는다.**
+- [ ] **[조건부][INT-10] 공개 hook 소비 확장의 handler 설치→모델 게시→정리 동작은 hookless native provider option projection과 별개로 실행되며, native 분류가 `installHandler` 또는 `publishModels`를 대신 호출하지 않는다.**
 
 ## 7. 용도별 Routing API 1.0.0
 
@@ -242,6 +249,7 @@ CMR 외부 브리지는 best-effort UI 선택지 주입 기능이며 전역 `fet
 - [ ] **[필수][DIAG-04A] 복사 JSON에서 외부 브리지 observer·listener·target 수, 활성 Registry 모델 수, 예상·실제 CMR option 수와 연결 정책·사용자 제외·비채팅·비호환 제외 수를 확인하고 설명 없는 증가가 없다. provider/source 선택기는 모델 `targetCount`에 포함되지 않는다.**
 - [ ] **[필수][DIAG-04B] provider/source 선택기를 제외한 외부 모델 칸 집계가 `후보 = 연결 정책 + 사용자 제외 + 비채팅·비호환 제외` 및 `연결 정책 = 연결됨 + 등록 모델 없음 + 연결 실패`로 일치하며 observer·listener·binding 불일치가 통과로 표시되지 않는다.**
 - [ ] **[조건부][DIAG-04C] 공개 provider hook 소비 확장이 있으면 `providerIntegrations`의 consumer·pending·ready·failed·published model 개수가 실제 binding 상태와 일치하고 profile ID·endpoint·API 키는 포함하지 않는다.**
+- [ ] **[조건부][DIAG-04D] native 재사용 대상이 있으면 `nativeCustomTargetCount`·`nativeCurrentTargetCount`·`nativeReuseProjectedTargetCount`·`nativeReuseUnavailableTargetCount`가 실제 target 상태와 일치하고, provider option 원문·endpoint·API 키는 포함하지 않는다.**
 - [ ] **[필수][DIAG-05] 경고가 있다면 `진단 복사` JSON의 check ID·코드와 사유를 결과 메모에 기록한다. 화면 목록에 별도 코드가 보이지 않으면 복사 JSON을 기준으로 한다.**
 - [ ] **[필수][DIAG-06] `진단 복사` 결과를 텍스트 편집기에서 열어 API 키·endpoint·project/account ID·Service Account가 없는지 확인한다.**
 - [ ] **[권장][DIAG-07] 1.18.0보다 새 버전에서는 미검증 경고가 표시되고 확장이 무조건 호환이라고 단정하지 않는다.**
@@ -264,7 +272,7 @@ CMR 외부 브리지는 best-effort UI 선택지 주입 기능이며 전역 `fet
 
 ## 10. 확장 전용 백업·복구
 
-- [ ] **[필수][BKP-01] `백업 내보내기`로 `custom-model-router-backup-v0.6.14.json`을 저장한다. 최대 허용 범위인 UTF-8 8,000,000바이트·모델 5,000개·route 256개 안에서 성공한 백업은 다시 가져올 수 있다.**
+- [ ] **[필수][BKP-01] `백업 내보내기`로 `custom-model-router-backup-v0.6.15.json`을 저장한다. 최대 허용 범위인 UTF-8 8,000,000바이트·모델 5,000개·route 256개 안에서 성공한 백업은 다시 가져올 수 있다.**
 - [ ] **[필수][BKP-02] JSON 최상위에 `format`, `schemaVersion`, `createdAt`, `registry`, `purposeRoutes`, `externalIntegrations`만 있고 portable schemaVersion이 `2`인지 확인한다.**
 - [ ] **[필수][BKP-03] Registry에는 provider·model ID·protocol·enabled·선택 상태만 있는지 확인한다.**
 - [ ] **[필수][BKP-04] route에는 provider·model ID·adapter ID·Connection Profile ID만 있는지 확인한다.**
@@ -303,10 +311,10 @@ CMR 외부 브리지는 best-effort UI 선택지 주입 기능이며 전역 `fet
 ## 결과 보고 양식
 
 ```text
-제목: [v0.6.14][제공업체 또는 기능][항목 ID] 짧은 증상
+제목: [v0.6.15][제공업체 또는 기능][항목 ID] 짧은 증상
 
 SillyTavern 버전:
-Custom Model Router 버전: v0.6.14
+Custom Model Router 버전: v0.6.15
 OS / 브라우저:
 신규 설치 또는 업데이트:
 이전 CMR 버전:
@@ -325,12 +333,15 @@ source/Profile 반복 횟수:
 백업 가져오기 결과:
 외부 target 선택지 주입/사용자 제외/비채팅·비호환 제외 상태:
 외부 provider/source 선택기 native option·값 보존 상태:
+hookless native 재사용 분류(Custom/현재 연결/미분류)와 현재 ST provider:
+`current-connection-unavailable` 여부:
 고급 목록의 확장 이름과 control 이름:
 외부 control 종류(select/input/datalist/기타):
 Network payload의 model 확인 결과:
+외부 확장 native handler 직접 실행 결과:
 Caption /caption-image payload의 model 확인 결과:
 민감정보를 제거한 오류 메시지:
 민감정보를 제거한 스크린샷:
 ```
 
-실패 항목이 있어도 데이터 손실·무한 반복·비밀 노출이 아니라면 나머지 독립 항목은 계속 확인해도 됩니다. 결과를 모으면 같은 v0.6 범위의 후속 수정은 `v0.6.15`, `v0.6.16`, ...로 반영합니다.
+실패 항목이 있어도 데이터 손실·무한 반복·비밀 노출이 아니라면 나머지 독립 항목은 계속 확인해도 됩니다. 결과를 모으면 같은 v0.6 범위의 후속 수정은 `v0.6.16`, `v0.6.17`, ...로 반영합니다.

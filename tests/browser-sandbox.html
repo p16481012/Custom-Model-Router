@@ -16,25 +16,80 @@
     <h1>범용 외부 확장 모델 연결 샌드박스</h1>
     <p>
         이 샌드박스는 표준 DOM 컨트롤의 탐지, option 주입과 기존 <code>input</code>/<code>change</code>
-        이벤트 전달만 확인합니다. 실제 Caption <code>/caption-image</code> 요청이나 Network payload의
-        <code>model</code> 반영을 검증하지 않습니다.
+        이벤트 전달을 확인합니다. native 재사용 요청은 외부 확장의 기존 handler를 흉낸
+        로컬 fixture만 실행하며, 실제 Caption 코드·실제 제공업체 자격 증명과 원격 요청 성공을
+        대신 검증하지 않습니다.
     </p>
     <main id="external_extensions">
-        <section id="caption_container" data-extension-name="caption">
-            <h2>Caption 형태</h2>
-            <label for="caption_model_provider">Caption model provider</label>
-            <select id="caption_model_provider" name="model_provider" aria-label="Caption model provider">
-                <option value="openai" selected>OpenAI</option>
-                <option value="anthropic">Anthropic</option>
-                <option value="google">Google</option>
-                <option value="vertexai">Vertex AI</option>
-                <option value="custom">Custom</option>
+        <section class="caption_settings" data-extension-name="caption">
+            <div class="inline-drawer">
+                <div class="inline-drawer-toggle inline-drawer-header">
+                    <h2>Caption 형태</h2>
+                </div>
+                <div class="inline-drawer-content">
+                    <div id="caption_multimodal_block" class="flex-container wide100p">
+                        <div class="flex1 flex-container flexFlowColumn flexNoGap">
+                            <label for="caption_multimodal_api">API</label>
+                            <select id="caption_multimodal_api" class="flex1 text_pole" aria-label="Caption model provider">
+                                <option value="openai" selected>OpenAI</option>
+                                <option value="anthropic">Anthropic</option>
+                                <option value="google">Google</option>
+                                <option value="vertexai">Vertex AI</option>
+                                <option value="custom">Custom (OpenAI-compatible)</option>
+                            </select>
+                        </div>
+                        <div class="flex1 flex-container flexFlowColumn flexNoGap">
+                            <label for="caption_multimodal_model">Caption multimodal model</label>
+                            <select id="caption_multimodal_model" class="flex1 text_pole">
+                                <option value="gpt-4o-mini" data-type="openai" selected>gpt-4o-mini</option>
+                                <option value="claude-sonnet-4" data-type="anthropic">claude-sonnet-4</option>
+                                <option value="gemini-2.5-flash" data-type="google">gemini-2.5-flash</option>
+                                <option value="custom_current" data-type="custom">[Currently selected]</option>
+                                <option value="custom_custom" data-type="custom">[Custom model]</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="native_custom_panel" data-extension-name="native custom chat">
+            <h2>기존 Custom/OpenAI-compatible option 재사용</h2>
+            <label for="native_custom_provider">Native provider</label>
+            <select id="native_custom_provider" name="native_provider">
+                <option value="custom" selected>Custom OpenAI-compatible</option>
             </select>
-            <label for="caption_multimodal_model">Caption multimodal model</label>
-            <select id="caption_multimodal_model">
-                <option value="gpt-4o-mini" data-type="openai" selected>gpt-4o-mini</option>
-                <option value="claude-sonnet-4" data-type="anthropic">claude-sonnet-4</option>
-                <option value="gemini-2.5-flash" data-type="google">gemini-2.5-flash</option>
+            <label for="native_custom_model">Native Custom model</label>
+            <select id="native_custom_model">
+                <option value="native-custom" data-type="custom" selected>native-custom</option>
+            </select>
+            <label for="native_custom_endpoint">Native endpoint</label>
+            <input id="native_custom_endpoint" value="https://endpoint.example.invalid/v1" readonly>
+            <label for="native_custom_key">Native API key</label>
+            <input id="native_custom_key" value="SANDBOX_SECRET_UNCHANGED" readonly>
+        </section>
+
+        <section id="native_current_panel" data-extension-name="native sillytavern chat">
+            <h2>기존 SillyTavern 현재 연결 option 재사용</h2>
+            <label for="native_current_provider">Native provider</label>
+            <select id="native_current_provider" name="native_provider">
+                <option value="current_st" label="Current SillyTavern Settings" selected>Current SillyTavern Settings</option>
+            </select>
+            <label for="native_current_model">Native current-connection model</label>
+            <select id="native_current_model">
+                <option value="native-current" data-type="current_st" selected>native-current</option>
+            </select>
+        </section>
+
+        <section id="ambiguous_native_panel" data-extension-name="ambiguous native chat">
+            <h2>모호한 단독 provider token</h2>
+            <label for="ambiguous_native_provider">Native provider</label>
+            <select id="ambiguous_native_provider" name="native_provider">
+                <option value="main" selected>Main</option>
+            </select>
+            <label for="ambiguous_native_model">Ambiguous model</label>
+            <select id="ambiguous_native_model">
+                <option value="native-main" selected>native-main</option>
             </select>
         </section>
 
@@ -89,12 +144,14 @@
     <script type="module">
         import {
             createExternalIntegrationController,
-        } from '../src/external-integrations.js?browser-sandbox=0.6.14';
+        } from '../src/external-integrations.js?browser-sandbox=0.6.15';
 
         const models = {
             openai: [{ provider: 'openai', id: 'gpt-5.9-preview', enabled: true }],
             claude: [{ provider: 'claude', id: 'claude-opus-9-preview', enabled: true }],
             makersuite: [{ provider: 'makersuite', id: 'gemini-9.0-preview', enabled: true }],
+            vertexai: [{ provider: 'vertexai', id: 'gemini-vertex-9.0-preview', enabled: true }],
+            custom: [{ provider: 'custom', id: 'custom-openai-9.0-preview', enabled: true }],
             zai: [{ provider: 'zai', id: 'glm-9.0', enabled: true }],
         };
         const selectedModels = new Map();
@@ -103,24 +160,43 @@
             captionModel: document.querySelector('#caption_multimodal_model').value,
             captionChangeCount: 0,
         };
+        const nativeRequestState = {
+            customCalls: [],
+            currentCalls: [],
+        };
         const result = document.querySelector('#sandbox_result');
         const captionListenerControls = new WeakSet();
+        let currentSillyTavernProviderId = 'vertexai';
 
         const summarizeTarget = target => ({
             id: target.control.id,
             provider: target.resolution?.providerId ?? null,
             source: target.resolution?.source ?? null,
             risk: target.risk?.excludedReason ?? null,
+            nativeReuseKind: target.bridge?.nativeReuseKind ?? null,
+            nativeReuseProviderId: target.bridge?.nativeReuseProviderId ?? null,
+            verificationRequired: target.bridge?.verificationRequired === true,
         });
+
+        const managedOptions = selector => [...document.querySelectorAll(
+            `${selector} [data-cmr-external-model="true"]`,
+        )].map(option => ({
+            value: option.value,
+            provider: option.dataset.cmrProvider,
+            type: option.dataset.type ?? null,
+        }));
 
         const collect = () => {
             const captionOptions = [...document.querySelectorAll('#caption_multimodal_model [data-cmr-external-model="true"]')];
             const captionControl = document.querySelector('#caption_multimodal_model');
-            const captionProvider = document.querySelector('#caption_model_provider');
+            const captionProvider = document.querySelector('#caption_multimodal_api');
             const input = document.querySelector('#vendor_model_id');
             const captionTarget = controller.getTargets().find(item => item.control === captionControl);
             const providerTarget = controller.getTargets().find(item => item.control === captionProvider);
             const unknownTarget = controller.getTargets().find(item => item.control.id === 'helper_model');
+            const nativeCustomTarget = controller.getTargets().find(item => item.control.id === 'native_custom_model');
+            const nativeCurrentTarget = controller.getTargets().find(item => item.control.id === 'native_current_model');
+            const ambiguousNativeTarget = controller.getTargets().find(item => item.control.id === 'ambiguous_native_model');
             const metrics = controller.getMetrics();
             const snapshot = {
                 targets: controller.getTargets().map(summarizeTarget),
@@ -135,6 +211,9 @@
                 captionModelManagedCount: captionOptions.length,
                 captionModelSource: captionTarget?.resolution?.source ?? null,
                 captionModelRisk: captionTarget?.risk?.excludedReason ?? null,
+                captionNativeReuseKind: captionTarget?.bridge?.nativeReuseKind ?? null,
+                captionNativeReuseProviderId: captionTarget?.bridge?.nativeReuseProviderId ?? null,
+                captionVerificationRequired: captionTarget?.bridge?.verificationRequired === true,
                 captionControlValue: captionControl?.value ?? null,
                 captionProviderTargeted: Boolean(providerTarget),
                 captionProviderManagedCount: captionProvider?.querySelectorAll(
@@ -150,9 +229,38 @@
                 imageGenerationInjected: document.querySelectorAll('#sd_image_model [data-cmr-external-model="true"]').length,
                 providerlessInjected: document.querySelectorAll('#helper_model [data-cmr-external-model="true"]').length,
                 unknownResolution: unknownTarget?.resolution?.source ?? null,
+                nativeCustom: {
+                    kind: nativeCustomTarget?.bridge?.nativeReuseKind ?? null,
+                    provider: nativeCustomTarget?.bridge?.nativeReuseProviderId ?? null,
+                    verificationRequired: nativeCustomTarget?.bridge?.verificationRequired === true,
+                    options: managedOptions('#native_custom_model'),
+                    providerValue: document.querySelector('#native_custom_provider')?.value ?? null,
+                    providerValues: [...(document.querySelector('#native_custom_provider')?.options ?? [])]
+                        .map(option => option.value),
+                    endpointUnchanged: document.querySelector('#native_custom_endpoint')?.value
+                        === 'https://endpoint.example.invalid/v1',
+                    apiKeyUnchanged: document.querySelector('#native_custom_key')?.value
+                        === 'SANDBOX_SECRET_UNCHANGED',
+                    requestCount: nativeRequestState.customCalls.length,
+                },
+                nativeCurrent: {
+                    kind: nativeCurrentTarget?.bridge?.nativeReuseKind ?? null,
+                    provider: nativeCurrentTarget?.bridge?.nativeReuseProviderId ?? null,
+                    verificationRequired: nativeCurrentTarget?.bridge?.verificationRequired === true,
+                    options: managedOptions('#native_current_model'),
+                    providerValue: document.querySelector('#native_current_provider')?.value ?? null,
+                    activeSillyTavernProviderId: currentSillyTavernProviderId,
+                    requestCount: nativeRequestState.currentCalls.length,
+                },
+                ambiguousNative: {
+                    kind: ambiguousNativeTarget?.bridge?.nativeReuseKind ?? null,
+                    provider: ambiguousNativeTarget?.bridge?.nativeReuseProviderId ?? null,
+                    options: managedOptions('#ambiguous_native_model'),
+                    providerValue: document.querySelector('#ambiguous_native_provider')?.value ?? null,
+                },
                 changes: [...changes],
                 externalState: { ...externalState },
-                scope: 'DOM option/event only; actual /caption-image Network payload is not verified here',
+                scope: 'DOM projection plus local synthetic native-handler request only; actual external extension/provider request is not verified',
             };
             result.textContent = JSON.stringify(snapshot, null, 2);
             window.cmrSandboxSnapshot = snapshot;
@@ -179,6 +287,7 @@
             root: document,
             documentRef: document,
             getModels: providerId => models[providerId] ?? [],
+            getCurrentSillyTavernProviderId: () => currentSillyTavernProviderId,
             getPreferredModel: (targetId, providerId) => selectedModels.get(`${targetId}:${providerId}`) ?? null,
             onSelectionChanged: payload => {
                 changes.push(payload);
@@ -206,20 +315,66 @@
             changes,
             models,
             selectedModels,
+            async setCurrentSillyTavernProviderId(providerId) {
+                currentSillyTavernProviderId = providerId;
+                controller.rescan();
+                await waitForBridgeSync();
+                return collect();
+            },
+            async requestNativeCustom() {
+                const provider = document.querySelector('#native_custom_provider').value;
+                const model = document.querySelector('#native_custom_model').value;
+                const endpoint = document.querySelector('#native_custom_endpoint').value;
+                const apiKey = document.querySelector('#native_custom_key').value;
+                if (provider !== 'custom') {
+                    throw new Error('native Custom/OpenAI-compatible handler is not selected');
+                }
+                nativeRequestState.customCalls.push({ provider, model });
+                const response = await fetch('/native-reuse/custom-echo', {
+                    method: 'POST',
+                    headers: {
+                        authorization: `Bearer ${apiKey}`,
+                        'content-type': 'application/json',
+                    },
+                    body: JSON.stringify({ provider, model, endpoint }),
+                });
+                return {
+                    response: await response.json(),
+                    snapshot: collect(),
+                };
+            },
+            requestNativeCurrent() {
+                const provider = document.querySelector('#native_current_provider').value;
+                const model = document.querySelector('#native_current_model').value;
+                if (provider !== 'current_st') {
+                    throw new Error('native Current SillyTavern Settings handler is not selected');
+                }
+                const call = {
+                    provider,
+                    model,
+                    activeProviderId: currentSillyTavernProviderId,
+                };
+                nativeRequestState.currentCalls.push(call);
+                return {
+                    response: { content: 'synthetic-current-ok' },
+                    call,
+                    snapshot: collect(),
+                };
+            },
             async setCaptionProvider(value) {
-                const provider = document.querySelector('#caption_model_provider');
+                const provider = document.querySelector('#caption_multimodal_api');
                 provider.value = value;
                 provider.dispatchEvent(new Event('change', { bubbles: true }));
                 await waitForBridgeSync();
                 return collect();
             },
             async switchCaptionProvider() {
-                const provider = document.querySelector('#caption_model_provider');
+                const provider = document.querySelector('#caption_multimodal_api');
                 const value = provider.value === 'openai' ? 'anthropic' : 'openai';
                 return this.setCaptionProvider(value);
             },
             async cleanupStaleCaptionProviderModel() {
-                const provider = document.querySelector('#caption_model_provider');
+                const provider = document.querySelector('#caption_multimodal_api');
                 const staleGroup = document.createElement('optgroup');
                 staleGroup.label = '구버전 사용자 모델';
                 staleGroup.dataset.cmrExternalGroup = 'true';

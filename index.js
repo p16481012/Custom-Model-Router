@@ -54,6 +54,7 @@ import {
 import {
     EXTERNAL_INJECTED_OPTION_LIMIT,
     EXTERNAL_MANAGED_OPTION_WARNING_THRESHOLD,
+    EXTERNAL_NATIVE_REUSE_KINDS,
     createExternalIntegrationController,
 } from './src/external-integrations.js';
 import {
@@ -75,7 +76,7 @@ import {
     shouldShowModelSearch,
 } from './src/model-management.js';
 
-const EXTENSION_VERSION = '0.6.14';
+const EXTENSION_VERSION = '0.6.15';
 const SETTINGS_KEY = 'customModelRouter';
 const ROUTES_SETTINGS_KEY = 'customModelRouterRouting';
 const EXTERNAL_SETTINGS_KEY = 'customModelRouterExternalIntegrations';
@@ -806,6 +807,7 @@ function renderModelDeletionUndo() {
 function createExternalTargetRow(target) {
     const source = target.resolution?.source;
     const bridgeStatus = target.bridge?.status ?? (source === 'direct' ? 'idle' : source);
+    const nativeReuseKind = target.bridge?.nativeReuseKind ?? null;
     const ownerLabel = target.extensionLabel && target.extensionLabel !== '외부 확장'
         ? target.extensionLabel
         : target.label;
@@ -837,15 +839,24 @@ function createExternalTargetRow(target) {
         verification.textContent = 'CMR 선택지를 표시하지 않음';
     } else if (bridgeStatus === 'failed') {
         state.dataset.state = 'failed';
-        state.textContent = '선택지 연결 실패';
-        verification.textContent = '이 대상 제외 가능';
+        if (target.bridge?.issueCode === 'current-connection-unavailable') {
+            state.textContent = '현재 SillyTavern 연결 확인 필요';
+            verification.textContent = '다른 공급자 모델로 대체하지 않음';
+        } else {
+            state.textContent = '선택지 연결 실패';
+            verification.textContent = '이 대상 제외 가능';
+        }
     } else if (bridgeStatus === 'idle') {
         state.dataset.state = 'idle';
         state.textContent = '등록 모델 없음';
         verification.textContent = '등록 후 자동 표시';
     } else {
         state.dataset.state = 'connected';
-        state.textContent = '선택지 연결됨';
+        state.textContent = nativeReuseKind === EXTERNAL_NATIVE_REUSE_KINDS.CUSTOM_OPENAI_COMPATIBLE
+            ? '기존 OpenAI 호환 경로에 모델 표시'
+            : nativeReuseKind === EXTERNAL_NATIVE_REUSE_KINDS.SILLYTAVERN_CURRENT
+                ? '현재 SillyTavern 연결 경로에 모델 표시'
+                : '선택지 연결됨';
         verification.textContent = '실제 요청 확인 필요';
     }
     meta.append(state, verification);
@@ -2415,6 +2426,7 @@ async function initialize(generation) {
         },
         excludedTargetIds: Object.keys(externalSettings.excludedTargets ?? {}),
         getModels: providerId => getEnabledModels(settings, providerId),
+        getCurrentSillyTavernProviderId: () => findActiveProvider()?.id ?? null,
         getPreferredModels: targetId => ({
             ...(externalSettings?.selectedModels?.[targetId] ?? {}),
         }),

@@ -1138,7 +1138,7 @@ test('init은 24개 제공업체를 연결하고 API Connections Popup을 한 �
         assert.ok(harness.observers.some(observer => observer.target === harness.observerRoot));
         assert.ok(harness.observers.some(observer => observer.target === harness.documentRef.body));
         assert.equal(globalThis.CustomModelRouter.apiVersion, '1.2.0');
-        assert.equal(globalThis.CustomModelRouter.extensionVersion, '0.6.14');
+        assert.equal(globalThis.CustomModelRouter.extensionVersion, '0.6.15');
         assert.equal(globalThis.CustomModelRouter.routing.apiVersion, '1.0.0');
         assert.equal(globalThis.CustomModelRouter.getSnapshot().models.length, 1);
 
@@ -3492,6 +3492,184 @@ test('범용 연결은 안전한 외부 모델 select에 등록 모델을 직접
     } finally {
         controller.destroy();
     }
+
+    // 실제 index wiring도 현재 SillyTavern Chat Completion source를 매 scan에
+    // 다시 읽어 native current-connection target에 해당 provider 모델만 투영한다.
+    const wiredModels = [
+        createModelRecord('vertexai', 'gemini-wired-current'),
+        createModelRecord('openai', 'gpt-wired-current'),
+        createModelRecord('custom', 'custom-wired-compatible'),
+    ];
+    const wiredHarness = createHarness({
+        models: wiredModels,
+        selectedModels: { vertexai: 'gemini-wired-current' },
+        activeSource: 'vertexai',
+    });
+    const appendNativeReusePanel = ({
+        panelId,
+        providerId,
+        providerValue,
+        providerLabel,
+        modelId: nativeModelId,
+    }) => {
+        const panel = wiredHarness.documentRef.createElement('section');
+        panel.id = panelId;
+        panel.className = 'extension_container';
+        const providerLabelElement = wiredHarness.documentRef.createElement('label');
+        providerLabelElement.textContent = 'Model provider';
+        providerLabelElement.setAttribute('for', providerId);
+        const provider = wiredHarness.documentRef.createElement('select');
+        provider.id = providerId;
+        provider.setAttribute('aria-label', 'Model provider');
+        const providerOption = wiredHarness.documentRef.createElement('option');
+        providerOption.value = providerValue;
+        providerOption.textContent = providerLabel;
+        providerOption.setAttribute('label', providerLabel);
+        provider.append(providerOption);
+        provider.value = providerValue;
+        const modelLabelElement = wiredHarness.documentRef.createElement('label');
+        modelLabelElement.textContent = 'Chat model';
+        modelLabelElement.setAttribute('for', `${panelId}_model`);
+        const model = wiredHarness.documentRef.createElement('select');
+        model.id = `${panelId}_model`;
+        model.setAttribute('data-provider-select', providerId);
+        const nativeOption = wiredHarness.documentRef.createElement('option');
+        nativeOption.value = nativeModelId;
+        nativeOption.textContent = nativeModelId;
+        nativeOption.setAttribute('data-type', providerValue);
+        model.append(nativeOption);
+        model.value = nativeModelId;
+        panel.append(providerLabelElement, provider, modelLabelElement, model);
+        wiredHarness.documentRef.body.append(panel);
+        return { provider, model };
+    };
+    const wiredCustom = appendNativeReusePanel({
+        panelId: 'wired_custom_panel',
+        providerId: 'wired_custom_provider',
+        providerValue: 'custom',
+        providerLabel: 'Custom OpenAI-compatible',
+        modelId: 'native-custom',
+    });
+    const wiredCurrent = appendNativeReusePanel({
+        panelId: 'wired_current_panel',
+        providerId: 'wired_current_provider',
+        providerValue: 'current_st',
+        providerLabel: 'Current SillyTavern Settings',
+        modelId: 'native-current',
+    });
+    const wiredCustomTargetId = createExternalTargetId(wiredCustom.model, {
+        documentRef: wiredHarness.documentRef,
+    });
+    const wiredCurrentTargetId = createExternalTargetId(wiredCurrent.model, {
+        documentRef: wiredHarness.documentRef,
+    });
+    const customProviderValues = wiredCustom.provider.options.map(option => option.value);
+    const currentProviderValues = wiredCurrent.provider.options.map(option => option.value);
+    const restoreGlobals = installBrowserGlobals(wiredHarness);
+    try {
+        await init();
+        await flushMicrotasks();
+        assert.deepEqual(
+            wiredCustom.model.querySelectorAll('[data-cmr-external-model="true"]')
+                .map(option => [option.value, option.dataset.cmrProvider, option.dataset.type]),
+            [['custom-wired-compatible', 'custom', 'custom']],
+        );
+        assert.deepEqual(
+            wiredCurrent.model.querySelectorAll('[data-cmr-external-model="true"]')
+                .map(option => [option.value, option.dataset.cmrProvider, option.dataset.type]),
+            [['gemini-wired-current', 'vertexai', 'current_st']],
+        );
+        assert.deepEqual(wiredCustom.provider.options.map(option => option.value), customProviderValues);
+        assert.deepEqual(wiredCurrent.provider.options.map(option => option.value), currentProviderValues);
+        assert.equal(wiredCustom.provider.value, 'custom');
+        assert.equal(wiredCurrent.provider.value, 'current_st');
+
+        const panel = openPanel(wiredHarness);
+        const getPickerRow = targetId => panel.querySelector('#cmr_external_picker_list')
+            .querySelector(`[data-target-id="${targetId}"]`);
+        const getProblemRow = targetId => panel.querySelector('#cmr_external_list')
+            .querySelector(`[data-target-id="${targetId}"]`);
+        let customRow = getPickerRow(wiredCustomTargetId);
+        let currentRow = getPickerRow(wiredCurrentTargetId);
+        assert.ok(customRow);
+        assert.equal(
+            customRow.querySelector('.cmr-external-state').textContent,
+            '기존 OpenAI 호환 경로에 모델 표시',
+        );
+        assert.equal(
+            customRow.querySelector('.cmr-external-verification').textContent,
+            '실제 요청 확인 필요',
+        );
+        assert.ok(currentRow);
+        assert.equal(
+            currentRow.querySelector('.cmr-external-state').textContent,
+            '현재 SillyTavern 연결 경로에 모델 표시',
+        );
+        assert.equal(
+            currentRow.querySelector('.cmr-external-verification').textContent,
+            '실제 요청 확인 필요',
+        );
+
+        wiredHarness.setActiveSource('unsupported-native-provider');
+        await flushMicrotasks(8);
+        assert.equal(
+            wiredCurrent.model.querySelectorAll('[data-cmr-external-model="true"]').length,
+            0,
+        );
+        assert.ok(!getPickerRow(wiredCurrentTargetId));
+        currentRow = getProblemRow(wiredCurrentTargetId);
+        assert.ok(currentRow);
+        assert.equal(
+            currentRow.querySelector('.cmr-external-state').textContent,
+            '현재 SillyTavern 연결 확인 필요',
+        );
+        assert.equal(
+            currentRow.querySelector('.cmr-external-verification').textContent,
+            '다른 공급자 모델로 대체하지 않음',
+        );
+        assert.deepEqual(
+            wiredCustom.model.querySelectorAll('[data-cmr-external-model="true"]')
+                .map(option => option.value),
+            ['custom-wired-compatible'],
+        );
+
+        wiredHarness.setActiveSource('openai');
+        await flushMicrotasks(8);
+        assert.deepEqual(
+            wiredCurrent.model.querySelectorAll('[data-cmr-external-model="true"]')
+                .map(option => [option.value, option.dataset.cmrProvider, option.dataset.type]),
+            [['gpt-wired-current', 'openai', 'current_st']],
+        );
+        assert.deepEqual(
+            wiredCustom.model.querySelectorAll('[data-cmr-external-model="true"]')
+                .map(option => option.value),
+            ['custom-wired-compatible'],
+        );
+        assert.equal(wiredCustom.provider.value, 'custom');
+        assert.equal(wiredCurrent.provider.value, 'current_st');
+        assert.ok(!getProblemRow(wiredCurrentTargetId));
+        currentRow = getPickerRow(wiredCurrentTargetId);
+        assert.ok(currentRow);
+        assert.equal(
+            currentRow.querySelector('.cmr-external-state').textContent,
+            '현재 SillyTavern 연결 경로에 모델 표시',
+        );
+        assert.equal(
+            currentRow.querySelector('.cmr-external-verification').textContent,
+            '실제 요청 확인 필요',
+        );
+        customRow = getPickerRow(wiredCustomTargetId);
+        assert.ok(customRow);
+        assert.equal(
+            customRow.querySelector('.cmr-external-state').textContent,
+            '기존 OpenAI 호환 경로에 모델 표시',
+        );
+    } finally {
+        await destroy();
+        restoreGlobals();
+    }
+    assert.equal(wiredCustom.model.querySelector('[data-cmr-external-model="true"]'), null);
+    assert.equal(wiredCurrent.model.querySelector('[data-cmr-external-model="true"]'), null);
 });
 
 test('범용 연결은 외부 provider 전환과 무관하게 모든 등록 제공업체 그룹을 유지한다', () => {

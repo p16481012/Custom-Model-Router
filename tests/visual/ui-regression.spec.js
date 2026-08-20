@@ -790,9 +790,17 @@ test.describe('외부 bridge provider 선택기 경계', () => {
         const custom = await setProvider('custom');
         expectProviderPreserved(custom, 'custom');
         expect(custom.captionModelTargeted).toBe(true);
-        expect(custom.captionModelManagedCount).toBe(0);
-        expect(custom.captionModelSource).toBe('risk-blocked');
-        expect(custom.captionModelRisk).toBe('caption-special-provider');
+        expect(custom.captionModelManagedCount).toBe(1);
+        expect(custom.captionModelSource).toBe('direct');
+        expect(custom.captionModelRisk).toBeNull();
+        expect(custom.captionNativeReuseKind).toBe('custom-openai-compatible');
+        expect(custom.captionNativeReuseProviderId).toBe('custom');
+        expect(custom.captionVerificationRequired).toBe(true);
+        expect(custom.captionOptions).toEqual([{
+            value: 'custom-openai-9.0-preview',
+            type: 'custom',
+            provider: 'custom',
+        }]);
 
         const restored = await setProvider('openai');
         expectProviderPreserved(restored, 'openai');
@@ -801,7 +809,7 @@ test.describe('외부 bridge provider 선택기 경계', () => {
         expect(restored.captionModelSource).toBe('direct');
         expect(restored.captionModelRisk).toBeNull();
 
-        const unsupported = await page.locator('#caption_model_provider').evaluate((provider, modelId) => {
+        const unsupported = await page.locator('#caption_multimodal_api').evaluate((provider, modelId) => {
             provider.value = modelId;
             return {
                 hasModelOption: [...provider.options].some(option => option.value === modelId),
@@ -813,6 +821,108 @@ test.describe('외부 bridge provider 선택기 경계', () => {
         const finalSnapshot = await setProvider('openai');
         expectProviderPreserved(finalSnapshot, 'openai');
         expect(finalSnapshot.captionModelManagedCount).toBe(managedModelCount);
+    });
+
+    test('native Custom·SillyTavern 현재 연결은 provider 설정을 보존하고 기존 handler에 투영된 모델만 전달한다', async ({ page }) => {
+        let customRequest = null;
+        await page.route('**/native-reuse/custom-echo', async route => {
+            const request = route.request();
+            customRequest = {
+                method: request.method(),
+                authorization: request.headers().authorization,
+                body: request.postDataJSON(),
+            };
+            await route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify({ content: 'synthetic-custom-ok' }),
+            });
+        });
+        await page.goto(fixtureServer.browserSandboxUrl, { waitUntil: 'networkidle' });
+        await expect.poll(() => page.evaluate(() => globalThis.cmrSandboxSnapshot ?? null)).not.toBeNull();
+
+        const initial = await page.evaluate(() => globalThis.cmrSandboxSnapshot);
+        expect(initial.nativeCustom).toMatchObject({
+            kind: 'custom-openai-compatible',
+            provider: 'custom',
+            verificationRequired: true,
+            providerValue: 'custom',
+            providerValues: ['custom'],
+            endpointUnchanged: true,
+            apiKeyUnchanged: true,
+            requestCount: 0,
+            options: [{
+                value: 'custom-openai-9.0-preview',
+                provider: 'custom',
+                type: 'custom',
+            }],
+        });
+        expect(initial.nativeCurrent).toMatchObject({
+            kind: 'sillytavern-current',
+            provider: 'vertexai',
+            verificationRequired: true,
+            providerValue: 'current_st',
+            activeSillyTavernProviderId: 'vertexai',
+            requestCount: 0,
+            options: [{
+                value: 'gemini-vertex-9.0-preview',
+                provider: 'vertexai',
+                type: 'current_st',
+            }],
+        });
+        expect(initial.ambiguousNative.kind).toBeNull();
+        expect(initial.ambiguousNative.providerValue).toBe('main');
+        expect([...new Set(initial.ambiguousNative.options.map(option => option.provider))].sort()).toEqual([
+            'claude', 'custom', 'makersuite', 'openai', 'vertexai', 'zai',
+        ]);
+        expect(initial.scope).toContain('synthetic native-handler request only');
+
+        await page.locator('#native_custom_model').selectOption('custom-openai-9.0-preview');
+        const customResult = await page.evaluate(() => globalThis.cmrSandbox.requestNativeCustom());
+        expect(customRequest).toEqual({
+            method: 'POST',
+            authorization: 'Bearer SANDBOX_SECRET_UNCHANGED',
+            body: {
+                provider: 'custom',
+                model: 'custom-openai-9.0-preview',
+                endpoint: 'https://endpoint.example.invalid/v1',
+            },
+        });
+        expect(customResult.response).toEqual({ content: 'synthetic-custom-ok' });
+        expect(customResult.snapshot.nativeCustom).toMatchObject({
+            providerValue: 'custom',
+            endpointUnchanged: true,
+            apiKeyUnchanged: true,
+            requestCount: 1,
+        });
+        expect(JSON.stringify(customResult.snapshot)).not.toContain('SANDBOX_SECRET_UNCHANGED');
+        expect(JSON.stringify(customResult.snapshot)).not.toContain('endpoint.example.invalid');
+
+        await page.locator('#native_current_model').selectOption('gemini-vertex-9.0-preview');
+        const currentResult = await page.evaluate(() => globalThis.cmrSandbox.requestNativeCurrent());
+        expect(currentResult).toMatchObject({
+            response: { content: 'synthetic-current-ok' },
+            call: {
+                provider: 'current_st',
+                model: 'gemini-vertex-9.0-preview',
+                activeProviderId: 'vertexai',
+            },
+        });
+        expect(currentResult.snapshot.nativeCurrent.requestCount).toBe(1);
+
+        const switched = await page.evaluate(
+            () => globalThis.cmrSandbox.setCurrentSillyTavernProviderId('openai'),
+        );
+        expect(switched.nativeCurrent).toMatchObject({
+            kind: 'sillytavern-current',
+            provider: 'openai',
+            providerValue: 'current_st',
+            activeSillyTavernProviderId: 'openai',
+            options: [{ value: 'gpt-5.9-preview', provider: 'openai', type: 'current_st' }],
+        });
+        expect(switched.nativeCustom.providerValue).toBe('custom');
+        expect(switched.nativeCustom.endpointUnchanged).toBe(true);
+        expect(switched.nativeCustom.apiKeyUnchanged).toBe(true);
     });
 });
 

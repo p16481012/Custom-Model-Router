@@ -654,3 +654,81 @@ test('외부 제외 사유의 특수 객체 키도 독립된 진단 개수로 �
     );
     assert.equal(Object.getPrototypeOf(report.details.excludedByReason), Object.prototype);
 });
+
+test('native 연결 재사용 진단은 상태별 개수만 검증하고 외부 option 원문은 노출하지 않는다', () => {
+    const secret = 'SECRET_NATIVE_OPTION_AND_ENDPOINT';
+    const targets = [
+        {
+            resolution: { source: 'direct' },
+            bridge: {
+                status: 'connected',
+                nativeReuseKind: 'custom-openai-compatible',
+                nativeReuseProviderId: 'custom',
+                externalProviderValue: secret,
+            },
+        },
+        {
+            resolution: { source: 'direct' },
+            bridge: {
+                status: 'connected',
+                nativeReuseKind: 'sillytavern-current',
+                nativeReuseProviderId: 'vertexai',
+                selectedOptionText: secret,
+            },
+        },
+    ];
+    const metrics = {
+        observerCount: 1,
+        targetCount: 2,
+        boundCount: 2,
+        directCount: 2,
+        connectedCount: 2,
+        idleCount: 0,
+        failedCount: 0,
+        listenerCount: 2,
+        nativeCustomTargetCount: 1,
+        nativeCurrentTargetCount: 1,
+        nativeReuseProjectedTargetCount: 2,
+        nativeReuseUnavailableTargetCount: 0,
+    };
+
+    const passed = diagnoseExternalRuntimeResources(metrics, targets);
+    assert.equal(passed.status, 'passed');
+    assert.equal(passed.details.nativeCustomTargetCount, 1);
+    assert.equal(passed.details.nativeCurrentTargetCount, 1);
+    assert.equal(passed.details.nativeReuseProjectedTargetCount, 2);
+    assert.equal(passed.details.invariants.reportedNativeReuseMatches, true);
+    assert.doesNotMatch(JSON.stringify(passed), new RegExp(secret));
+
+    const mismatch = diagnoseExternalRuntimeResources({
+        ...metrics,
+        nativeReuseProjectedTargetCount: 1,
+    }, targets);
+    assert.equal(mismatch.status, 'failed');
+    assert.equal(mismatch.details.invariants.reportedNativeReuseMatches, false);
+
+    const unavailable = diagnoseExternalRuntimeResources({
+        observerCount: 1,
+        targetCount: 1,
+        boundCount: 0,
+        directCount: 1,
+        connectedCount: 0,
+        idleCount: 0,
+        failedCount: 1,
+        listenerCount: 1,
+        nativeCustomTargetCount: 0,
+        nativeCurrentTargetCount: 1,
+        nativeReuseProjectedTargetCount: 0,
+        nativeReuseUnavailableTargetCount: 1,
+    }, [{
+        resolution: { source: 'direct' },
+        bridge: {
+            status: 'failed',
+            nativeReuseKind: 'sillytavern-current',
+            issueCode: 'current-connection-unavailable',
+        },
+    }]);
+    assert.equal(unavailable.details.invariants.reportedNativeReuseMatches, true);
+    assert.equal(unavailable.details.invariants.nativeReusePartitionMatches, true);
+    assert.equal(unavailable.details.nativeReuseUnavailableTargetCount, 1);
+});

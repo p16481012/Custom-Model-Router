@@ -105,6 +105,7 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
     assert.match(roadmap, /## v0\.6\.12 — 런처 배지 제거와 설명 정보 구조 정리/);
     assert.match(roadmap, /## v0\.6\.13 — 외부 provider\/source 선택기 오탐 차단/);
     assert.match(roadmap, /## v0\.6\.14 — 선택된 Connection Profile 기반 공용 provider 연동/);
+    assert.match(roadmap, /## v0\.6\.15 — Hookless native provider option 모델 재사용/);
     assert.match(settingsHtml, /<textarea[\s\S]*?id="cmr_model_id"/);
     assert.match(settingsHtml, /id="cmr_add_form"/);
     assert.doesNotMatch(settingsHtml, /cmr_bulk_/);
@@ -170,7 +171,7 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
     assert.match(providerIntegrations, /PROVIDER_INTEGRATION_OWNED_ATTRIBUTE = 'data-cmr-provider-hook-owned'/);
     assert.match(providerIntegrations, /installHandler/);
     assert.match(providerIntegrations, /publishModels/);
-    assert.match(providerIntegrationSandbox, /src\/provider-integrations\.js\?provider-sandbox=0\.6\.14/);
+    assert.match(providerIntegrationSandbox, /src\/provider-integrations\.js\?provider-sandbox=0\.6\.15/);
     assert.match(providerIntegrationSandbox, /ConnectionManagerRequestService/);
     assert.match(providerIntegrationSandbox, /provider-integrations\/echo/);
     assert.match(providerIntegrationSandbox, /data-cmr-provider-hook-owned="true"/);
@@ -186,6 +187,30 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
     assert.match(apiDocument, /disabled.*사용자 제외로 되살리지 않습니다/);
     assert.match(readme, /select\/input\/datalist/);
     assert.match(roadmap, /fetch.*XMLHttpRequest.*monkey patch/);
+    for (const document of [readme, roadmap, checklist, apiDocument]) {
+        assert.match(document, /hookless native|Hookless native/);
+        assert.match(document, /Custom\/OpenAI-compatible/);
+        assert.match(document, /현재 활성 SillyTavern provider|현재 활성 ST provider/);
+        assert.match(document, /모델 projection|모델 투영/);
+        assert.match(document, /provider option/);
+        assert.match(document, /실제 (?:handler|요청)|handler.*실제|요청.*직접 확인/);
+    }
+    assert.match(apiDocument, /새 provider·요청 handler·credential bridge를 설치하는 API가 아닙니다/);
+    assert.match(apiDocument, /`main`, `current`, `inherit`, `openai`, `st` 같은 단독 토큰/);
+    assert.match(apiDocument, /`current-connection-unavailable`/);
+    assert.match(apiDocument, /전체 provider, `custom` 또는 임의 provider 모델로 fallback하지 않습니다/);
+    assert.match(apiDocument, /nativeCustomTargetCount/);
+    assert.match(apiDocument, /nativeCurrentTargetCount/);
+    assert.match(apiDocument, /nativeReuseProjectedTargetCount/);
+    assert.match(apiDocument, /nativeReuseUnavailableTargetCount/);
+    assert.match(apiDocument, /전역 `fetch`·`XMLHttpRequest`/);
+    assert.match(roadmap, /공개 hook·handler 경로와 분리/);
+    assert.match(checklist, /EXT-19/);
+    assert.match(checklist, /EXT-20/);
+    assert.match(checklist, /EXT-20A/);
+    assert.match(checklist, /EXT-21/);
+    assert.match(checklist, /EXT-22/);
+    assert.match(checklist, /EXT-23/);
     for (const document of [readme, roadmap, checklist, apiDocument]) {
         assert.match(document, /Registry API[^\n]*1\.2\.0|1\.2\.0[^\n]*Registry API/);
         assert.match(document, /(?:Provider )?Integration API[^\n]*1\.0\.0|1\.0\.0[^\n]*(?:Provider )?Integration API/);
@@ -315,10 +340,20 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
     const testDirectory = new URL('../tests/', import.meta.url);
     const testFiles = (await readdir(testDirectory)).filter(name => name.endsWith('.test.js'));
     const testSources = await Promise.all(testFiles.map(name => readFile(new URL(name, testDirectory), 'utf8')));
-    const testCount = testSources.reduce(
+    const topLevelTestCount = testSources.reduce(
         (total, source) => total + Array.from(source.matchAll(/^test\(/gm)).length,
         0,
     );
+    const nestedTestCount = testSources.reduce((total, source) => {
+        const caseGroups = source.matchAll(
+            /const cases = \[([\s\S]*?)\];\s*for \(const \[index, scenario\] of cases\.entries\(\)\) \{\s*await t\.test\(/g,
+        );
+        return total + Array.from(caseGroups).reduce(
+            (caseTotal, match) => caseTotal + Array.from(match[1].matchAll(/\bname:\s*['"`]/g)).length,
+            0,
+        );
+    }, 0);
+    const testCount = topLevelTestCount + nestedTestCount;
     for (const document of [readme, roadmap, checklist]) {
         assert.doesNotMatch(
             document,
@@ -329,13 +364,18 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
     assert.match(readme, new RegExp(`현재 자동 검사 ${testCount}개`));
     assert.match(roadmap, new RegExp(`검사 ${testCount}개 통과`));
     assert.match(checklist, new RegExp(`Node 자동 검사 ${testCount}개`));
-    const documentedUiCounts = [readme, roadmap, checklist].map(document => {
-        const match = document.match(/Playwright Chromium UI 회귀 검사 (\d+)개/);
+    const currentUiCountPatterns = [
+        /Playwright Chromium UI 회귀 검사 (\d+)개는 제품/,
+        /## v0\.6\.15[\s\S]*?Node 자동 검사 \d+개와 Playwright Chromium UI 회귀 검사 (\d+)개로/,
+        /v0\.6\.15 저장소에서는 Node 자동 검사 \d+개와 Playwright Chromium UI 회귀 검사 (\d+)개를/,
+    ];
+    const documentedUiCounts = [readme, roadmap, checklist].map((document, index) => {
+        const match = document.match(currentUiCountPatterns[index]);
         assert.ok(match, '최종 문서에는 Playwright UI 검사 개수를 숫자로 기록해야 한다');
         return Number(match[1]);
     });
     assert.equal(new Set(documentedUiCounts).size, 1, '세 문서의 Playwright UI 검사 개수가 같아야 한다');
-    assert.equal(documentedUiCounts[0], 14, 'v0.6.14 Playwright UI 검사 개수는 14개여야 한다');
+    assert.equal(documentedUiCounts[0], 15, 'v0.6.15 Playwright UI 검사 개수는 15개여야 한다');
 
     const checklistIds = Array.from(
         checklist.matchAll(/\*\*\[(?:필수|조건부|권장|선택)\]\[([A-Z0-9-]+)\]/g),

@@ -68,12 +68,14 @@ test('설정 복구는 파일 선택 직후 적용하지 않고 변경 미리보
     assert.match(source, /백업 변경 내역을 확인한 뒤 적용하거나 취소해 주세요/);
 });
 
-test('브라우저 샌드박스는 안전 대상 자동 연결·provider metadata·재렌더 시나리오를 유지한다', async () => {
+test('브라우저 샌드박스는 안전 대상 자동 연결·native provider 재사용·재렌더 시나리오를 유지한다', async () => {
     const html = await readText('tests/browser-sandbox.html');
 
     assert.match(html, /id="switch_caption_provider"/);
     assert.match(html, /switchCaptionProvider\(\)/);
-    assert.match(html, /id="caption_model_provider"[^>]*name="model_provider"/);
+    assert.match(html, /class="caption_settings"/);
+    assert.match(html, /id="caption_multimodal_api"[^>]*aria-label="Caption model provider"/);
+    assert.match(html, /id="caption_multimodal_model"/);
     assert.match(html, /captionProviderTargeted/);
     assert.match(html, /captionProviderManagedCount/);
     assert.match(html, /captionModelTargeted/);
@@ -84,7 +86,19 @@ test('브라우저 샌드박스는 안전 대상 자동 연결·provider metadat
     assert.match(html, /staleOption\.dataset\.cmrExternalModel\s*=\s*'true'/);
     assert.match(html, /controller\.rescan\(\)/);
     assert.match(html, /data-extension-name="unknown helper"/);
-    assert.match(html, /browser-sandbox=0\.6\.14/);
+    assert.match(html, /id="native_custom_provider"/);
+    assert.match(html, /value="custom" selected>Custom OpenAI-compatible/);
+    assert.match(html, /id="native_current_provider"/);
+    assert.match(html, /value="current_st" label="Current SillyTavern Settings" selected/);
+    assert.match(html, /id="ambiguous_native_provider"/);
+    assert.match(html, /value="main" selected>Main/);
+    assert.match(html, /getCurrentSillyTavernProviderId:\s*\(\) => currentSillyTavernProviderId/);
+    assert.match(html, /setCurrentSillyTavernProviderId\(providerId\)/);
+    assert.match(html, /nativeReuseKind/);
+    assert.match(html, /verificationRequired/);
+    assert.match(html, /endpointUnchanged/);
+    assert.match(html, /apiKeyUnchanged/);
+    assert.match(html, /browser-sandbox=0\.6\.15/);
     assert.match(html, /제공업체 선택기가 없어도 안전하게 자동 연결/);
 });
 

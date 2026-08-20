@@ -2,6 +2,7 @@ import { getProvider, getProviders } from './providers.js';
 import {
     EXTERNAL_INJECTED_OPTION_LIMIT,
     EXTERNAL_MANAGED_OPTION_WARNING_THRESHOLD,
+    EXTERNAL_NATIVE_REUSE_KINDS,
     EXTERNAL_TARGET_LIMIT,
 } from './external-integrations.js';
 
@@ -695,6 +696,10 @@ export function diagnoseExternalRuntimeResources(metrics = {}, targets = []) {
     const idleCount = normalizeRuntimeCount(metrics.idleCount);
     const failedCount = normalizeRuntimeCount(metrics.failedCount);
     const listenerCount = normalizeRuntimeCount(metrics.listenerCount);
+    const nativeCustomTargetCount = normalizeRuntimeCount(metrics.nativeCustomTargetCount);
+    const nativeCurrentTargetCount = normalizeRuntimeCount(metrics.nativeCurrentTargetCount);
+    const nativeReuseProjectedTargetCount = normalizeRuntimeCount(metrics.nativeReuseProjectedTargetCount);
+    const nativeReuseUnavailableTargetCount = normalizeRuntimeCount(metrics.nativeReuseUnavailableTargetCount);
     // 비정상 입력도 진단 JSON을 무한히 키우지 않도록 hard cap 초과는 한 칸의 sentinel로만 보존한다.
     const normalizeManagedOptionCount = value => Math.min(
         normalizeRuntimeCount(value),
@@ -722,6 +727,24 @@ export function diagnoseExternalRuntimeResources(metrics = {}, targets = []) {
     )).length;
     const actualFailedCount = normalizedTargets.filter(target => (
         target?.resolution?.source === 'direct' && target?.bridge?.status === 'failed'
+    )).length;
+    const actualNativeCustomTargetCount = normalizedTargets.filter(target => (
+        target?.resolution?.source === 'direct'
+        && target?.bridge?.nativeReuseKind === EXTERNAL_NATIVE_REUSE_KINDS.CUSTOM_OPENAI_COMPATIBLE
+    )).length;
+    const actualNativeCurrentTargetCount = normalizedTargets.filter(target => (
+        target?.resolution?.source === 'direct'
+        && target?.bridge?.nativeReuseKind === EXTERNAL_NATIVE_REUSE_KINDS.SILLYTAVERN_CURRENT
+    )).length;
+    const actualNativeReuseProjectedTargetCount = normalizedTargets.filter(target => (
+        target?.resolution?.source === 'direct'
+        && Object.values(EXTERNAL_NATIVE_REUSE_KINDS).includes(target?.bridge?.nativeReuseKind)
+        && target?.bridge?.status === 'connected'
+    )).length;
+    const actualNativeReuseUnavailableTargetCount = normalizedTargets.filter(target => (
+        target?.resolution?.source === 'direct'
+        && target?.bridge?.nativeReuseKind === EXTERNAL_NATIVE_REUSE_KINDS.SILLYTAVERN_CURRENT
+        && target?.bridge?.issueCode === 'current-connection-unavailable'
     )).length;
     const excludedCount = riskBlockedTargets.length;
     const expectedListenerCount = normalizedTargets.reduce((count, target) => (
@@ -762,6 +785,14 @@ export function diagnoseExternalRuntimeResources(metrics = {}, targets = []) {
         reportedBridgeStatesMatch: connectedCount === actualConnectedCount
             && idleCount === actualIdleCount
             && failedCount === actualFailedCount,
+        reportedNativeReuseMatches: nativeCustomTargetCount === actualNativeCustomTargetCount
+            && nativeCurrentTargetCount === actualNativeCurrentTargetCount
+            && nativeReuseProjectedTargetCount === actualNativeReuseProjectedTargetCount
+            && nativeReuseUnavailableTargetCount === actualNativeReuseUnavailableTargetCount,
+        nativeReusePartitionMatches: nativeCustomTargetCount + nativeCurrentTargetCount <= directCount
+            && nativeReuseProjectedTargetCount <= nativeCustomTargetCount + nativeCurrentTargetCount
+            && nativeReuseUnavailableTargetCount <= nativeCurrentTargetCount
+            && nativeReuseUnavailableTargetCount <= failedCount,
         candidatePartitionMatches: targetCount === directCount + userExcludedCount + excludedCount,
         bridgePartitionMatches: directCount === connectedCount + idleCount + failedCount,
         noBridgeFailures: failedCount === 0,
@@ -809,6 +840,10 @@ export function diagnoseExternalRuntimeResources(metrics = {}, targets = []) {
             userExcludedCount,
             listenerCount,
             expectedListenerCount,
+            nativeCustomTargetCount,
+            nativeCurrentTargetCount,
+            nativeReuseProjectedTargetCount,
+            nativeReuseUnavailableTargetCount,
             activeRegistryModelCount,
             eligibleManagedOptionCount,
             expectedManagedOptionCount,

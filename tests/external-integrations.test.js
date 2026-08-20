@@ -6,9 +6,11 @@ import {
     EXTERNAL_MANAGED_OPTION_WARNING_THRESHOLD,
     EXTERNAL_MAPPING_DISABLED,
     EXTERNAL_MAPPING_MANUAL,
+    EXTERNAL_NATIVE_REUSE_KINDS,
     EXTERNAL_PROVIDER_HOOK_OWNED_ATTRIBUTE,
     EXTERNAL_TARGET_LIMIT,
     assessExternalTargetRisk,
+    classifyExternalNativeProviderReuse,
     createExternalIntegrationController,
     createExternalTargetId,
     discoverExternalModelTargets,
@@ -551,6 +553,68 @@ test('provider 전환 직후에는 과거 selected model의 data-type보다 현�
     assert.equal(inference.providerId, 'claude');
     assert.equal(inference.source, 'connected-provider-select');
     assert.equal(inference.externalProviderValue, 'anthropic');
+});
+
+test('비공식 Caption 유사 control은 Custom 라벨만으로 공식 예외를 우회하지 않는다', () => {
+    const documentRef = new FakeDocument();
+    const panel = documentRef.createElement('section');
+    panel.className = 'vendor_caption_settings';
+    const provider = documentRef.createElement('select');
+    provider.id = 'vendor_caption_model_provider';
+    provider.setAttribute('aria-label', 'Caption model provider');
+    const customOption = option(documentRef, 'vendor_custom');
+    customOption.textContent = 'Custom OpenAI-compatible';
+    customOption.label = 'Custom OpenAI-compatible';
+    provider.append(customOption);
+    provider.value = 'vendor_custom';
+    const model = documentRef.createElement('select');
+    model.id = 'vendor_caption_multimodal_model';
+    model.setAttribute('aria-label', 'Caption multimodal model');
+    model.setAttribute('data-provider-select', provider.id);
+    model.append(option(documentRef, 'vendor-native'));
+    panel.append(provider, model);
+    documentRef.append(panel);
+
+    customOption.value = 'https://endpoint.example.invalid/v1';
+    provider.value = customOption.value;
+    assert.equal(classifyExternalNativeProviderReuse({
+        providerControl: provider,
+        risk: { level: 'none' },
+    }), null);
+    customOption.value = 'SECRET_PROVIDER_TOKEN';
+    customOption.textContent = 'Current SillyTavern Settings';
+    customOption.label = 'Current SillyTavern Settings';
+    provider.value = customOption.value;
+    assert.equal(classifyExternalNativeProviderReuse({
+        providerControl: provider,
+        risk: { level: 'none' },
+    }, {
+        getCurrentSillyTavernProviderId: () => 'openai',
+    }), null);
+    customOption.value = 'vendor_custom';
+    customOption.textContent = 'Custom OpenAI-compatible';
+    customOption.label = 'Custom OpenAI-compatible';
+    provider.value = customOption.value;
+
+    const controller = createExternalIntegrationController({
+        root: documentRef,
+        documentRef,
+        getModels: providerId => providerId === 'custom'
+            ? [{ provider: 'custom', id: 'custom-must-not-be-injected' }]
+            : [],
+        observerFactory: () => ({ observe() {}, disconnect() {} }),
+    });
+    try {
+        const [target] = controller.start();
+        assert.equal(target.control, model);
+        assert.equal(target.risk.excludedReason, 'caption-special-provider');
+        assert.equal(target.resolution.source, 'risk-blocked');
+        assert.equal(target.bridge.nativeReuseKind, undefined);
+        assert.equal(model.options.some(item => item.dataset.cmrExternalModel === 'true'), false);
+        assert.equal(provider.value, 'vendor_custom');
+    } finally {
+        controller.destroy();
+    }
 });
 
 test('target ID는 동일한 extension 구조의 DOM 재생성 후에도 안정적이다', () => {
@@ -1444,6 +1508,8 @@ test('controller는 모든 안전 target을 직접 연결하고 재렌더·선�
     assert.equal(model.options.some(item => item.dataset.cmrExternalModel === 'true'), true);
     assert.deepEqual(controller.getMetrics(), {
         observerCount: 1, targetCount: 1, boundCount: 1, directCount: 1,
+        nativeCustomTargetCount: 0, nativeCurrentTargetCount: 0,
+        nativeReuseProjectedTargetCount: 0, nativeReuseUnavailableTargetCount: 0,
         userExcludedCount: 0, activeRegistryModelCount: 24,
         eligibleManagedOptionCount: 24,
         expectedManagedOptionCount: 24, actualManagedOptionCount: 24,
@@ -1461,6 +1527,8 @@ test('controller는 모든 안전 target을 직접 연결하고 재렌더·선�
     assert.equal(model.value, 'claude-next');
     assert.deepEqual(controller.getMetrics(), {
         observerCount: 1, targetCount: 1, boundCount: 1, directCount: 1,
+        nativeCustomTargetCount: 0, nativeCurrentTargetCount: 0,
+        nativeReuseProjectedTargetCount: 0, nativeReuseUnavailableTargetCount: 0,
         userExcludedCount: 0, activeRegistryModelCount: 24,
         eligibleManagedOptionCount: 24,
         expectedManagedOptionCount: 24, actualManagedOptionCount: 24,
@@ -1497,12 +1565,199 @@ test('controller는 모든 안전 target을 직접 연결하고 재렌더·선�
     assert.equal(model.options.some(item => item.dataset.cmrExternalModel === 'true'), false);
     assert.deepEqual(controller.getMetrics(), {
         observerCount: 0, targetCount: 0, boundCount: 0, directCount: 0,
+        nativeCustomTargetCount: 0, nativeCurrentTargetCount: 0,
+        nativeReuseProjectedTargetCount: 0, nativeReuseUnavailableTargetCount: 0,
         userExcludedCount: 0, activeRegistryModelCount: 0,
         eligibleManagedOptionCount: 0,
         expectedManagedOptionCount: 0, actualManagedOptionCount: 0,
         capacityLimitedTargetCount: 0,
         connectedCount: 0, idleCount: 0, failedCount: 0, listenerCount: 0,
     });
+
+    // 공식 Caption 구조와 current_st 계약은 기존 native provider를 그대로 두고
+    // 선택된 handler에 맞는 Registry 모델 subset만 표시한다.
+    const nativeDocument = new FakeDocument();
+    const nativePanel = nativeDocument.createElement('div');
+    nativePanel.className = 'caption_settings';
+    const nativeProviderWrapper = nativeDocument.createElement('div');
+    const nativeModelWrapper = nativeDocument.createElement('div');
+    const nativeProvider = nativeDocument.createElement('select');
+    nativeProvider.id = 'caption_multimodal_api';
+    nativeProvider.setAttribute('aria-label', 'Caption model provider');
+    const nativeOpenAi = option(nativeDocument, 'openai');
+    nativeOpenAi.textContent = 'OpenAI';
+    const nativeCustom = option(nativeDocument, 'custom');
+    nativeCustom.textContent = 'Custom OpenAI-compatible';
+    const nativeCurrent = option(nativeDocument, 'current_st');
+    nativeCurrent.textContent = 'Current SillyTavern Settings';
+    nativeCurrent.label = 'Current SillyTavern Settings';
+    const nativeOllama = option(nativeDocument, 'ollama');
+    nativeOllama.textContent = 'Ollama';
+    const falsePositiveOptions = [
+        'default', 'current', 'current-connection', 'use_current_connection', 'custom-openai',
+        'main', 'inherit', 'st', '현재 연결',
+    ]
+        .map(value => option(nativeDocument, value));
+    nativeProvider.append(
+        nativeOpenAi,
+        nativeCustom,
+        nativeCurrent,
+        nativeOllama,
+        ...falsePositiveOptions,
+    );
+    nativeProvider.value = 'custom';
+    const nativeModel = nativeDocument.createElement('select');
+    nativeModel.id = 'caption_multimodal_model';
+    nativeModel.append(
+        option(nativeDocument, 'native-custom', { 'data-type': 'custom' }),
+        option(nativeDocument, 'native-current', { 'data-type': 'current_st' }),
+        option(nativeDocument, 'native-openai', { 'data-type': 'openai' }),
+    );
+    nativeModel.value = 'native-custom';
+    const endpoint = nativeDocument.createElement('input');
+    endpoint.id = 'caption_model_endpoint';
+    endpoint.value = 'https://endpoint.example.invalid/v1';
+    const apiKey = nativeDocument.createElement('input');
+    apiKey.id = 'caption_model_api_key';
+    apiKey.value = 'SECRET_NATIVE_KEY';
+    nativeProviderWrapper.append(nativeProvider);
+    nativeModelWrapper.append(nativeModel, endpoint, apiKey);
+    nativePanel.append(nativeProviderWrapper, nativeModelWrapper);
+    nativeDocument.append(nativePanel);
+    const originalProviderValues = nativeProvider.options.map(item => item.value);
+    let providerChangeCount = 0;
+    let currentSillyTavernProviderId = 'vertexai';
+    nativeProvider.addEventListener('change', () => {
+        providerChangeCount += 1;
+    });
+    const nativeController = createExternalIntegrationController({
+        root: nativeDocument,
+        documentRef: nativeDocument,
+        getModels: providerId => ({
+            custom: [{ provider: 'custom', id: 'custom-next' }],
+            vertexai: [{ provider: 'vertexai', id: 'gemini-next' }],
+            openai: [{ provider: 'openai', id: 'gpt-next' }],
+        })[providerId] ?? [],
+        getCurrentSillyTavernProviderId: () => currentSillyTavernProviderId,
+        observerFactory: () => ({ observe() {}, disconnect() {} }),
+    });
+
+    let [nativeTarget] = nativeController.start();
+    assert.equal(nativeTarget.risk.level, 'none');
+    assert.deepEqual(nativeTarget.bridge, {
+        status: 'connected', issueCode: null, injectedCount: 1,
+        eligibleModelCount: 1, expectedManagedOptionCount: 1, capacityLimited: false,
+        nativeReuseKind: EXTERNAL_NATIVE_REUSE_KINDS.CUSTOM_OPENAI_COMPATIBLE,
+        nativeReuseProviderId: 'custom', verificationRequired: true,
+    });
+    assert.deepEqual(nativeModel.options
+        .filter(item => item.dataset.cmrExternalModel === 'true')
+        .map(item => [item.value, item.dataset.cmrProvider, item.getAttribute('data-type')]), [
+        ['custom-next', 'custom', 'custom'],
+    ]);
+    assert.deepEqual(nativeController.getMetrics(), {
+        observerCount: 1, targetCount: 1, boundCount: 1, directCount: 1,
+        nativeCustomTargetCount: 1, nativeCurrentTargetCount: 0,
+        nativeReuseProjectedTargetCount: 1, nativeReuseUnavailableTargetCount: 0,
+        userExcludedCount: 0, activeRegistryModelCount: 3,
+        eligibleManagedOptionCount: 1, expectedManagedOptionCount: 1,
+        actualManagedOptionCount: 1, capacityLimitedTargetCount: 0,
+        connectedCount: 1, idleCount: 0, failedCount: 0, listenerCount: 3,
+    });
+
+    nativeProvider.value = 'current_st';
+    nativeController.sync();
+    [nativeTarget] = nativeController.getTargets();
+    assert.equal(nativeTarget.bridge.nativeReuseKind, EXTERNAL_NATIVE_REUSE_KINDS.SILLYTAVERN_CURRENT);
+    assert.equal(nativeTarget.bridge.nativeReuseProviderId, 'vertexai');
+    assert.deepEqual(nativeModel.options
+        .filter(item => item.dataset.cmrExternalModel === 'true')
+        .map(item => [item.value, item.dataset.cmrProvider, item.getAttribute('data-type')]), [
+        ['gemini-next', 'vertexai', 'current_st'],
+    ]);
+
+    currentSillyTavernProviderId = null;
+    nativeController.sync();
+    [nativeTarget] = nativeController.getTargets();
+    assert.deepEqual(nativeTarget.bridge, {
+        status: 'failed', issueCode: 'current-connection-unavailable', injectedCount: 0,
+        eligibleModelCount: 0, expectedManagedOptionCount: 0, capacityLimited: false,
+        nativeReuseKind: EXTERNAL_NATIVE_REUSE_KINDS.SILLYTAVERN_CURRENT,
+        nativeReuseProviderId: null, verificationRequired: true,
+    });
+    assert.equal(nativeModel.options.some(item => item.dataset.cmrExternalModel === 'true'), false);
+    assert.equal(nativeController.getMetrics().nativeReuseUnavailableTargetCount, 1);
+
+    currentSillyTavernProviderId = 'openai';
+    nativeController.sync();
+    assert.deepEqual(nativeModel.options
+        .filter(item => item.dataset.cmrExternalModel === 'true')
+        .map(item => item.value), ['gpt-next']);
+
+    const classifiedTarget = nativeController.getTargets()[0];
+    for (const value of [
+        'default', 'current', 'current-connection', 'use_current_connection', 'custom-openai',
+        'main', 'inherit', 'st', '현재 연결',
+    ]) {
+        nativeProvider.value = value;
+        assert.equal(classifyExternalNativeProviderReuse(classifiedTarget, {
+            getCurrentSillyTavernProviderId: () => 'openai',
+        }), null, value);
+    }
+    nativeProvider.value = 'current_st';
+    nativeCurrent.textContent = 'Current';
+    nativeCurrent.label = 'Current';
+    assert.equal(classifyExternalNativeProviderReuse(classifiedTarget, {
+        getCurrentSillyTavernProviderId: () => 'openai',
+    }), null);
+    nativeCurrent.textContent = 'Current SillyTavern Settings';
+    nativeCurrent.label = 'Current SillyTavern Settings';
+    nativeProvider.value = 'custom';
+    nativeCustom.textContent = 'SillyTavern current';
+    nativeCustom.label = 'SillyTavern current';
+    assert.equal(classifyExternalNativeProviderReuse(classifiedTarget, {
+        getCurrentSillyTavernProviderId: () => 'openai',
+    }), null);
+    nativeCustom.textContent = 'Custom OpenAI-compatible';
+    nativeCustom.label = 'Custom OpenAI-compatible';
+    nativeProvider.value = 'current_st';
+    nativeCurrent.textContent = 'Custom OpenAI-compatible';
+    nativeCurrent.label = 'Custom OpenAI-compatible';
+    assert.equal(classifyExternalNativeProviderReuse(classifiedTarget, {
+        getCurrentSillyTavernProviderId: () => 'openai',
+    }), null);
+    nativeCurrent.textContent = 'Current SillyTavern Settings';
+    nativeCurrent.label = 'Current SillyTavern Settings';
+    nativeProvider.value = 'openai';
+    nativeOpenAi.textContent = 'Custom OpenAI-compatible';
+    assert.equal(classifyExternalNativeProviderReuse(classifiedTarget, {
+        getCurrentSillyTavernProviderId: () => 'openai',
+    }), null);
+    nativeOpenAi.textContent = 'OpenAI';
+
+    // 비매칭 provider는 기존 all-provider 직접 표시를 유지한다.
+    nativeController.sync();
+    assert.deepEqual(nativeModel.options
+        .filter(item => item.dataset.cmrExternalModel === 'true')
+        .map(item => item.dataset.cmrProvider), ['openai', 'vertexai', 'custom']);
+    assert.equal(nativeController.getTargets()[0].bridge.nativeReuseKind, undefined);
+
+    // official Caption이어도 Ollama handler는 계속 안전 제외한다.
+    nativeProvider.value = 'ollama';
+    nativeController.sync();
+    assert.equal(nativeController.getTargets()[0].risk.excludedReason, 'caption-special-provider');
+    assert.equal(nativeModel.options.some(item => item.dataset.cmrExternalModel === 'true'), false);
+    assert.deepEqual(nativeProvider.options.map(item => item.value), originalProviderValues);
+    assert.equal(nativeProvider.value, 'ollama');
+    assert.equal(providerChangeCount, 0);
+    assert.equal(endpoint.value, 'https://endpoint.example.invalid/v1');
+    assert.equal(apiKey.value, 'SECRET_NATIVE_KEY');
+    assert.doesNotMatch(JSON.stringify(nativeController.getMetrics()), /SECRET_|endpoint\.example/);
+
+    nativeController.destroy();
+    assert.equal(nativeModel.options.some(item => item.dataset.cmrExternalModel === 'true'), false);
+    assert.deepEqual(nativeProvider.options.map(item => item.value), originalProviderValues);
+    assert.equal(nativeProvider.value, 'ollama');
 });
 
 test('managed option 계측은 direct와 활성 Registry 모델만 예상하고 risk target과 native 중복을 제외한다', () => {

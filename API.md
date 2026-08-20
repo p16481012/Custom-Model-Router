@@ -1,8 +1,8 @@
 # 공개 Registry 및 Provider Integration API
 
-Custom Model Router v0.6.14는 다른 SillyTavern 확장이 내부 파일 경로에 의존하지 않고 등록 모델, 공용 provider 연동과 용도별 라우팅을 사용할 수 있도록 `globalThis.CustomModelRouter`를 제공합니다. Registry API 계약 버전은 `1.2.0`, `CustomModelRouter.integrations`의 Provider Integration API 계약 버전은 `1.0.0`, Routing API 계약 버전은 `1.0.0`입니다. Registry `1.2.0`은 Integration API를 추가한 하위 호환 minor 갱신이며 Routing API는 v0.5.0의 `1.0.0` 계약을 유지합니다.
+Custom Model Router v0.6.15는 다른 SillyTavern 확장이 내부 파일 경로에 의존하지 않고 등록 모델, 공용 provider 연동과 용도별 라우팅을 사용할 수 있도록 `globalThis.CustomModelRouter`를 제공합니다. Registry API 계약 버전은 `1.2.0`, `CustomModelRouter.integrations`의 Provider Integration API 계약 버전은 `1.0.0`, Routing API 계약 버전은 `1.0.0`입니다. Registry `1.2.0`은 Integration API를 추가한 하위 호환 minor 갱신이며 Routing API는 v0.5.0의 `1.0.0` 계약을 유지합니다.
 
-v0.6.0의 범용 DOM 모델 브리지, 호환성 진단과 설정 백업·복구, v0.6.7의 Playwright UI 회귀 검사 인프라는 Registry/Routing 호출 계약에 포함되지 않습니다. v0.6.14의 Provider Integration API는 공개 hook을 명시적으로 등록한 소비 확장에만 적용됩니다. 대상별 제외·복구와 기존 UI 선택지 주입 상태는 진단 섹션의 고급 외부 연결 관리에 있고, 실제 요청 반영은 별도로 확인해야 합니다. 외부 저장 schema v2 역시 공개 API 호출 계약과 별개입니다. Routing API는 개발자 또는 연동 확장이 명시적으로 사용하는 opt-in 계약이며 일반 라우팅 UI는 없습니다. 용도별 경로에는 Connection Profile ID만 저장되고 프로필 본문·API 키·endpoint는 복제되지 않습니다.
+v0.6.0의 범용 DOM 모델 브리지, v0.6.15의 hookless native provider option 재사용, 호환성 진단과 설정 백업·복구, v0.6.7의 Playwright UI 회귀 검사 인프라는 Registry/Routing 호출 계약에 포함되지 않습니다. v0.6.14의 Provider Integration API는 공개 hook을 명시적으로 등록한 소비 확장에만 적용되며 hookless native 재사용과 별도 경로입니다. 대상별 제외·복구와 기존 UI 선택지 주입 상태는 진단 섹션의 고급 외부 연결 관리에 있고, 실제 요청 반영은 별도로 확인해야 합니다. 외부 저장 schema v2 역시 공개 API 호출 계약과 별개입니다. Routing API는 개발자 또는 연동 확장이 명시적으로 사용하는 opt-in 계약이며 일반 라우팅 UI는 없습니다. 용도별 경로에는 Connection Profile ID만 저장되고 프로필 본문·API 키·endpoint는 복제되지 않습니다.
 
 ## 호환성 확인
 
@@ -66,7 +66,7 @@ if (!registry.integrations?.isCompatible('1.0.0')) {
 2. **선택된 Custom OpenAI-compatible 특화** (`openai-compatible`): 현재 선택된 Connection Manager 프로필 source가 `Custom`일 때만 `custom` Registry 모델과 OpenAI-compatible 요청 handler를 준비합니다.
 3. **버전이 명시된 공개 provider registry/hook**: 외부 확장이 Integration API `1.0.0`의 descriptor와 `installHandler`·`publishModels` hook을 등록해 위 handler와 모델을 자신의 provider UI·요청 경로에 수용합니다.
 
-앞의 두 항목은 공개 hook 소비 확장에 제공하는 공용 backend 전략입니다. CMR이 hookless 확장 화면에 자동으로 provider를 삽입한다는 의미가 아닙니다. 기존 v0.6 DOM 모델 브리지는 별도 계층으로 계속 동작하므로 hookless 확장이라도 안전하게 감지된 표준 모델 `select`·텍스트 `input`·`datalist`에는 기존 선택지가 표시될 수 있습니다.
+앞의 두 항목은 공개 hook 소비 확장에 제공하는 공용 backend 전략입니다. CMR이 hookless 확장 화면에 자동으로 provider를 삽입한다는 의미가 아닙니다. 기존 v0.6 DOM 모델 브리지와 v0.6.15 native provider option 재사용은 별도 계층으로 계속 동작하므로 hookless 확장이라도 안전하게 감지된 표준 모델 `select`·텍스트 `input`·`datalist`에는 모델 선택지가 표시될 수 있습니다. 이 경로는 `installHandler`·`publishModels`를 호출하지 않습니다.
 
 ### 검색과 capability
 
@@ -183,6 +183,21 @@ stream factory를 아직 호출하지 않았거나 반복 중이더라도 소비
 
 `getConsumers()`는 소비 확장별 slot·strategy의 `pending`, `ready`, `failed` 상태와 공개 provider ID·모델 개수만 반환합니다. `refresh()`는 실패 binding 재시도와 현재 선택 profile·Registry 모델 재조정을 요청합니다. `subscribe(listener)`는 비밀정보 없는 수명주기 이벤트를 제공하고 반환 함수로 해제합니다.
 
+## Hookless native provider option 재사용
+
+이 기능은 새 provider·요청 handler·credential bridge를 설치하는 API가 아닙니다. 외부 확장에 이미 존재하고 현재 선택된 native provider option을 보수적으로 분류해, 연결된 model control에 투영할 Registry 모델 집합만 좁힙니다.
+
+| 선택된 native provider option | 투영 모델 | 변경하지 않는 항목 |
+|---|---|---|
+| 정확한 Custom/OpenAI-compatible 선택 | provider가 `custom`인 활성 Registry 모델만 | provider option·선택값, endpoint·API 키, 외부 handler |
+| 정확한 SillyTavern/current-connection 후보 | 현재 활성 SillyTavern provider와 같은 활성 Registry 모델만 | provider option·선택값, 메인 source·모델·Connection Profile |
+
+`main`, `current`, `inherit`, `openai`, `st` 같은 단독 토큰과 서로 충돌하는 값·표시명은 native 재사용으로 분류하지 않습니다. 이처럼 모호한 provider option은 일반 DOM 브리지의 안전 판정이 별도로 성립하면 종전의 best-effort 선택지 주입을 유지할 수 있지만, native 재사용 특화라고 보고하지 않습니다.
+
+반대로 provider option 자체는 정확한 SillyTavern/current-connection 후보인데 현재 활성 SillyTavern provider가 없거나 CMR 지원 provider로 확정되지 않으면 `sillytavern-current` 분류를 유지한 채 `current-connection-unavailable` 실패로 표시합니다. 이 경우 모델을 투영하지 않으며 전체 provider, `custom` 또는 임의 provider 모델로 fallback하지 않습니다. 사용자가 현재 ST Chat Completion 연결을 확인해야 합니다.
+
+분류 결과는 모델 projection에만 사용합니다. CMR은 provider option을 추가·삭제하거나 해당 control 값을 바꾸지 않고, endpoint·API 키를 읽거나 복제하지 않으며, 전역 `fetch`·`XMLHttpRequest`, 외부 확장의 요청 함수 또는 SillyTavern main settings를 patch하지 않습니다. DOM option은 외부 확장의 실제 handler 구현을 증명하지 않으므로 소비 기능을 실행한 뒤 요청 payload의 `model`과 성공 결과를 직접 확인해야 합니다.
+
 ## 용도별 Routing API
 
 `CustomModelRouter.routing`은 모델 별칭 없이 `{ provider, modelId, adapterId, connectionProfileId }`를 저장합니다.
@@ -226,7 +241,7 @@ v0.5.0의 Registry/Routing API는 소비 확장이 직접 호출해야 하는 op
 | `zai`, `Z.AI`, `GLM` | `zai` |
 | `openai-compatible`, `LM Studio`, `Ollama`, `local api` | `custom` |
 
-Caption처럼 provider/source 선택기와 별도 model select가 있거나 하나의 model select에 provider별 option이 함께 들어 있고 `data-type`으로 구분하는 경우에는 확인된 외부 provider 값을 실제 model control의 CMR option에도 보존합니다. provider/source 선택기 자체에는 CMR option을 추가하지 않고 native option·현재 값을 유지합니다. target별 512개 한도 안에서 주입한 provider 모델은 `제공업체 이름 · 사용자 모델` optgroup으로 구분합니다. 단, CMR Registry는 모델의 vision 능력을 저장하지 않으므로 실제 Caption 호환성은 모델과 계정에서 확인해야 합니다.
+Caption처럼 provider/source 선택기와 별도 model select가 있거나 하나의 model select에 provider별 option이 함께 들어 있고 `data-type`으로 구분하는 경우에는 확인된 외부 provider 값을 실제 model control의 CMR option에도 보존합니다. SillyTavern 1.18.0 Caption은 `.caption_settings` 경계의 `#caption_multimodal_api`와 `#caption_multimodal_model` 조합으로 검증합니다. provider/source 선택기 자체에는 CMR option을 추가하지 않고 native option·현재 값을 유지합니다. target별 512개 한도 안에서 주입한 provider 모델은 `제공업체 이름 · 사용자 모델` optgroup으로 구분합니다. 단, CMR Registry는 모델의 vision 능력을 저장하지 않으므로 실제 Caption handler·요청과 멀티모달 호환성은 모델과 계정에서 확인해야 합니다.
 
 ### 네트워크 경계
 
@@ -235,6 +250,8 @@ DOM 브리지는 전역 `fetch` 또는 `XMLHttpRequest`를 monkey patch하지 �
 ### 관리 UI와 option 한도
 
 고급 외부 연결 관리의 기본 목록에는 bridge 실패 대상과 schema v2에서 사용자가 제외한 대상만 나타납니다. 정상 direct 대상은 사용자가 **문제가 생긴 모델 칸 제외**를 펼쳤을 때만 선택기에 표시합니다. Vectors·embedding·TTS·Stable Diffusion 같은 위험 대상은 두 관리 목록 모두에 행을 만들지 않고 진단 집계에만 포함합니다. provider/source 선택기는 모델 target이 아니므로 두 목록과 진단 `targetCount` 모두에 포함하지 않습니다.
+
+진단의 외부 bridge details는 `nativeCustomTargetCount`, `nativeCurrentTargetCount`, `nativeReuseProjectedTargetCount`, `nativeReuseUnavailableTargetCount`로 native 재사용 분류·projection·현재 연결 확인 불가 상태를 집계합니다. 이 집계에는 provider option 원문, endpoint와 API 키가 포함되지 않습니다.
 
 외부 target 하나에는 native option과 중복되는 항목을 제외한 표시 가능한 CMR 후보 중 최대 512개만 주입합니다. 이 target별 후보가 512개를 넘으면 용량 주의를 표시합니다. 모든 direct target의 예상 CMR option 합계 또는 실제 CMR option 합계가 2,048개를 넘으면 별도의 성능 주의를 표시합니다. 위험 분류 대상과 native option은 CMR option 예산에서 제외합니다. 이 한도와 경고는 DOM 브리지 구현 계약이며 `CustomModelRouter.listModels()` 결과를 줄이지 않습니다. 따라서 활성 Registry 모델 총수가 512개를 넘는다는 사실만으로 target별 용량 경고가 발생하지는 않습니다.
 

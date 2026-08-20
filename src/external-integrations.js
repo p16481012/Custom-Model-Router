@@ -13,6 +13,10 @@ export const EXTERNAL_GROUP_LABEL = '사용자 모델';
 export const EXTERNAL_MODEL_SELECTOR = '[data-cmr-external-model="true"]';
 export const EXTERNAL_GROUP_SELECTOR = '[data-cmr-external-group="true"]';
 export const EXTERNAL_PROVIDER_HOOK_OWNED_ATTRIBUTE = 'data-cmr-provider-hook-owned';
+export const EXTERNAL_NATIVE_REUSE_KINDS = Object.freeze({
+    CUSTOM_OPENAI_COMPATIBLE: 'custom-openai-compatible',
+    SILLYTAVERN_CURRENT: 'sillytavern-current',
+});
 export const EXTERNAL_TARGET_LIMIT = 512;
 export const EXTERNAL_INJECTED_OPTION_LIMIT = 512;
 // 한 target의 512개 hard cap을 최대 4개 direct target까지 허용한다.
@@ -60,6 +64,32 @@ const DEFAULT_EXTERNAL_PROVIDER_VALUES = Object.freeze({
     makersuite: 'google',
     mistralai: 'mistral',
 });
+
+// Native provider 재사용은 외부 확장의 요청 handler를 검사하거나 바꾸지 않는다.
+// 따라서 부분 문자열이나 "기본/현재" 같은 넓은 표현은 사용하지 않고, provider option의
+// 기계 값·표시값이 아래의 좁은 계약과 정확히 일치할 때만 모델 선택지를 특화한다.
+const NATIVE_CUSTOM_PROVIDER_CHOICES = new Set([
+    'custom',
+    'openai compatible',
+    'custom openai compatible',
+]);
+const NATIVE_SILLYTAVERN_PROVIDER_CHOICES = new Set([
+    'sillytavern',
+    'silly tavern',
+    'sillytavern connection',
+    'silly tavern connection',
+    'sillytavern current',
+    'silly tavern current',
+    'sillytavern current connection',
+    'silly tavern current connection',
+    'current sillytavern connection',
+    'current silly tavern connection',
+    '실리태번',
+    '실리태번 현재 연결',
+    '현재 실리태번 연결',
+]);
+const CURRENT_ST_MACHINE_VALUE = 'current_st';
+const CURRENT_ST_LABEL = 'current sillytavern settings';
 
 const PROVIDER_ALIASES = Object.freeze([
     ['vertex ai', 'vertexai'],
@@ -535,9 +565,12 @@ function getExternalControlBoundary(control) {
             || getAttribute(ancestor, 'data-extension-name')
             || getAttribute(ancestor, 'data-name'),
         );
+        const isKnownExtensionBoundary = normalizeText(
+            ancestor.className ?? getAttribute(ancestor, 'class'),
+        ).split(/\s+/).includes('caption_settings');
         const isSemanticContainer = /(?:^|[_-])(container|settings|panel|drawer|extension|form)(?:$|[_-])/i.test(id);
         const isBoundaryElement = ['SECTION', 'FIELDSET', 'FORM', 'DIALOG'].includes(tagName(ancestor));
-        if (hasExtensionMarker || isSemanticContainer || isBoundaryElement) {
+        if (hasExtensionMarker || isKnownExtensionBoundary || isSemanticContainer || isBoundaryElement) {
             return ancestor;
         }
         if (['BODY', 'HTML'].includes(tagName(ancestor)) || ancestor.nodeType === 9) {
@@ -569,6 +602,104 @@ function getConnectedProviderSelect(control, documentRef) {
             documentRef,
         }));
     return candidates.length === 1 ? candidates[0] : null;
+}
+
+function getNativeProviderChoiceValues(option) {
+    return [
+        option?.value,
+        option?.textContent,
+        option?.label,
+        ...EXPLICIT_PROVIDER_ATTRIBUTES.map(attribute => getAttribute(option, attribute)),
+    ].map(value => ({
+        raw: normalizeText(value).slice(0, 160),
+        normalized: searchableText(value).slice(0, 160),
+    })).filter(value => value.raw && value.normalized);
+}
+
+function classifyNativeProviderOption(providerControl) {
+    if (tagName(providerControl) !== 'SELECT' || isUnavailableControl(providerControl)) {
+        return null;
+    }
+    const selectedOption = getSelectedOption(providerControl);
+    if (!selectedOption
+        || selectedOption.disabled === true
+        || hasAttribute(selectedOption, 'disabled')
+        || isManagedOption(selectedOption)
+        || isManagedGroup(selectedOption.parentElement)) {
+        return null;
+    }
+
+    const values = getNativeProviderChoiceValues(selectedOption);
+    const normalizedValues = new Set(values.map(value => value.normalized));
+    const providerIds = new Set(values.flatMap(value => findProviderAliases(value.raw)));
+    const machineValue = searchableText(selectedOption.value).slice(0, 160);
+    const rawMachineValue = normalizeText(selectedOption.value).toLowerCase();
+    const customEvidence = [...normalizedValues]
+        .some(value => NATIVE_CUSTOM_PROVIDER_CHOICES.has(value));
+    const sillyTavernEvidence = [...normalizedValues]
+        .some(value => NATIVE_SILLYTAVERN_PROVIDER_CHOICES.has(value));
+    const currentStLabelEvidence = [selectedOption.textContent, selectedOption.label]
+        .map(searchableText)
+        .some(value => value === CURRENT_ST_LABEL);
+    const customMachine = NATIVE_CUSTOM_PROVIDER_CHOICES.has(machineValue);
+    const sillyTavernMachine = NATIVE_SILLYTAVERN_PROVIDER_CHOICES.has(machineValue);
+    const currentStMachine = rawMachineValue === CURRENT_ST_MACHINE_VALUE;
+
+    // 기계 값과 표시 문구가 서로 다른 native handler를 가리키면 어느 쪽도 택하지 않는다.
+    if ((customMachine && (sillyTavernEvidence || currentStLabelEvidence))
+        || ((sillyTavernMachine || currentStMachine) && customEvidence)) {
+        return null;
+    }
+
+    const custom = customMachine && customEvidence;
+    const currentStPair = currentStMachine && currentStLabelEvidence;
+    const sillyTavernCurrent = currentStPair
+        || (
+            sillyTavernMachine
+            && sillyTavernEvidence
+        );
+
+    // 서로 다른 handler를 가리키는 증거가 섞였거나, known provider 값과 표시 문구가
+    // 충돌하면 어느 쪽도 추측하지 않는다.
+    if (custom === sillyTavernCurrent) {
+        return null;
+    }
+    if (custom && [...providerIds].some(providerId => providerId !== 'custom')) {
+        return null;
+    }
+    if (sillyTavernCurrent && providerIds.size > 0) {
+        return null;
+    }
+
+    const kind = custom
+        ? EXTERNAL_NATIVE_REUSE_KINDS.CUSTOM_OPENAI_COMPATIBLE
+        : EXTERNAL_NATIVE_REUSE_KINDS.SILLYTAVERN_CURRENT;
+    return {
+        kind,
+        // 이 값은 외부 model option이 이미 사용하는 data-type/source 표식만 맞추는 데
+        // 사용하며 bridge/진단 snapshot에는 복사하지 않는다.
+        externalProviderValue: normalizeText(selectedOption.value).slice(0, 160),
+    };
+}
+
+function isOfficialCaptionCustomTarget(control, providerControl) {
+    if (normalizeText(control?.id ?? getAttribute(control, 'id')) !== 'caption_multimodal_model'
+        || normalizeText(providerControl?.id ?? getAttribute(providerControl, 'id')) !== 'caption_multimodal_api') {
+        return false;
+    }
+    const findCaptionSettings = element => {
+        let ancestor = element?.parentElement;
+        for (let depth = 0; ancestor && depth < 8; depth += 1, ancestor = ancestor.parentElement) {
+            const classes = normalizeText(ancestor.className ?? getAttribute(ancestor, 'class'))
+                .split(/\s+/);
+            if (classes.includes('caption_settings')) {
+                return ancestor;
+            }
+        }
+        return null;
+    };
+    const settingsAncestor = findCaptionSettings(control);
+    return Boolean(settingsAncestor && settingsAncestor === findCaptionSettings(providerControl));
 }
 
 function getConnectedProviderEvidence(control, documentRef, store) {
@@ -639,6 +770,41 @@ export function inferExternalProvider(control, options = {}) {
             ? null
             : (best?.evidence.find(item => item.externalProviderValue)?.externalProviderValue ?? null),
         candidates,
+    };
+}
+
+/**
+ * 외부 확장에 이미 존재하는 provider option을 보수적으로 분류한다.
+ * 요청 handler나 endpoint를 확인했다는 뜻이 아니며, 반환값은 모델 선택지 투영에만 쓴다.
+ */
+export function classifyExternalNativeProviderReuse(target, options = {}) {
+    if (!target || target?.risk?.level === 'blocked') {
+        return null;
+    }
+    const choice = classifyNativeProviderOption(target.providerControl);
+    if (!choice) {
+        return null;
+    }
+
+    let providerId = 'custom';
+    let issueCode = null;
+    if (choice.kind === EXTERNAL_NATIVE_REUSE_KINDS.SILLYTAVERN_CURRENT) {
+        try {
+            providerId = normalizeProviderId(options.getCurrentSillyTavernProviderId?.());
+        } catch {
+            providerId = '';
+        }
+        if (!isSupportedProvider(providerId)) {
+            providerId = null;
+            issueCode = 'current-connection-unavailable';
+        }
+    }
+    return {
+        kind: choice.kind,
+        providerId,
+        externalProviderValue: choice.externalProviderValue,
+        issueCode,
+        verificationRequired: true,
     };
 }
 
@@ -805,9 +971,23 @@ function describeControl(control, root, documentRef, options) {
     const providerControl = getConnectedProviderSelect(effectiveControl, documentRef);
     const inference = inferExternalProvider(effectiveControl, { ...options, documentRef });
     let risk = assessExternalTargetRisk(effectiveControl, { documentRef });
+    const selectedCaptionProviderValue = normalizeProviderId(
+        getSelectedOption(providerControl)?.value ?? providerControl?.value,
+    );
+    const inferredCaptionProviderId = normalizeProviderId(inference.providerId);
+    const captionSpecialProvider = ['custom', 'ollama'].includes(selectedCaptionProviderValue)
+        ? selectedCaptionProviderValue
+        : ['custom', 'ollama'].includes(inferredCaptionProviderId)
+            ? inferredCaptionProviderId
+            : normalizeProviderId(inference.externalProviderValue);
+    const isOfficialCaptionCustom = captionSpecialProvider === 'custom'
+        && isOfficialCaptionCustomTarget(effectiveControl, providerControl);
     const isCaptionSpecialProvider = /caption[^a-z0-9]+multimodal[^a-z0-9]+model/i.test(
         searchableText(getControlText(effectiveControl, documentRef)),
-    ) && ['custom', 'ollama'].includes(normalizeProviderId(inference.externalProviderValue));
+    ) && (
+        captionSpecialProvider === 'ollama'
+        || (captionSpecialProvider === 'custom' && !isOfficialCaptionCustom)
+    );
     if (isCaptionSpecialProvider) {
         risk = {
             level: 'blocked',
@@ -1926,14 +2106,46 @@ export function createExternalIntegrationController(options = {}) {
                 }
                 target.resolution = resolution;
                 if (resolution.source === 'direct') {
-                    const providerEntries = currentProviderEntries;
-                    const registryModelCount = nextActiveRegistryModelCount;
-                    const syncResult = syncManagedTarget(target, () => (
-                        syncExternalTargetProviders(target, providerEntries, options)
-                    ));
+                    const nativeReuse = classifyExternalNativeProviderReuse(target, options);
+                    const providerEntries = nativeReuse?.providerId
+                        ? currentProviderEntries.filter(entry => entry.providerId === nativeReuse.providerId)
+                        : currentProviderEntries;
+                    const registryModelCount = nativeReuse
+                        ? countActiveRegistryModels(providerEntries)
+                        : nextActiveRegistryModelCount;
+                    let syncResult;
+                    if (nativeReuse?.issueCode) {
+                        syncResult = syncManagedTarget(target, () => {
+                            removeExternalTargetModels(target, null, { removeOwnedHost: true });
+                            return {
+                                injectedIds: [],
+                                eligibleModelCount: 0,
+                                expectedManagedOptionCount: 0,
+                                capacityLimited: false,
+                                reason: nativeReuse.issueCode,
+                            };
+                        });
+                    } else if (nativeReuse) {
+                        syncResult = syncManagedTarget(target, () => syncExternalTarget(
+                            target,
+                            nativeReuse.providerId,
+                            getModels(nativeReuse.providerId),
+                            {
+                                ...options,
+                                externalProviderValue: nativeReuse.externalProviderValue,
+                            },
+                        ));
+                    } else {
+                        syncResult = syncManagedTarget(target, () => (
+                            syncExternalTargetProviders(target, providerEntries, options)
+                        ));
+                    }
+                    const expectedModels = nativeReuse
+                        ? (Array.isArray(syncResult?.injectedIds) ? syncResult.injectedIds : [])
+                            .map(modelId => ({ providerId: nativeReuse.providerId, modelId }))
+                        : (Array.isArray(syncResult?.injectedModels) ? syncResult.injectedModels : []);
                     const expectedModelKeys = new Set(
-                        (Array.isArray(syncResult?.injectedModels) ? syncResult.injectedModels : [])
-                            .map(model => `${model.providerId}\u001f${model.modelId}`),
+                        expectedModels.map(model => `${model.providerId}\u001f${model.modelId}`),
                     );
                     const actualManagedModels = getOptions(target.optionHost)
                         .filter(option => isManagedOption(option))
@@ -1946,14 +2158,17 @@ export function createExternalIntegrationController(options = {}) {
                     const missingModelCount = [...expectedModelKeys]
                         .filter(modelKey => !representedModelKeys.has(modelKey)).length;
                     const injectedCount = actualManagedModels.length;
-                    const bridgeIssue = registryModelCount === 0
+                    const bridgeIssue = nativeReuse?.issueCode ?? (registryModelCount === 0
                         ? null
-                        : (syncResult?.reason ?? (missingModelCount > 0 ? 'models-not-injected' : null));
+                        : (syncResult?.reason ?? (missingModelCount > 0 ? 'models-not-injected' : null)));
                     target.bridge = {
-                        status: registryModelCount === 0
-                            ? 'idle'
-                            : (bridgeIssue ? 'failed' : 'connected'),
-                        issueCode: registryModelCount === 0 ? 'registry-empty' : bridgeIssue,
+                        status: nativeReuse?.issueCode
+                            ? 'failed'
+                            : registryModelCount === 0
+                                ? 'idle'
+                                : (bridgeIssue ? 'failed' : 'connected'),
+                        issueCode: nativeReuse?.issueCode
+                            ?? (registryModelCount === 0 ? 'registry-empty' : bridgeIssue),
                         injectedCount: bridgeIssue ? 0 : injectedCount,
                         eligibleModelCount: Number.isInteger(syncResult?.eligibleModelCount)
                             ? syncResult.eligibleModelCount
@@ -1962,6 +2177,11 @@ export function createExternalIntegrationController(options = {}) {
                             ? syncResult.expectedManagedOptionCount
                             : 0,
                         capacityLimited: syncResult?.capacityLimited === true,
+                        ...(nativeReuse ? {
+                            nativeReuseKind: nativeReuse.kind,
+                            nativeReuseProviderId: nativeReuse.providerId,
+                            verificationRequired: true,
+                        } : {}),
                     };
                     if (bridgeIssue) {
                         removeExternalTargetModels(target, null, { removeOwnedHost: true });
@@ -2087,6 +2307,13 @@ export function createExternalIntegrationController(options = {}) {
     function getMetrics() {
         const directTargets = targets.filter(target => target.resolution?.source === 'direct');
         const directCount = directTargets.length;
+        const nativeCustomTargets = directTargets.filter(target => (
+            target?.bridge?.nativeReuseKind === EXTERNAL_NATIVE_REUSE_KINDS.CUSTOM_OPENAI_COMPATIBLE
+        ));
+        const nativeCurrentTargets = directTargets.filter(target => (
+            target?.bridge?.nativeReuseKind === EXTERNAL_NATIVE_REUSE_KINDS.SILLYTAVERN_CURRENT
+        ));
+        const nativeReuseTargets = [...nativeCustomTargets, ...nativeCurrentTargets];
         const userExcludedCount = targets.filter(target => target.resolution?.source === 'user-excluded').length;
         const registryModelCount = active ? activeRegistryModelCount : 0;
         const sumBridgeCount = key => {
@@ -2113,6 +2340,14 @@ export function createExternalIntegrationController(options = {}) {
             targetCount: targets.length,
             boundCount: managedTargets.size,
             directCount,
+            nativeCustomTargetCount: nativeCustomTargets.length,
+            nativeCurrentTargetCount: nativeCurrentTargets.length,
+            nativeReuseProjectedTargetCount: nativeReuseTargets.filter(target => (
+                target?.bridge?.status === 'connected'
+            )).length,
+            nativeReuseUnavailableTargetCount: nativeReuseTargets.filter(target => (
+                target?.bridge?.issueCode === 'current-connection-unavailable'
+            )).length,
             userExcludedCount,
             activeRegistryModelCount: registryModelCount,
             eligibleManagedOptionCount,
