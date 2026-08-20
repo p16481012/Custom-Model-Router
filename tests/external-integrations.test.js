@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
     EXTERNAL_INJECTED_OPTION_LIMIT,
+    EXTERNAL_MANAGED_OPTION_WARNING_THRESHOLD,
     EXTERNAL_MAPPING_DISABLED,
     EXTERNAL_MAPPING_MANUAL,
     EXTERNAL_TARGET_LIMIT,
@@ -18,6 +19,7 @@ import {
     resolveExternalTargetProvider,
     syncExternalTarget,
     syncExternalTargetProviders,
+    summarizeRiskBlockedTargets,
 } from '../src/external-integrations.js';
 
 function dataKey(name) {
@@ -263,6 +265,56 @@ test('embedding·이미지 생성·음성 모델은 위험 대상으로 분류�
         assert.equal(resolveExternalTargetProvider(target, { [target.targetId]: 'openai' }).source, 'risk-blocked');
     });
     assert.equal(assessExternalTargetRisk(targets[0].control).level, 'blocked');
+});
+
+test('안전 제외 요약은 확장 이름과 제한된 개수만 제공하고 target 식별 정보는 노출하지 않는다', () => {
+    const targets = [
+        {
+            extensionLabel: 'Vectors',
+            targetId: 'cmr-ext-secret-1',
+            label: 'SECRET_VECTOR_MODEL',
+            control: { value: 'SECRET_CURRENT_VALUE' },
+            resolution: { source: 'risk-blocked', excludedReason: 'embedding-model' },
+        },
+        {
+            extensionLabel: ' vectors ',
+            targetId: 'cmr-ext-secret-2',
+            resolution: { source: 'risk-blocked', excludedReason: 'embedding-model' },
+        },
+        {
+            extensionLabel: '__proto__',
+            targetId: 'cmr-ext-secret-3',
+            resolution: { source: 'risk-blocked', excludedReason: 'image-generation-model' },
+        },
+        {
+            extensionLabel: 'Ignored Direct',
+            targetId: 'cmr-ext-secret-4',
+            resolution: { source: 'direct' },
+        },
+    ];
+
+    const summary = summarizeRiskBlockedTargets(targets);
+    assert.deepEqual(summary.find(item => item.extensionLabel === 'Vectors'), {
+        extensionLabel: 'Vectors',
+        count: 2,
+    });
+    assert.deepEqual(summary.find(item => item.extensionLabel === '__proto__'), {
+        extensionLabel: '__proto__',
+        count: 1,
+    });
+    assert.equal(summary.some(item => item.extensionLabel === 'Ignored Direct'), false);
+    assert.equal(summary.every(item => Object.keys(item).sort().join(',') === 'count,extensionLabel'), true);
+    assert.doesNotMatch(JSON.stringify(summary), /SECRET_|cmr-ext|embedding-model|image-generation-model/);
+
+    const capped = summarizeRiskBlockedTargets(Array.from(
+        { length: EXTERNAL_TARGET_LIMIT + 4 },
+        () => ({ extensionLabel: 'Vectors', resolution: { source: 'risk-blocked' } }),
+    ));
+    assert.deepEqual(capped, [{ extensionLabel: 'Vectors', count: EXTERNAL_TARGET_LIMIT }]);
+    assert.deepEqual(summarizeRiskBlockedTargets([
+        ...Array.from({ length: EXTERNAL_TARGET_LIMIT }, () => ({ resolution: { source: 'direct' } })),
+        { extensionLabel: 'Out of cap', resolution: { source: 'risk-blocked' } },
+    ]), []);
 });
 
 test('명시 속성·연결 provider select·식별자와 option data-type에서 제공업체를 추론한다', () => {
@@ -848,8 +900,31 @@ test('disabled·readonly·multiple control을 제외하고 target과 주입 opti
         },
     ], { documentRef });
     assert.equal(manualResult.injectedModels.length, EXTERNAL_INJECTED_OPTION_LIMIT);
+    assert.equal(manualResult.eligibleModelCount, 600);
+    assert.equal(manualResult.expectedManagedOptionCount, EXTERNAL_INJECTED_OPTION_LIMIT);
+    assert.equal(manualResult.capacityLimited, true);
     assert.equal(manualSelect.options.filter(item => item.dataset.cmrExternalModel === 'true').length,
         EXTERNAL_INJECTED_OPTION_LIMIT);
+
+    const nativeBudgetSelect = labeledModelSelect(documentRef, 'native_budget_model');
+    nativeBudgetSelect.append(option(documentRef, 'gpt-0'));
+    const nativeBudgetResult = syncExternalTargetProviders({
+        control: nativeBudgetSelect,
+        optionHost: nativeBudgetSelect,
+        inference: {},
+    }, [
+        {
+            providerId: 'openai',
+            label: 'OpenAI',
+            models: Array.from({ length: EXTERNAL_INJECTED_OPTION_LIMIT + 1 }, (_, index) => ({
+                provider: 'openai', id: `gpt-${index}`,
+            })),
+        },
+    ], { documentRef });
+    assert.equal(nativeBudgetResult.eligibleModelCount, EXTERNAL_INJECTED_OPTION_LIMIT);
+    assert.equal(nativeBudgetResult.capacityLimited, false);
+    assert.equal(nativeBudgetResult.injectedModels.length, EXTERNAL_INJECTED_OPTION_LIMIT);
+    assert.equal(nativeBudgetResult.injectedModels.at(-1).modelId, `gpt-${EXTERNAL_INJECTED_OPTION_LIMIT}`);
 });
 
 test('datalist 동기화와 cleanup은 외부 option 및 input 값을 변경하지 않는다', () => {
@@ -1156,7 +1231,11 @@ test('controller는 모든 안전 target을 직접 연결하고 재렌더·선�
     assert.equal(model.options.some(item => item.dataset.cmrExternalModel === 'true'), true);
     assert.deepEqual(controller.getMetrics(), {
         observerCount: 1, targetCount: 1, boundCount: 1, directCount: 1,
-        userExcludedCount: 0, connectedCount: 1, idleCount: 0, failedCount: 0, listenerCount: 3,
+        userExcludedCount: 0, activeRegistryModelCount: 24,
+        eligibleManagedOptionCount: 24,
+        expectedManagedOptionCount: 24, actualManagedOptionCount: 24,
+        capacityLimitedTargetCount: 0,
+        connectedCount: 1, idleCount: 0, failedCount: 0, listenerCount: 3,
     });
 
     model.value = '';
@@ -1169,7 +1248,11 @@ test('controller는 모든 안전 target을 직접 연결하고 재렌더·선�
     assert.equal(model.value, 'claude-next');
     assert.deepEqual(controller.getMetrics(), {
         observerCount: 1, targetCount: 1, boundCount: 1, directCount: 1,
-        userExcludedCount: 0, connectedCount: 1, idleCount: 0, failedCount: 0, listenerCount: 3,
+        userExcludedCount: 0, activeRegistryModelCount: 24,
+        eligibleManagedOptionCount: 24,
+        expectedManagedOptionCount: 24, actualManagedOptionCount: 24,
+        capacityLimitedTargetCount: 0,
+        connectedCount: 1, idleCount: 0, failedCount: 0, listenerCount: 3,
     });
 
     model.value = 'native';
@@ -1201,8 +1284,142 @@ test('controller는 모든 안전 target을 직접 연결하고 재렌더·선�
     assert.equal(model.options.some(item => item.dataset.cmrExternalModel === 'true'), false);
     assert.deepEqual(controller.getMetrics(), {
         observerCount: 0, targetCount: 0, boundCount: 0, directCount: 0,
-        userExcludedCount: 0, connectedCount: 0, idleCount: 0, failedCount: 0, listenerCount: 0,
+        userExcludedCount: 0, activeRegistryModelCount: 0,
+        eligibleManagedOptionCount: 0,
+        expectedManagedOptionCount: 0, actualManagedOptionCount: 0,
+        capacityLimitedTargetCount: 0,
+        connectedCount: 0, idleCount: 0, failedCount: 0, listenerCount: 0,
     });
+});
+
+test('managed option 계측은 direct와 활성 Registry 모델만 예상하고 risk target과 native 중복을 제외한다', () => {
+    const documentRef = new FakeDocument();
+    const first = labeledModelSelect(documentRef, 'first_chat_model', 'First chat model');
+    first.append(option(documentRef, 'gpt-a'));
+    const second = labeledModelSelect(documentRef, 'second_chat_model', 'Second chat model');
+    const vectorControls = [];
+    for (let index = 0; index < 13; index += 1) {
+        const vector = labeledModelSelect(
+            documentRef,
+            `vectors_${index}_model`,
+            'Vectorization Model',
+        );
+        vector.parentElement.setAttribute('data-extension-name', 'Vectors');
+        vectorControls.push(vector);
+    }
+    const controller = createExternalIntegrationController({
+        root: documentRef,
+        documentRef,
+        getModels: providerId => providerId === 'openai'
+            ? [
+                { provider: 'openai', id: 'gpt-a' },
+                { provider: 'openai', id: 'gpt-b' },
+            ]
+            : [],
+        observerFactory: () => ({ observe() {}, disconnect() {} }),
+    });
+
+    controller.start();
+    const metrics = controller.getMetrics();
+    assert.equal(EXTERNAL_MANAGED_OPTION_WARNING_THRESHOLD, EXTERNAL_INJECTED_OPTION_LIMIT * 4);
+    assert.equal(metrics.targetCount, 15);
+    assert.equal(metrics.directCount, 2);
+    assert.equal(metrics.activeRegistryModelCount, 2);
+    assert.equal(metrics.eligibleManagedOptionCount, 3);
+    assert.equal(metrics.expectedManagedOptionCount, 3);
+    assert.equal(metrics.actualManagedOptionCount, 3);
+    assert.equal(metrics.capacityLimitedTargetCount, 0);
+    assert.deepEqual(controller.getRiskBlockedSummary(), [{ extensionLabel: 'Vectors', count: 13 }]);
+    assert.equal(vectorControls.flatMap(control => control.options)
+        .some(item => item.dataset.cmrExternalModel === 'true'), false);
+    controller.destroy();
+});
+
+test('활성 Registry 모델 수는 risk-only와 user-excluded-only 화면에서도 독립적으로 계측한다', () => {
+    const modelsByProvider = {
+        openai: [
+            { provider: 'openai', id: 'gpt-metric-a' },
+            { provider: 'openai', id: 'gpt-metric-b' },
+        ],
+        claude: [{ provider: 'claude', id: 'claude-metric-a' }],
+    };
+    const createController = (documentRef, excludedTargetIds = []) => (
+        createExternalIntegrationController({
+            root: documentRef,
+            documentRef,
+            excludedTargetIds,
+            getModels: providerId => modelsByProvider[providerId] ?? [],
+            observerFactory: () => ({ observe() {}, disconnect() {} }),
+        })
+    );
+
+    const riskDocument = new FakeDocument();
+    labeledModelSelect(riskDocument, 'vectors_metric_model', 'Vectorization Model');
+    const riskController = createController(riskDocument);
+    riskController.start();
+    assert.deepEqual(
+        {
+            activeRegistryModelCount: riskController.getMetrics().activeRegistryModelCount,
+            directCount: riskController.getMetrics().directCount,
+            eligibleManagedOptionCount: riskController.getMetrics().eligibleManagedOptionCount,
+        },
+        { activeRegistryModelCount: 3, directCount: 0, eligibleManagedOptionCount: 0 },
+    );
+    riskController.destroy();
+
+    const excludedDocument = new FakeDocument();
+    const excludedSelect = labeledModelSelect(
+        excludedDocument,
+        'excluded_metric_chat_model',
+        'Excluded chat model',
+    );
+    const excludedTargetId = createExternalTargetId(excludedSelect, { documentRef: excludedDocument });
+    const excludedController = createController(excludedDocument, [excludedTargetId]);
+    excludedController.start();
+    assert.deepEqual(
+        {
+            activeRegistryModelCount: excludedController.getMetrics().activeRegistryModelCount,
+            directCount: excludedController.getMetrics().directCount,
+            userExcludedCount: excludedController.getMetrics().userExcludedCount,
+            expectedManagedOptionCount: excludedController.getMetrics().expectedManagedOptionCount,
+        },
+        {
+            activeRegistryModelCount: 3,
+            directCount: 0,
+            userExcludedCount: 1,
+            expectedManagedOptionCount: 0,
+        },
+    );
+    excludedController.destroy();
+});
+
+test('여러 provider의 표시 후보가 cap을 넘어도 bridge는 512개를 유지하고 용량 제한을 계측한다', () => {
+    const documentRef = new FakeDocument();
+    labeledModelSelect(documentRef, 'large_registry_chat_model', 'Large registry chat model');
+    const modelsByProvider = {
+        openai: Array.from({ length: 300 }, (_, index) => ({
+            provider: 'openai', id: `gpt-budget-${index}`,
+        })),
+        claude: Array.from({ length: 300 }, (_, index) => ({
+            provider: 'claude', id: `claude-budget-${index}`,
+        })),
+    };
+    const controller = createExternalIntegrationController({
+        root: documentRef,
+        documentRef,
+        getModels: providerId => modelsByProvider[providerId] ?? [],
+        observerFactory: () => ({ observe() {}, disconnect() {} }),
+    });
+
+    controller.start();
+    const metrics = controller.getMetrics();
+    assert.equal(metrics.activeRegistryModelCount, 600);
+    assert.equal(metrics.eligibleManagedOptionCount, 600);
+    assert.equal(metrics.expectedManagedOptionCount, EXTERNAL_INJECTED_OPTION_LIMIT);
+    assert.equal(metrics.actualManagedOptionCount, EXTERNAL_INJECTED_OPTION_LIMIT);
+    assert.equal(metrics.capacityLimitedTargetCount, 1);
+    assert.equal(controller.getTargets()[0].bridge.status, 'connected');
+    controller.destroy();
 });
 
 test('DOM에 남은 비활성 target은 native fallback을 알리고 분리된 target은 조용히 정리한다', () => {
@@ -1519,6 +1736,7 @@ test('bridge 상태는 registry 빈 값·native 중복·target별 동기화 실�
     });
     assert.deepEqual(emptyController.start()[0].bridge, {
         status: 'idle', issueCode: 'registry-empty', injectedCount: 0,
+        eligibleModelCount: 0, expectedManagedOptionCount: 0, capacityLimited: false,
     });
     emptyController.destroy();
 
@@ -1564,9 +1782,11 @@ test('bridge 상태는 registry 빈 값·native 중복·target별 동기화 실�
     });
     assert.deepEqual(goodTarget.bridge, {
         status: 'connected', issueCode: null, injectedCount: 0,
+        eligibleModelCount: 0, expectedManagedOptionCount: 0, capacityLimited: false,
     });
     assert.deepEqual(silentTarget.bridge, {
         status: 'failed', issueCode: 'models-not-injected', injectedCount: 0,
+        eligibleModelCount: 1, expectedManagedOptionCount: 1, capacityLimited: false,
     });
     assert.equal(controller.getMetrics().failedCount, 2);
     assert.equal(controller.getMetrics().connectedCount, 1);

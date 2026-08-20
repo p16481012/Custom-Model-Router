@@ -1,12 +1,12 @@
 {
     "name": "custom-model-router",
-    "version": "0.6.9",
+    "version": "0.6.10",
     "private": true,
     "type": "module",
     "scripts": {
         "test": "node --test",
         "test:ui": "playwright test --config=playwright.config.js",
-        "check": "node --check index.js && node --check src/registry.js && node --check src/providers.js && node --check src/model-select.js && node --check src/vertex-select.js && node --check src/registry-api.js && node --check src/purpose-router.js && node --check src/connection-profile-adapter.js && node --check src/compatibility.js && node --check src/portable-settings.js && node --check src/external-integrations.js && node --check src/external-settings.js && node --test"
+        "check": "node --check index.js && node --check src/registry.js && node --check src/providers.js && node --check src/model-select.js && node --check src/model-management.js && node --check src/vertex-select.js && node --check src/registry-api.js && node --check src/purpose-router.js && node --check src/connection-profile-adapter.js && node --check src/compatibility.js && node --check src/portable-settings.js && node --check src/external-integrations.js && node --check src/external-settings.js && node --test"
     },
     "engines": {
         "node": ">=24"

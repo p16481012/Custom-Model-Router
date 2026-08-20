@@ -5,6 +5,7 @@ import { destroy, init } from '../index.js';
 import { getCustomGroup } from '../src/model-select.js';
 import { getProvider, getProviders } from '../src/providers.js';
 import {
+    EXTERNAL_INJECTED_OPTION_LIMIT,
     createExternalIntegrationController,
     createExternalTargetId,
 } from '../src/external-integrations.js';
@@ -230,6 +231,18 @@ class FakeElement {
     }
 
     querySelector(selector) {
+        const descendantParts = String(selector).trim().split(/\s+/).filter(Boolean);
+        if (descendantParts.length > 1) {
+            const [ancestorSelector, ...rest] = descendantParts;
+            const descendantSelector = rest.join(' ');
+            for (const ancestor of this.querySelectorAll(ancestorSelector)) {
+                const match = ancestor.querySelector(descendantSelector);
+                if (match && match !== ancestor) {
+                    return match;
+                }
+            }
+            return null;
+        }
         if (this.matches(selector)) {
             return this;
         }
@@ -243,6 +256,14 @@ class FakeElement {
     }
 
     querySelectorAll(selector) {
+        const descendantParts = String(selector).trim().split(/\s+/).filter(Boolean);
+        if (descendantParts.length > 1) {
+            const [ancestorSelector, ...rest] = descendantParts;
+            const descendantSelector = rest.join(' ');
+            return this.querySelectorAll(ancestorSelector).flatMap(ancestor => (
+                ancestor.querySelectorAll(descendantSelector).filter(match => match !== ancestor)
+            ));
+        }
         const matches = [];
         if (this.matches(selector)) {
             matches.push(this);
@@ -365,13 +386,32 @@ class FakeDocument {
         modelHelp.id = 'cmr_model_help';
         addForm.append(modelLabel, input, addButton, modelHelp);
 
+        const bulkAddForm = this.createElement('form');
+        bulkAddForm.id = 'cmr_bulk_add_form';
+        const bulkInput = this.createElement('textarea');
+        bulkInput.id = 'cmr_bulk_model_ids';
+        const bulkAddButton = this.createElement('button');
+        bulkAddButton.type = 'submit';
+        bulkAddForm.append(bulkInput, bulkAddButton);
+
         const feedback = this.createElement('div');
         feedback.id = 'cmr_feedback';
+        const undoDelete = this.createElement('button');
+        undoDelete.id = 'cmr_undo_delete';
+        undoDelete.hidden = true;
         const listTitle = this.createElement('h3');
         listTitle.id = 'cmr_list_title';
         listTitle.textContent = '전체 등록 모델';
         const count = this.createElement('span');
         count.id = 'cmr_model_count';
+        const modelSearchRegion = this.createElement('div');
+        modelSearchRegion.id = 'cmr_model_search_region';
+        modelSearchRegion.hidden = true;
+        const modelSearch = this.createElement('input');
+        modelSearch.id = 'cmr_model_search';
+        const modelSearchStatus = this.createElement('span');
+        modelSearchStatus.id = 'cmr_model_search_status';
+        modelSearchRegion.append(modelSearch, modelSearchStatus);
         const modelList = this.createElement('ul');
         modelList.id = 'cmr_model_list';
 
@@ -398,11 +438,19 @@ class FakeDocument {
         externalStatus.id = 'cmr_external_status';
         const externalList = this.createElement('ul');
         externalList.id = 'cmr_external_list';
+        const externalPicker = this.createElement('details');
+        externalPicker.id = 'cmr_external_picker';
+        const externalPickerSummary = this.createElement('summary');
+        externalPickerSummary.textContent = '문제가 있는 연결 직접 제외';
+        const externalPickerList = this.createElement('ul');
+        externalPickerList.id = 'cmr_external_picker_list';
+        externalPicker.append(externalPickerSummary, externalPickerList);
         externalAdvanced.append(
             externalAdvancedSummary,
             externalCount,
             externalStatus,
             externalList,
+            externalPicker,
         );
 
         const runDiagnostics = this.createElement('button');
@@ -413,6 +461,25 @@ class FakeDocument {
         exportBackup.id = 'cmr_export_backup';
         const importBackup = this.createElement('input');
         importBackup.id = 'cmr_import_backup';
+        const importBackupButton = this.createElement('button');
+        importBackupButton.id = 'cmr_import_backup_button';
+        const importPreview = this.createElement('section');
+        importPreview.id = 'cmr_import_preview';
+        importPreview.hidden = true;
+        const importPreviewSummary = this.createElement('div');
+        importPreviewSummary.id = 'cmr_import_preview_summary';
+        const importPreviewList = this.createElement('ul');
+        importPreviewList.id = 'cmr_import_preview_list';
+        const importPreviewCancel = this.createElement('button');
+        importPreviewCancel.id = 'cmr_import_preview_cancel';
+        const importPreviewApply = this.createElement('button');
+        importPreviewApply.id = 'cmr_import_preview_apply';
+        importPreview.append(
+            importPreviewSummary,
+            importPreviewList,
+            importPreviewCancel,
+            importPreviewApply,
+        );
         const diagnosticSummary = this.createElement('div');
         diagnosticSummary.id = 'cmr_diagnostic_summary';
         const diagnosticList = this.createElement('ul');
@@ -422,7 +489,9 @@ class FakeDocument {
             runDiagnostics,
             copyDiagnostics,
             exportBackup,
+            importBackupButton,
             importBackup,
+            importPreview,
             diagnosticSummary,
             diagnosticList,
             externalAdvanced,
@@ -432,9 +501,12 @@ class FakeDocument {
             providerHelp,
             compatibility,
             addForm,
+            bulkAddForm,
             feedback,
+            undoDelete,
             listTitle,
             count,
+            modelSearchRegion,
             modelList,
             externalWarning,
             operationsSection,
@@ -1021,7 +1093,7 @@ test('init은 24개 제공업체를 연결하고 API Connections Popup을 한 �
         assert.ok(harness.observers.some(observer => observer.target === harness.observerRoot));
         assert.ok(harness.observers.some(observer => observer.target === harness.documentRef.body));
         assert.equal(globalThis.CustomModelRouter.apiVersion, '1.1.0');
-        assert.equal(globalThis.CustomModelRouter.extensionVersion, '0.6.9');
+        assert.equal(globalThis.CustomModelRouter.extensionVersion, '0.6.10');
         assert.equal(globalThis.CustomModelRouter.routing.apiVersion, '1.0.0');
         assert.equal(globalThis.CustomModelRouter.getSnapshot().models.length, 1);
 
@@ -1051,7 +1123,7 @@ test('init은 24개 제공업체를 연결하고 API Connections Popup을 한 �
         assert.equal(panel.querySelector('#cmr_compatibility').textContent, '');
         assert.equal(findActionButton(panel, 'select', VERTEX_MODEL_ID, 'vertexai'), null);
         assert.ok(findActionButton(panel, 'delete', VERTEX_MODEL_ID, 'vertexai'));
-        assert.equal(panel.querySelector('#cmr_external_section'), null);
+        assert.ok(!panel.querySelector('#cmr_external_section'));
         assert.equal(panel.querySelector('#cmr_external_warning').hidden, true);
         assert.ok(panel.querySelector('#cmr_operations_section'));
         assert.ok(panel.querySelector('#cmr_external_advanced'));
@@ -1143,7 +1215,6 @@ test('init은 24개 제공업체를 연결하고 API Connections Popup을 한 �
 test('공개 API도 SillyTavern select에서 현재 사용 중인 사용자 모델 등록 해제를 막는다', async () => {
     const harness = createHarness();
     const restoreGlobals = installBrowserGlobals(harness);
-    const restoreConfirm = installConfirm(() => true);
     const vertexSelect = harness.controls.get('vertexai');
     try {
         await init();
@@ -1189,6 +1260,12 @@ test('공개 API도 SillyTavern select에서 현재 사용 중인 사용자 모�
         assert.ok(globalThis.CustomModelRouter.getModel('vertexai', VERTEX_MODEL_ID));
         assert.equal(vertexSelect.value, VERTEX_MODEL_ID);
         assert.equal(harness.context.chatCompletionSettings.vertexai_model, VERTEX_MODEL_ID);
+        assert.equal(panel.querySelector('#cmr_import_preview').hidden, false);
+        assert.match(panel.querySelector('#cmr_import_preview_summary').textContent, /model_in_use/);
+        assert.equal(panel.querySelector('#cmr_import_preview_apply').disabled, true);
+        assert.ok(
+            harness.documentRef.activeElement === panel.querySelector('#cmr_import_preview_cancel'),
+        );
         assert.match(panel.querySelector('#cmr_feedback').textContent, /model_in_use/);
 
         const nativeModelId = getProvider('vertexai').fallbackModelIds[0];
@@ -1201,7 +1278,6 @@ test('공개 API도 SillyTavern select에서 현재 사용 중인 사용자 모�
         assert.equal(vertexSelect.value, nativeModelId);
         assert.equal(harness.context.chatCompletionSettings.vertexai_model, nativeModelId);
     } finally {
-        restoreConfirm();
         await destroy();
         restoreGlobals();
     }
@@ -1430,6 +1506,211 @@ test('Vertex 모델 카드는 등록과 삭제만 제공하며 등록만으로 �
     }
 });
 
+test('등록 모델 검색은 12개까지 숨고 13개부터 provider와 모델 ID를 필터링한다', async () => {
+    const initialModels = Array.from({ length: 12 }, (_, index) => (
+        createModelRecord('vertexai', `gemini-search-${String(index + 1).padStart(2, '0')}`)
+    ));
+    const harness = createHarness({ models: initialModels, selectedModels: {} });
+    const restoreGlobals = installBrowserGlobals(harness);
+    try {
+        await init();
+        const panel = openPanel(harness);
+        const region = panel.querySelector('#cmr_model_search_region');
+        const input = panel.querySelector('#cmr_model_search');
+        const status = panel.querySelector('#cmr_model_search_status');
+        assert.equal(region.hidden, true);
+        assert.equal(panel.querySelectorAll('.cmr-model-row').length, 12);
+
+        globalThis.CustomModelRouter.registerModel('zai', 'glm-search-special');
+        await flushMicrotasks(10);
+        assert.equal(region.hidden, false);
+        assert.equal(panel.querySelector('#cmr_model_count').textContent, '제공업체 2곳 · 모델 13개');
+
+        input.value = 'Z.AI';
+        input.dispatchEvent(new FakeEvent('input'));
+        assert.equal(panel.querySelector('#cmr_model_count').textContent, '검색 1/13개');
+        assert.equal(status.textContent, '등록 모델 13개 중 1개를 표시합니다.');
+        assert.equal(panel.querySelectorAll('.cmr-model-row').length, 1);
+        assert.ok(findActionButton(panel, 'delete', 'glm-search-special', 'zai'));
+
+        input.value = 'gemini-search-02';
+        input.dispatchEvent(new FakeEvent('input'));
+        assert.equal(panel.querySelector('#cmr_model_count').textContent, '검색 1/13개');
+        assert.ok(findActionButton(panel, 'delete', 'gemini-search-02', 'vertexai'));
+
+        input.value = 'no-such-model';
+        input.dispatchEvent(new FakeEvent('input'));
+        assert.equal(panel.querySelector('#cmr_model_count').textContent, '검색 0/13개');
+        assert.equal(panel.querySelector('#cmr_model_list').children.length, 1);
+        assert.equal(
+            panel.querySelector('#cmr_model_list').children[0].textContent,
+            '검색 조건과 일치하는 등록 모델이 없습니다.',
+        );
+    } finally {
+        await destroy();
+        restoreGlobals();
+    }
+});
+
+test('비활성 등록 모델도 런처·전체 목록·검색에 남고 주입 없이 삭제와 실행 취소가 가능하다', async () => {
+    const disabledModelId = 'gemini-disabled-record';
+    const enabledModels = [
+        createModelRecord('vertexai', VERTEX_MODEL_ID),
+        ...Array.from({ length: 11 }, (_, index) => (
+            createModelRecord('vertexai', `gemini-enabled-${String(index + 1).padStart(2, '0')}`)
+        )),
+    ];
+    const harness = createHarness({
+        models: [
+            ...enabledModels,
+            { ...createModelRecord('vertexai', disabledModelId), enabled: false },
+        ],
+        selectedModels: { vertexai: VERTEX_MODEL_ID },
+    });
+    const restoreGlobals = installBrowserGlobals(harness);
+    try {
+        await init();
+        const launcher = harness.documentRef.querySelector('#cmr_open_manager');
+        const injectedIds = getCustomGroup(harness.controls.get('vertexai'), 'vertexai')
+            .children.map(option => option.value);
+        assert.equal(launcher.querySelector('.cmr-launcher-count').textContent, '13');
+        assert.match(launcher.getAttribute('aria-label'), /13개 등록됨/);
+        assert.equal(injectedIds.length, enabledModels.length);
+        assert.equal(injectedIds.includes(disabledModelId), false);
+
+        const panel = openPanel(harness);
+        const searchRegion = panel.querySelector('#cmr_model_search_region');
+        const searchInput = panel.querySelector('#cmr_model_search');
+        assert.equal(searchRegion.hidden, false);
+        assert.equal(panel.querySelector('#cmr_model_count').textContent, '제공업체 1곳 · 모델 13개');
+
+        searchInput.value = disabledModelId;
+        searchInput.dispatchEvent(new FakeEvent('input'));
+        const deleteButton = findActionButton(panel, 'delete', disabledModelId, 'vertexai');
+        const disabledRow = deleteButton?.closest('.cmr-model-row');
+        assert.ok(deleteButton);
+        assert.equal(disabledRow?.dataset.enabled, 'false');
+        assert.equal(disabledRow?.querySelector('.cmr-model-state')?.textContent, '비활성');
+        assert.equal(panel.querySelector('#cmr_model_count').textContent, '검색 1/13개');
+
+        deleteButton.click();
+        assert.equal(globalThis.CustomModelRouter.getModel('vertexai', disabledModelId), null);
+        assert.equal(panel.querySelector('#cmr_model_count').textContent, '제공업체 1곳 · 모델 12개');
+        const undoButton = panel.querySelector('#cmr_undo_delete');
+        assert.equal(undoButton.hidden, false);
+        undoButton.click();
+
+        const restored = globalThis.CustomModelRouter.getModel('vertexai', disabledModelId);
+        assert.equal(restored?.enabled, false);
+        assert.equal(panel.querySelector('#cmr_model_count').textContent, '제공업체 1곳 · 모델 13개');
+        assert.equal(
+            getCustomGroup(harness.controls.get('vertexai'), 'vertexai')
+                .children.some(option => option.value === disabledModelId),
+            false,
+        );
+        assert.equal(
+            findActionButton(panel, 'delete', disabledModelId, 'vertexai')
+                ?.closest('.cmr-model-row')
+                ?.querySelector('.cmr-model-state')
+                ?.textContent,
+            '비활성',
+        );
+    } finally {
+        await destroy();
+        restoreGlobals();
+    }
+});
+
+test('줄 단위 모델 등록은 오류 시 원자적으로 중단하고 중복·native 모델만 건너뛴다', async () => {
+    const harness = createHarness();
+    const restoreGlobals = installBrowserGlobals(harness);
+    try {
+        await init();
+        const panel = openPanel(harness);
+        const form = panel.querySelector('#cmr_bulk_add_form');
+        const input = panel.querySelector('#cmr_bulk_model_ids');
+        const saveCountBefore = harness.saveCallCount;
+
+        input.value = 'gemini-bulk-valid\nbad/model\ngemini-bulk-never-applied';
+        const invalidSubmit = new FakeEvent('submit');
+        form.dispatchEvent(invalidSubmit);
+        assert.equal(invalidSubmit.defaultPrevented, true);
+        assert.equal(input.getAttribute('aria-invalid'), 'true');
+        assert.equal(globalThis.CustomModelRouter.getModel('vertexai', 'gemini-bulk-valid'), null);
+        assert.equal(globalThis.CustomModelRouter.getModel('vertexai', 'gemini-bulk-never-applied'), null);
+        assert.equal(harness.saveCallCount, saveCountBefore);
+        assert.match(panel.querySelector('#cmr_feedback').textContent, /아무 모델도 등록하지 않았습니다/);
+
+        const nativeModelId = getProvider('vertexai').fallbackModelIds[0];
+        input.value = [
+            VERTEX_MODEL_ID,
+            'gemini-bulk-one',
+            'gemini-bulk-one',
+            nativeModelId,
+            'gemini-bulk-two',
+        ].join('\n');
+        form.dispatchEvent(new FakeEvent('submit'));
+        await flushMicrotasks(8);
+
+        assert.equal(input.getAttribute('aria-invalid'), 'false');
+        assert.equal(input.value, '');
+        assert.ok(globalThis.CustomModelRouter.getModel('vertexai', 'gemini-bulk-one'));
+        assert.ok(globalThis.CustomModelRouter.getModel('vertexai', 'gemini-bulk-two'));
+        assert.equal(harness.saveCallCount, saveCountBefore + 1);
+        assert.match(panel.querySelector('#cmr_feedback').textContent, /모델 2개를 등록/);
+        assert.match(panel.querySelector('#cmr_feedback').textContent, /중복 3개/);
+    } finally {
+        await destroy();
+        restoreGlobals();
+    }
+});
+
+test('모델 삭제 직후 실행 취소는 원래 레코드를 복구하고 버튼 초점을 되돌린다', async () => {
+    const removableModelId = 'gemini-delete-undo';
+    const harness = createHarness({
+        models: [
+            createModelRecord('vertexai', VERTEX_MODEL_ID),
+            createModelRecord('vertexai', removableModelId),
+        ],
+        selectedModels: { vertexai: VERTEX_MODEL_ID },
+    });
+    const restoreGlobals = installBrowserGlobals(harness);
+    try {
+        await init();
+        const panel = openPanel(harness);
+        const undoButton = panel.querySelector('#cmr_undo_delete');
+        const deleteButton = findActionButton(panel, 'delete', removableModelId, 'vertexai');
+        assert.ok(deleteButton);
+        assert.equal(undoButton.hidden, true);
+
+        deleteButton.click();
+        assert.equal(globalThis.CustomModelRouter.getModel('vertexai', removableModelId), null);
+        assert.equal(undoButton.hidden, false);
+        assert.ok(harness.documentRef.activeElement === undoButton);
+        assert.match(undoButton.getAttribute('aria-label'), /삭제 실행 취소/);
+
+        const addInput = panel.querySelector('#cmr_model_id');
+        addInput.value = 'bad/model';
+        panel.querySelector('#cmr_add_form').dispatchEvent(new FakeEvent('submit'));
+        assert.equal(addInput.getAttribute('aria-invalid'), 'true');
+        assert.equal(undoButton.hidden, false);
+        assert.equal(globalThis.CustomModelRouter.getModel('vertexai', removableModelId), null);
+
+        undoButton.click();
+        const restoredModel = globalThis.CustomModelRouter.getModel('vertexai', removableModelId);
+        assert.ok(restoredModel);
+        assert.equal(restoredModel.enabled, true);
+        assert.equal(undoButton.hidden, true);
+        const restoredDeleteButton = findActionButton(panel, 'delete', removableModelId, 'vertexai');
+        assert.ok(restoredDeleteButton);
+        assert.ok(harness.documentRef.activeElement === restoredDeleteButton);
+        assert.match(panel.querySelector('#cmr_feedback').textContent, /모델 등록을 복구/);
+    } finally {
+        await destroy();
+        restoreGlobals();
+    }
+});
+
 test('진단은 서로 다른 모델 선택기의 동일 제공업체 그룹을 중복 자원으로 판정하지 않는다', async () => {
     const harness = createHarness();
     const firstExternal = appendExternalModelSelect(harness, {
@@ -1587,6 +1868,23 @@ test('복구 경고는 정식 진단 항목에 합산되고 이후 정상 설정
         assert.equal(repairCheck.status, 'warning');
         assert.deepEqual(repairCheck.details.noticeCodes, ['settings_migrated']);
         assert.deepEqual(repairCheck.details.warningCodes, ['invalid_records_removed']);
+        assert.ok(repairCheck.details.repairItems.some(item => (
+            item.code === 'model_invalid_removed'
+            && item.action === 'removed'
+            && item.pathCategory === 'registry.models'
+            && item.count === 1
+        )));
+        assert.ok(repairCheck.details.repairItems.some(item => (
+            item.code === 'model_duplicate_merged'
+            && item.action === 'removed'
+            && item.count === 1
+        )));
+        const repairItem = panel.querySelector('#cmr_diagnostic_list').children.find(item => (
+            item.textContent.includes('잘못된 모델 레코드')
+        ));
+        assert.ok(repairItem);
+        assert.match(repairItem.textContent, /잘못된 모델 레코드 1개를 제거/);
+        assert.match(repairItem.textContent, /중복된 모델 레코드 1개를 하나로 합쳤습니다/);
         assert.deepEqual(report.repair.beforeCounts, { models: 3, selections: 1, routes: 0 });
         assert.deepEqual(report.repair.afterCounts, { models: 1, selections: 1, routes: 0 });
         assert.deepEqual(report.repair.errors, []);
@@ -1595,6 +1893,7 @@ test('복구 경고는 정식 진단 항목에 합산되고 이후 정상 설정
             report.checks.length,
         );
         assert.doesNotMatch(copiedDiagnostics, /bad\/model|selectedModelId/);
+        assert.doesNotMatch(repairItem.textContent, /bad\/model|selectedModelId/);
     } finally {
         if (navigatorDescriptor) {
             Object.defineProperty(globalThis, 'navigator', navigatorDescriptor);
@@ -1649,6 +1948,113 @@ test('손실 없는 저장 스키마 이관은 진단 주의가 아니라 통과
         assert.deepEqual(report.repair.warnings, []);
         assert.deepEqual(repairCheck.details.noticeCodes, ['settings_migrated']);
         assert.deepEqual(repairCheck.details.warningCodes, []);
+    } finally {
+        if (navigatorDescriptor) {
+            Object.defineProperty(globalThis, 'navigator', navigatorDescriptor);
+        } else {
+            delete globalThis.navigator;
+        }
+        await destroy();
+        restoreGlobals();
+    }
+});
+
+test('빈 첫 설치는 스키마 이관 기록 없이 현재 기본값만 저장한다', async () => {
+    const harness = createHarness();
+    delete harness.context.extensionSettings.customModelRouter;
+    delete harness.context.extensionSettings.customModelRouterRouting;
+    const restoreGlobals = installBrowserGlobals(harness);
+    const navigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+    let copiedDiagnostics = '';
+    Object.defineProperty(globalThis, 'navigator', {
+        configurable: true,
+        value: {
+            clipboard: {
+                async writeText(value) {
+                    copiedDiagnostics = value;
+                },
+            },
+        },
+    });
+    try {
+        await init();
+        assert.deepEqual(harness.context.extensionSettings.customModelRouter, {
+            schemaVersion: 2,
+            models: [],
+            selectedModels: {},
+        });
+        assert.deepEqual(harness.context.extensionSettings.customModelRouterRouting, {
+            schemaVersion: 1,
+            routes: {},
+        });
+
+        const panel = openPanel(harness);
+        panel.querySelector('#cmr_copy_diagnostics').dispatchEvent(new FakeEvent('click'));
+        await flushMicrotasks(8);
+        const report = JSON.parse(copiedDiagnostics);
+        assert.equal(report.repair, null);
+        assert.equal(report.checks.some(check => check.id === 'settings-repair'), false);
+        assert.doesNotMatch(copiedDiagnostics, /settings_migrated|schema_migrated/);
+    } finally {
+        if (navigatorDescriptor) {
+            Object.defineProperty(globalThis, 'navigator', navigatorDescriptor);
+        } else {
+            delete globalThis.navigator;
+        }
+        await destroy();
+        restoreGlobals();
+    }
+});
+
+test('삭제 없는 정규화는 고정 코드·문구로만 진단하고 원래 값을 노출하지 않는다', async () => {
+    const harness = createHarness({
+        storedSettings: {
+            schemaVersion: 2,
+            models: [{
+                id: 'MODEL_VALUE_SECRET',
+                provider: 'OpenAI',
+                protocol: 'WRONG_PROTOCOL_SECRET',
+                enabled: 'yes',
+            }],
+            selectedModels: { OpenAI: 'MODEL_VALUE_SECRET' },
+        },
+    });
+    const restoreGlobals = installBrowserGlobals(harness);
+    const navigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+    let copiedDiagnostics = '';
+    Object.defineProperty(globalThis, 'navigator', {
+        configurable: true,
+        value: {
+            clipboard: {
+                async writeText(value) {
+                    copiedDiagnostics = value;
+                },
+            },
+        },
+    });
+    try {
+        await init();
+        const panel = openPanel(harness);
+        panel.querySelector('#cmr_copy_diagnostics').dispatchEvent(new FakeEvent('click'));
+        await flushMicrotasks(8);
+
+        const report = JSON.parse(copiedDiagnostics);
+        const repairCheck = report.checks.find(check => check.id === 'settings-repair');
+        assert.deepEqual(report.repair.notices, []);
+        assert.deepEqual(report.repair.warnings, [{
+            severity: 'warning',
+            code: 'settings_normalized',
+            message: '저장된 모델·선택·경로 값을 현재 규칙에 맞게 정규화했습니다.',
+        }]);
+        assert.equal(report.repair.details.totals.removed, 0);
+        assert.equal(report.repair.details.totals.changed, 2);
+        assert.deepEqual(repairCheck.details.warningCodes, ['settings_normalized']);
+        assert.match(repairCheck.message, /모델 레코드 1개의 provider·protocol·활성 상태를 정규화/);
+        assert.match(repairCheck.message, /모델 선택 기록 1개의 제공업체·모델 ID를 정규화/);
+        assert.doesNotMatch(
+            copiedDiagnostics,
+            /MODEL_VALUE_SECRET|WRONG_PROTOCOL_SECRET|OpenAI|invalid_records_removed|schema_migrated/,
+        );
     } finally {
         if (navigatorDescriptor) {
             Object.defineProperty(globalThis, 'navigator', navigatorDescriptor);
@@ -2229,6 +2635,231 @@ test('SETTINGS_UPDATED는 미래 외부 연결 스키마와 함께 온 변경을
     }
 });
 
+test('백업 미리보기는 추가·충돌·삭제를 적용 전에 보여주고 취소·적용·동일 설정을 구분한다', async () => {
+    const sharedModelId = 'gemini-preview-shared';
+    const deletedModelId = 'gemini-preview-delete';
+    const addedModelId = 'gemini-preview-add';
+    const importedRegistry = {
+        schemaVersion: 2,
+        models: [
+            { ...createModelRecord('vertexai', sharedModelId), enabled: false },
+            createModelRecord('vertexai', addedModelId),
+        ],
+        selectedModels: { vertexai: addedModelId },
+    };
+    const backup = JSON.stringify({
+        format: 'custom-model-router-portable-settings',
+        schemaVersion: 2,
+        createdAt: '2026-08-20T00:00:00.000Z',
+        registry: importedRegistry,
+        purposeRoutes: { schemaVersion: 1, routes: {} },
+        externalIntegrations: {
+            schemaVersion: 2,
+            mappings: {},
+            selectedModels: {},
+            excludedTargets: {},
+        },
+    });
+    const harness = createHarness({
+        models: [
+            createModelRecord('vertexai', sharedModelId),
+            createModelRecord('vertexai', deletedModelId),
+        ],
+        selectedModels: {},
+    });
+    const restoreGlobals = installBrowserGlobals(harness);
+    try {
+        await init();
+        const panel = openPanel(harness);
+        const input = panel.querySelector('#cmr_import_backup');
+        const loadBackup = async () => {
+            input.files = [{ size: backup.length, text: async () => backup }];
+            input.value = 'preview-backup.json';
+            input.dispatchEvent(new FakeEvent('change'));
+            await flushMicrotasks(16);
+        };
+
+        await loadBackup();
+        const preview = panel.querySelector('#cmr_import_preview');
+        const summary = panel.querySelector('#cmr_import_preview_summary');
+        const previewItems = panel.querySelector('#cmr_import_preview_list').children;
+        assert.equal(preview.hidden, false);
+        assert.match(summary.textContent, /추가 [1-9]\d*건/);
+        assert.match(summary.textContent, /변경 충돌 [1-9]\d*건/);
+        assert.match(summary.textContent, /삭제 [1-9]\d*건/);
+        assert.ok(previewItems.some(item => item.dataset.change === 'addition'));
+        assert.ok(previewItems.some(item => item.dataset.change === 'conflict'));
+        assert.ok(previewItems.some(item => item.dataset.change === 'deletion'));
+        assert.ok(globalThis.CustomModelRouter.getModel('vertexai', deletedModelId));
+        assert.equal(globalThis.CustomModelRouter.getModel('vertexai', addedModelId), null);
+
+        panel.querySelector('#cmr_import_preview_cancel').click();
+        assert.equal(preview.hidden, true);
+        assert.ok(globalThis.CustomModelRouter.getModel('vertexai', deletedModelId));
+        assert.equal(globalThis.CustomModelRouter.getModel('vertexai', addedModelId), null);
+        assert.match(panel.querySelector('#cmr_feedback').textContent, /취소했습니다/);
+
+        await loadBackup();
+        panel.querySelector('#cmr_import_preview_apply').click();
+        await flushMicrotasks(16);
+        assert.equal(preview.hidden, true);
+        assert.ok(
+            harness.documentRef.activeElement === panel.querySelector('#cmr_import_backup_button'),
+        );
+        assert.equal(globalThis.CustomModelRouter.getModel('vertexai', deletedModelId), null);
+        assert.ok(globalThis.CustomModelRouter.getModel('vertexai', addedModelId));
+        assert.equal(globalThis.CustomModelRouter.getModel('vertexai', sharedModelId).enabled, false);
+
+        await loadBackup();
+        assert.equal(preview.hidden, false);
+        assert.equal(panel.querySelector('#cmr_import_preview_apply').disabled, true);
+        assert.equal(summary.dataset.state, 'ok');
+        assert.equal(summary.textContent, '현재 CMR 설정과 동일한 백업입니다.');
+        assert.equal(panel.querySelector('#cmr_import_preview_list').children.length, 1);
+        assert.equal(
+            panel.querySelector('#cmr_import_preview_list').children[0].textContent,
+            '적용할 변경이 없습니다.',
+        );
+    } finally {
+        await destroy();
+        restoreGlobals();
+    }
+});
+
+test('백업 미리보기 뒤 현재 route 값이 바뀌면 비식별 변경 모양이 같아도 첫 적용을 중단한다', async () => {
+    const currentProfileId = 'PROFILE_CURRENT_SECRET';
+    const changedProfileId = 'PROFILE_CHANGED_SECRET';
+    const importedProfileId = 'PROFILE_IMPORTED_SECRET';
+    const createRoute = connectionProfileId => ({
+        provider: 'vertexai',
+        modelId: VERTEX_MODEL_ID,
+        adapterId: 'sillytavern.connection-profile',
+        connectionProfileId,
+    });
+    const harness = createHarness();
+    harness.context.extensionSettings.customModelRouterRouting = {
+        schemaVersion: 1,
+        routes: { summary: createRoute(currentProfileId) },
+    };
+    const backup = JSON.stringify({
+        format: 'custom-model-router-portable-settings',
+        schemaVersion: 2,
+        createdAt: '2026-08-20T00:00:00.000Z',
+        registry: {
+            schemaVersion: 2,
+            models: [createModelRecord('vertexai', VERTEX_MODEL_ID)],
+            selectedModels: { vertexai: VERTEX_MODEL_ID },
+        },
+        purposeRoutes: {
+            schemaVersion: 1,
+            routes: { summary: createRoute(importedProfileId) },
+        },
+        externalIntegrations: {
+            schemaVersion: 2,
+            mappings: {},
+            selectedModels: {},
+            excludedTargets: {},
+        },
+    });
+    const restoreGlobals = installBrowserGlobals(harness);
+    try {
+        await init();
+        const panel = openPanel(harness);
+        const input = panel.querySelector('#cmr_import_backup');
+        input.files = [{ size: backup.length, text: async () => backup }];
+        input.value = 'route-preview.json';
+        input.dispatchEvent(new FakeEvent('change'));
+        await flushMicrotasks(12);
+
+        const preview = panel.querySelector('#cmr_import_preview');
+        const applyButton = panel.querySelector('#cmr_import_preview_apply');
+        const previewList = panel.querySelector('#cmr_import_preview_list');
+        const visiblePreviewText = () => [
+            panel.querySelector('#cmr_import_preview_summary').textContent,
+            ...previewList.children.map(item => item.textContent),
+            panel.querySelector('#cmr_feedback').textContent,
+        ].join(' ');
+        assert.equal(preview.hidden, false);
+        assert.match(visiblePreviewText(), /기능 경로 변경/);
+        assert.doesNotMatch(visiblePreviewText(), /PROFILE_(?:CURRENT|CHANGED|IMPORTED)_SECRET/);
+
+        harness.context.extensionSettings.customModelRouterRouting = {
+            schemaVersion: 1,
+            routes: { summary: createRoute(changedProfileId) },
+        };
+        harness.eventSource.emit(harness.context.eventTypes.SETTINGS_UPDATED);
+        await flushMicrotasks(8);
+        assert.equal(
+            globalThis.CustomModelRouter.routing.getRoute('summary').connectionProfileId,
+            changedProfileId,
+        );
+
+        applyButton.click();
+        await flushMicrotasks(8);
+        assert.equal(preview.hidden, false);
+        assert.equal(
+            globalThis.CustomModelRouter.routing.getRoute('summary').connectionProfileId,
+            changedProfileId,
+        );
+        assert.match(panel.querySelector('#cmr_feedback').textContent, /다시 계산했습니다[\s\S]*다시 확인/);
+        assert.doesNotMatch(visiblePreviewText(), /PROFILE_(?:CURRENT|CHANGED|IMPORTED)_SECRET/);
+
+        applyButton.click();
+        await flushMicrotasks(8);
+        assert.equal(preview.hidden, true);
+        assert.equal(
+            globalThis.CustomModelRouter.routing.getRoute('summary').connectionProfileId,
+            importedProfileId,
+        );
+    } finally {
+        await destroy();
+        restoreGlobals();
+    }
+});
+
+test('같은 파일 입력에서 느린 이전 읽기는 더 최근 백업 미리보기를 덮지 않는다', async () => {
+    const staleModelId = 'gemini-stale-first-file';
+    const currentModelId = 'gemini-current-second-file';
+    const staleFileText = createDeferred();
+    const staleBackup = createPortableBackup(staleModelId);
+    const currentBackup = createPortableBackup(currentModelId);
+    const harness = createHarness();
+    const restoreGlobals = installBrowserGlobals(harness);
+    try {
+        await init();
+        const panel = openPanel(harness);
+        const input = panel.querySelector('#cmr_import_backup');
+        input.files = [{ size: staleBackup.length, text: () => staleFileText.promise }];
+        input.value = 'slow-first.json';
+        input.dispatchEvent(new FakeEvent('change'));
+        await flushMicrotasks(2);
+
+        input.files = [{ size: currentBackup.length, text: async () => currentBackup }];
+        input.value = 'fast-second.json';
+        input.dispatchEvent(new FakeEvent('change'));
+        await flushMicrotasks(12);
+
+        const previewList = panel.querySelector('#cmr_import_preview_list');
+        const visiblePreviewText = () => previewList.children.map(item => item.textContent).join(' ');
+        assert.match(visiblePreviewText(), new RegExp(currentModelId));
+        assert.doesNotMatch(visiblePreviewText(), new RegExp(staleModelId));
+
+        staleFileText.resolve(staleBackup);
+        await flushMicrotasks(12);
+        assert.match(visiblePreviewText(), new RegExp(currentModelId));
+        assert.doesNotMatch(visiblePreviewText(), new RegExp(staleModelId));
+
+        panel.querySelector('#cmr_import_preview_apply').click();
+        await flushMicrotasks(8);
+        assert.ok(globalThis.CustomModelRouter.getModel('vertexai', currentModelId));
+        assert.equal(globalThis.CustomModelRouter.getModel('vertexai', staleModelId), null);
+    } finally {
+        staleFileText.resolve(staleBackup);
+        await destroy();
+        restoreGlobals();
+    }
+});
+
 test('백업 파일 읽기 중 재활성화하면 이전 input 작업이 새 runtime을 덮지 않는다', async () => {
     const importedModelId = 'gemini-stale-file-import';
     const fileText = createDeferred();
@@ -2274,41 +2905,44 @@ test('백업 파일 읽기 중 재활성화하면 이전 input 작업이 새 run
     }
 });
 
-test('백업 확인창에서 비활성화하면 확인 뒤의 이전 작업이 다음 runtime을 덮지 않는다', async () => {
-    const importedModelId = 'gemini-stale-confirm-import';
-    let confirmCallCount = 0;
-    let destroyPromise = null;
+test('백업 미리보기 뒤 비활성화하면 이전 적용 버튼이 다음 runtime을 덮지 않는다', async () => {
+    const importedModelId = 'gemini-stale-preview-import';
     const harness = createHarness();
     const restoreGlobals = installBrowserGlobals(harness);
-    const restoreConfirm = installConfirm(() => {
-        confirmCallCount += 1;
-        destroyPromise = destroy();
-        return true;
-    });
     try {
         await init();
-        const panel = openPanel(harness);
-        const input = panel.querySelector('#cmr_import_backup');
+        const oldPanel = openPanel(harness);
+        const input = oldPanel.querySelector('#cmr_import_backup');
         input.files = [{ text: async () => createPortableBackup(importedModelId) }];
-        input.value = 'confirm-race-backup.json';
+        input.value = 'stale-preview-backup.json';
         input.dispatchEvent(new FakeEvent('change'));
         await flushMicrotasks(12);
 
-        assert.equal(confirmCallCount, 1);
-        await destroyPromise;
-        await init();
+        const staleApplyButton = oldPanel.querySelector('#cmr_import_preview_apply');
+        assert.equal(oldPanel.querySelector('#cmr_import_preview').hidden, false);
+        assert.equal(staleApplyButton.disabled, false);
+        assert.equal(
+            globalThis.CustomModelRouter.getSnapshot().models.some(model => model.id === importedModelId),
+            false,
+        );
 
-        assert.deepEqual(
-            globalThis.CustomModelRouter.getSnapshot().models.map(model => model.id),
-            [VERTEX_MODEL_ID],
+        await destroy();
+        await init();
+        const newPanel = openPanel(harness);
+        assert.ok(newPanel !== oldPanel);
+        staleApplyButton.click();
+        await flushMicrotasks(8);
+
+        assert.ok(globalThis.CustomModelRouter.getModel('vertexai', VERTEX_MODEL_ID));
+        assert.equal(
+            globalThis.CustomModelRouter.getSnapshot().models.some(model => model.id === importedModelId),
+            false,
         );
         assert.equal(
             harness.context.extensionSettings.customModelRouter.models.some(model => model.id === importedModelId),
             false,
         );
     } finally {
-        restoreConfirm();
-        await destroyPromise?.catch(() => undefined);
         await destroy();
         restoreGlobals();
     }
@@ -2338,7 +2972,6 @@ test('백업 schema v2는 routing·외부 선택을 보존하고 legacy mapping�
         selectedModels: { [targetId]: { openrouter: exportedModelId } },
     };
     const restoreGlobals = installBrowserGlobals(harness);
-    const restoreConfirm = installConfirm(() => true);
     const download = installDownloadEnvironment();
     try {
         await init();
@@ -2380,6 +3013,15 @@ test('백업 schema v2는 routing·외부 선택을 보존하고 legacy mapping�
         input.dispatchEvent(new FakeEvent('change'));
         await flushMicrotasks(16);
 
+        const preview = panel.querySelector('#cmr_import_preview');
+        assert.equal(preview.hidden, false);
+        assert.equal(panel.querySelector('#cmr_import_preview_apply').disabled, false);
+        assert.ok(globalThis.CustomModelRouter.getModel('openrouter', exportedModelId));
+        assert.equal(globalThis.CustomModelRouter.routing.getRoute('summary'), null);
+
+        panel.querySelector('#cmr_import_preview_apply').click();
+        await flushMicrotasks(16);
+
         const importedExternal = harness.context.extensionSettings.customModelRouterExternalIntegrations;
         assert.deepEqual(importedExternal.mappings, {});
         assert.equal(importedExternal.selectedModels[targetId].zai, importedModelId);
@@ -2398,11 +3040,10 @@ test('백업 schema v2는 routing·외부 선택을 보존하고 legacy mapping�
             connectionProfileId: 'profile-zai',
         });
         assert.equal(input.value, '');
-        assert.match(panel.querySelector('#cmr_feedback').textContent, /복구했습니다/);
+        assert.match(panel.querySelector('#cmr_feedback').textContent, /적용했습니다/);
     } finally {
         await destroy();
         download.restore();
-        restoreConfirm();
         restoreGlobals();
     }
 });
@@ -2512,7 +3153,7 @@ test('범용 연결은 안전한 외부 모델 select에 등록 모델을 직접
         assert.equal(targets[0].resolution.providerId, null);
         assert.equal(targets[0].resolution.source, 'direct');
         assert.equal(external.select.value, 'native-external-model');
-        assert.equal(unrelated.querySelector('[data-cmr-external-group="true"]'), null);
+        assert.ok(!unrelated.querySelector('[data-cmr-external-group="true"]'));
 
         const managedGroup = external.select.querySelector('[data-cmr-external-group="true"]');
         assert.ok(managedGroup);
@@ -2605,7 +3246,7 @@ test('범용 연결은 늦은 load와 외부 확장 재렌더를 복구하고 de
     await flushMicrotasks(8);
     assert.equal(controller.getTargets().length, 1);
     assert.equal(controller.getTargets()[0].control, replacement.select);
-    assert.equal(first.select.querySelector('[data-cmr-external-group="true"]'), null);
+    assert.ok(!first.select.querySelector('[data-cmr-external-group="true"]'));
     assert.ok(replacement.select.querySelector('[data-cmr-external-group="true"]'));
 
     const pending = appendExternalModelSelect(harness, {
@@ -2615,13 +3256,13 @@ test('범용 연결은 늦은 load와 외부 확장 재렌더를 복구하고 de
     });
     controller.destroy();
     await flushMicrotasks(8);
-    assert.equal(replacement.select.querySelector('[data-cmr-external-group="true"]'), null);
-    assert.equal(pending.select.querySelector('[data-cmr-external-group="true"]'), null);
+    assert.ok(!replacement.select.querySelector('[data-cmr-external-group="true"]'));
+    assert.ok(!pending.select.querySelector('[data-cmr-external-group="true"]'));
     assert.equal(controller.getTargets().length, 0);
     assert.ok(harness.observers.every(observer => observer.target === null));
 });
 
-test('init 범용 직접 연결은 정상 카드를 숨기고 고급 목록과 재렌더 복원을 제공한다', async () => {
+test('init 범용 직접 연결은 기본 예외 목록에서 숨기고 명시적 picker와 재렌더 복원을 제공한다', async () => {
     const modelId = 'openrouter/translator-latest';
     const harness = createHarness({
         models: [createModelRecord('openrouter', modelId)],
@@ -2638,13 +3279,19 @@ test('init 범용 직접 연결은 정상 카드를 숨기고 고급 목록과 �
     try {
         await init();
         const panel = openPanel(harness);
-        assert.equal(panel.querySelector('#cmr_external_section'), null);
+        assert.ok(!panel.querySelector('#cmr_external_section'));
         assert.equal(panel.querySelector('#cmr_external_warning').hidden, true);
         assert.ok(panel.querySelector('#cmr_external_advanced'));
         assert.ok(panel.querySelector('#cmr_external_list'));
         assert.equal(
             panel.querySelector('#cmr_external_status').textContent,
-            '1개 연결 · 0개 대기 · 0개 사용자 제외',
+            '현재 조치가 필요한 외부 연결 문제가 없습니다.',
+        );
+        assert.equal(panel.querySelector('#cmr_external_count').textContent, '설정 없음');
+        assert.ok(!panel.querySelector('#cmr_external_list')
+            .querySelector(`[data-target-id="${targetId}"]`));
+        assert.ok(
+            panel.querySelector('#cmr_external_picker_list').querySelector(`[data-target-id="${targetId}"]`),
         );
         assert.deepEqual(
             external.select.querySelector('[data-cmr-external-group="true"]').children.map(option => option.value),
@@ -2657,17 +3304,27 @@ test('init 범용 직접 연결은 정상 카드를 숨기고 고급 목록과 �
             selectId: 'temporary_translator_model',
             label: '임시 번역 모델',
         });
+        const temporaryTargetId = createExternalTargetId(
+            temporary.select,
+            { documentRef: harness.documentRef },
+        );
         await flushMicrotasks(10);
         assert.equal(
             panel.querySelector('#cmr_external_status').textContent,
-            '2개 연결 · 0개 대기 · 0개 사용자 제외',
+            '현재 조치가 필요한 외부 연결 문제가 없습니다.',
+        );
+        assert.ok(
+            panel.querySelector('#cmr_external_picker_list')
+                .querySelector(`[data-target-id="${temporaryTargetId}"]`),
         );
         temporary.container.remove();
         await flushMicrotasks(10);
         assert.equal(
             panel.querySelector('#cmr_external_status').textContent,
-            '1개 연결 · 0개 대기 · 0개 사용자 제외',
+            '현재 조치가 필요한 외부 연결 문제가 없습니다.',
         );
+        assert.ok(!panel.querySelector('#cmr_external_picker_list')
+            .querySelector(`[data-target-id="${temporaryTargetId}"]`));
 
         external.select.value = modelId;
         external.select.dispatchEvent(new FakeEvent('change', { bubbles: true, isTrusted: true }));
@@ -2695,6 +3352,49 @@ test('init 범용 직접 연결은 정상 카드를 숨기고 고급 목록과 �
         assert.equal(
             harness.context.extensionSettings.customModelRouterExternalIntegrations.selectedModels[targetId].openrouter,
             modelId,
+        );
+    } finally {
+        await destroy();
+        restoreGlobals();
+    }
+});
+
+test('외부 선택지의 대상당 용량과 전체 DOM 예산을 함께 넘으면 두 경고를 모두 알린다', async () => {
+    const models = Array.from(
+        { length: EXTERNAL_INJECTED_OPTION_LIMIT + 1 },
+        (_, index) => createModelRecord('openai', `gpt-capacity-${index}`),
+    );
+    const harness = createHarness({ models, selectedModels: {} });
+    const external = appendExternalModelSelect(harness, {
+        containerId: 'capacity_warning_extension',
+        selectId: 'capacity_warning_model',
+        label: '대량 모델 칸',
+    });
+    for (let index = 1; index < 5; index += 1) {
+        appendExternalModelSelect(harness, {
+            containerId: `capacity_warning_extension_${index}`,
+            selectId: `capacity_warning_model_${index}`,
+            label: `대량 모델 칸 ${index + 1}`,
+        });
+    }
+    const restoreGlobals = installBrowserGlobals(harness);
+    try {
+        await init();
+        const panel = openPanel(harness);
+        const warning = panel.querySelector('#cmr_external_warning');
+        assert.equal(warning.hidden, false);
+        assert.match(
+            panel.querySelector('#cmr_external_warning_text').textContent,
+            new RegExp(`외부 모델 칸 5곳.*CMR 선택지가 ${EXTERNAL_INJECTED_OPTION_LIMIT}개를 넘어 일부만 표시`),
+        );
+        assert.match(
+            panel.querySelector('#cmr_external_warning_text').textContent,
+            new RegExp(`외부 모델 선택지 ${EXTERNAL_INJECTED_OPTION_LIMIT * 5}개.*권장 한도`),
+        );
+        assert.equal(panel.querySelector('#cmr_external_count').textContent, '성능 주의');
+        assert.equal(
+            external.select.querySelectorAll('[data-cmr-external-model="true"]').length,
+            EXTERNAL_INJECTED_OPTION_LIMIT,
         );
     } finally {
         await destroy();
@@ -2731,7 +3431,7 @@ test('unknown 외부 target도 직접 연결하고 provider별 선택을 재렌�
     try {
         await init();
         const panel = openPanel(harness);
-        const externalList = panel.querySelector('#cmr_external_list');
+        const externalList = panel.querySelector('#cmr_external_picker_list');
         const row = externalList.querySelector(`[data-target-id="${targetId}"]`);
         assert.ok(row.querySelector('.cmr-external-heading'));
         assert.equal(row.querySelector('.cmr-external-name').textContent, 'Manual Summary');
@@ -2820,7 +3520,7 @@ test('init은 legacy provider mapping을 제거하고 unknown target에 전체 �
     try {
         await init();
         const panel = openPanel(harness);
-        assert.equal(panel.querySelector('#cmr_external_section'), null);
+        assert.ok(!panel.querySelector('#cmr_external_section'));
         assert.ok(panel.querySelector('#cmr_external_advanced'));
         assert.deepEqual(
             harness.context.extensionSettings.customModelRouterExternalIntegrations,
@@ -2987,7 +3687,7 @@ test('SETTINGS_UPDATED는 외부 대상 제외와 복원을 controller·DOM에 �
         harness.eventSource.emit(harness.context.eventTypes.SETTINGS_UPDATED);
         await flushMicrotasks(8);
 
-        assert.equal(external.select.querySelector('[data-cmr-external-group="true"]'), null);
+        assert.ok(!external.select.querySelector('[data-cmr-external-group="true"]'));
         assert.equal(external.select.value, 'native-external-model');
         assert.equal(external.extensionState.model, 'native-external-model');
         assert.deepEqual(
@@ -3030,7 +3730,6 @@ test('portable backup 가져오기는 외부 대상 제외와 복원을 controll
     });
     const targetId = createExternalTargetId(external.select, { documentRef: harness.documentRef });
     const restoreGlobals = installBrowserGlobals(harness);
-    const restoreConfirm = installConfirm(() => true);
     try {
         await init();
         const panel = openPanel(harness);
@@ -3048,7 +3747,15 @@ test('portable backup 가져오기는 외부 대상 제외와 복원을 controll
         input.dispatchEvent(new FakeEvent('change'));
         await flushMicrotasks(16);
 
-        assert.equal(external.select.querySelector('[data-cmr-external-group="true"]'), null);
+        assert.equal(panel.querySelector('#cmr_import_preview').hidden, false);
+        assert.equal(
+            harness.context.extensionSettings.customModelRouterExternalIntegrations.excludedTargets[targetId],
+            undefined,
+        );
+        panel.querySelector('#cmr_import_preview_apply').click();
+        await flushMicrotasks(16);
+
+        assert.ok(!external.select.querySelector('[data-cmr-external-group="true"]'));
         assert.deepEqual(
             harness.context.extensionSettings.customModelRouterExternalIntegrations.excludedTargets,
             { [targetId]: true },
@@ -3065,6 +3772,14 @@ test('portable backup 가져오기는 외부 대상 제외와 복원을 controll
         input.dispatchEvent(new FakeEvent('change'));
         await flushMicrotasks(16);
 
+        assert.equal(panel.querySelector('#cmr_import_preview').hidden, false);
+        assert.deepEqual(
+            harness.context.extensionSettings.customModelRouterExternalIntegrations.excludedTargets,
+            { [targetId]: true },
+        );
+        panel.querySelector('#cmr_import_preview_apply').click();
+        await flushMicrotasks(16);
+
         const restoredGroup = external.select.querySelector('[data-cmr-external-group="true"]');
         assert.ok(restoredGroup);
         assert.deepEqual(restoredGroup.children.map(option => option.value), [modelId]);
@@ -3073,7 +3788,6 @@ test('portable backup 가져오기는 외부 대상 제외와 복원을 controll
             {},
         );
     } finally {
-        restoreConfirm();
         await destroy();
         restoreGlobals();
     }
@@ -3096,9 +3810,11 @@ test('고급 외부 연결 관리는 대상 제외를 schema v2에 보존하고 
     try {
         await init();
         let panel = openPanel(harness);
-        let row = panel.querySelector('#cmr_external_list')
+        let row = panel.querySelector('#cmr_external_picker_list')
             .querySelector(`[data-target-id="${targetId}"]`);
         assert.equal(panel.querySelector('#cmr_external_warning').hidden, true);
+        assert.ok(!panel.querySelector('#cmr_external_list')
+            .querySelector(`[data-target-id="${targetId}"]`));
         assert.equal(row.querySelector('.cmr-external-state').textContent, '선택지 연결됨');
 
         const cmrOption = external.select.options.find(option => (
@@ -3124,33 +3840,35 @@ test('고급 외부 연결 관리는 대상 제외를 schema v2에 보존하고 
         assert.equal(excludedSettings.schemaVersion, 2);
         assert.deepEqual(excludedSettings.excludedTargets, { [targetId]: true });
         assert.deepEqual(excludedSettings.selectedModels[targetId], { zai: modelId });
-        assert.equal(external.select.querySelector('[data-cmr-external-group="true"]'), null);
+        assert.ok(!external.select.querySelector('[data-cmr-external-group="true"]'));
         assert.equal(external.select.value, 'native-external-model');
         assert.equal(external.extensionState.model, 'native-external-model');
         assert.equal(panel.querySelector('#cmr_external_warning').hidden, true);
         row = panel.querySelector('#cmr_external_list')
             .querySelector(`[data-target-id="${targetId}"]`);
-        assert.equal(row.querySelector('.cmr-external-state').textContent, '연결 제외');
+        assert.equal(row.querySelector('.cmr-external-state').textContent, '사용자 제외');
+        assert.ok(!panel.querySelector('#cmr_external_picker_list')
+            .querySelector(`[data-target-id="${targetId}"]`));
         let restoreButton = row.querySelector('[data-cmr-external-action="restore"]');
         assert.ok(restoreButton);
-        assert.equal(harness.documentRef.activeElement, restoreButton);
+        assert.ok(harness.documentRef.activeElement === restoreButton);
         assert.equal(
             restoreButton.getAttribute('aria-label'),
             'Shared Tool · 외부 요약 모델 다시 연결',
         );
 
         await destroy();
-        assert.equal(external.select.querySelector('[data-cmr-external-group="true"]'), null);
+        assert.ok(!external.select.querySelector('[data-cmr-external-group="true"]'));
         await init();
         panel = openPanel(harness);
         row = panel.querySelector('#cmr_external_list')
             .querySelector(`[data-target-id="${targetId}"]`);
-        assert.equal(row.querySelector('.cmr-external-state').textContent, '연결 제외');
+        assert.equal(row.querySelector('.cmr-external-state').textContent, '사용자 제외');
         assert.deepEqual(
             harness.context.extensionSettings.customModelRouterExternalIntegrations.excludedTargets,
             { [targetId]: true },
         );
-        assert.equal(external.select.querySelector('[data-cmr-external-group="true"]'), null);
+        assert.ok(!external.select.querySelector('[data-cmr-external-group="true"]'));
 
         restoreButton = row.querySelector('[data-cmr-external-action="restore"]');
         restoreButton.focus();
@@ -3163,11 +3881,12 @@ test('고급 외부 연결 관리는 대상 제외를 schema v2에 보존하고 
         // 유효한 외부 native 값은 제외 해제 시 자동으로 덮어쓰지 않는다.
         assert.equal(external.select.value, 'native-external-model');
         assert.equal(panel.querySelector('#cmr_external_warning').hidden, true);
-        row = panel.querySelector('#cmr_external_list')
+        assert.ok(!panel.querySelector('#cmr_external_list')
+            .querySelector(`[data-target-id="${targetId}"]`));
+        row = panel.querySelector('#cmr_external_picker_list')
             .querySelector(`[data-target-id="${targetId}"]`);
-        assert.equal(
-            harness.documentRef.activeElement,
-            row.querySelector('[data-cmr-external-action="exclude"]'),
+        assert.ok(
+            harness.documentRef.activeElement === row.querySelector('[data-cmr-external-action="exclude"]'),
         );
     } finally {
         await destroy();
@@ -3194,9 +3913,8 @@ test('외부 bridge 실패만 경고 카드를 노출하고 버튼으로 진단�
         const warning = panel.querySelector('#cmr_external_warning');
         const operations = panel.querySelector('#cmr_operations_section');
         const advanced = panel.querySelector('#cmr_external_advanced');
-        const advancedSummary = advanced.querySelector('summary');
 
-        assert.equal(panel.querySelector('#cmr_external_section'), null);
+        assert.ok(!panel.querySelector('#cmr_external_section'));
         assert.equal(warning.hidden, false);
         assert.match(panel.querySelector('#cmr_external_warning_text').textContent, /1개 모델 칸/);
         assert.equal(operations.open, undefined);
@@ -3205,24 +3923,24 @@ test('외부 bridge 실패만 경고 카드를 노출하고 버튼으로 진단�
         panel.querySelector('#cmr_external_warning_open').click();
         assert.equal(operations.open, true);
         assert.equal(advanced.open, true);
-        assert.equal(harness.documentRef.activeElement, advancedSummary);
         assert.equal(advanced.scrollIntoViewCallCount, 1);
         let failedRow = panel.querySelector('#cmr_external_list')
             .querySelector(`[data-target-id="${targetId}"]`);
         assert.equal(failedRow.querySelector('.cmr-external-state').textContent, '선택지 연결 실패');
-        assert.equal(failedRow.querySelector('.cmr-external-verification').textContent, '고급 진단 확인 필요');
+        assert.equal(failedRow.querySelector('.cmr-external-verification').textContent, '이 대상 제외 가능');
 
         const excludeButton = failedRow.querySelector('[data-cmr-external-action="exclude"]');
         assert.ok(excludeButton);
+        assert.ok(harness.documentRef.activeElement === excludeButton);
         excludeButton.focus();
         excludeButton.click();
         await flushMicrotasks();
         assert.equal(warning.hidden, true);
         let excludedRow = panel.querySelector('#cmr_external_list')
             .querySelector(`[data-target-id="${targetId}"]`);
-        assert.equal(excludedRow.querySelector('.cmr-external-state').textContent, '연결 제외');
+        assert.equal(excludedRow.querySelector('.cmr-external-state').textContent, '사용자 제외');
         const restoreButton = excludedRow.querySelector('[data-cmr-external-action="restore"]');
-        assert.equal(harness.documentRef.activeElement, restoreButton);
+        assert.ok(harness.documentRef.activeElement === restoreButton);
 
         restoreButton.click();
         await flushMicrotasks();
@@ -3231,9 +3949,9 @@ test('외부 bridge 실패만 경고 카드를 노출하고 버튼으로 진단�
         failedRow = panel.querySelector('#cmr_external_list')
             .querySelector(`[data-target-id="${targetId}"]`);
         assert.equal(failedRow.querySelector('.cmr-external-state').textContent, '선택지 연결 실패');
-        assert.equal(
-            harness.documentRef.activeElement,
-            failedRow.querySelector('[data-cmr-external-action="exclude"]'),
+        assert.ok(
+            harness.documentRef.activeElement
+                === failedRow.querySelector('[data-cmr-external-action="exclude"]'),
         );
     } finally {
         await destroy();
@@ -3248,7 +3966,7 @@ test('unknown target도 직접 연결하고 비대상과 수명주기를 안전�
     try {
         await init();
         let panel = openPanel(harness);
-        assert.equal(panel.querySelector('#cmr_external_section'), null);
+        assert.ok(!panel.querySelector('#cmr_external_section'));
         assert.equal(panel.querySelector('#cmr_external_warning').hidden, true);
         assert.ok(panel.querySelector('#cmr_external_advanced'));
         assert.equal(harness.eventSource.listenerCount, 7);
@@ -3276,30 +3994,46 @@ test('unknown target도 직접 연결하고 비대상과 수명주기를 안전�
             selectId: 'image_generation_model',
             label: 'Stable Diffusion 이미지 생성 모델',
         });
-        const excludedTargetId = createExternalTargetId(
+        const riskTargetId = createExternalTargetId(
             excludedTarget.select,
+            { documentRef: harness.documentRef },
+        );
+        const directTargetId = createExternalTargetId(
+            autoTarget.select,
+            { documentRef: harness.documentRef },
+        );
+        const ambiguousTargetId = createExternalTargetId(
+            ambiguousTarget.select,
             { documentRef: harness.documentRef },
         );
         await init();
         panel = openPanel(harness);
-        assert.equal(panel.querySelector('#cmr_external_section'), null);
+        assert.ok(!panel.querySelector('#cmr_external_section'));
         assert.equal(panel.querySelector('#cmr_external_warning').hidden, true);
-        const excludedRow = panel.querySelector('#cmr_external_list')
-            .querySelector(`[data-target-id="${excludedTargetId}"]`);
-        assert.equal(excludedRow.querySelector('.cmr-external-state').textContent, '안전상 제외');
-        assert.equal(excludedRow.querySelector('[data-cmr-external-action]'), null);
+        assert.ok(!panel.querySelector('#cmr_external_list')
+            .querySelector(`[data-target-id="${riskTargetId}"]`));
+        assert.ok(!panel.querySelector('#cmr_external_picker_list')
+            .querySelector(`[data-target-id="${riskTargetId}"]`));
+        assert.ok(
+            panel.querySelector('#cmr_external_picker_list').querySelector(`[data-target-id="${directTargetId}"]`),
+        );
+        assert.ok(
+            panel.querySelector('#cmr_external_picker_list')
+                .querySelector(`[data-target-id="${ambiguousTargetId}"]`),
+        );
+        assert.equal(panel.querySelector('#cmr_external_count').textContent, '설정 없음');
         assert.equal(globalThis.pwned, undefined);
         assert.equal(harness.eventSource.listenerCount, 7);
         assert.equal(harness.observers.filter(candidate => candidate.target).length, 2);
         assert.equal(autoTarget.select.listeners.get('change').length, 2);
         assert.ok(autoTarget.select.querySelector('[data-cmr-external-group="true"]'));
         assert.ok(ambiguousTarget.select.querySelector('[data-cmr-external-group="true"]'));
-        assert.equal(excludedTarget.select.querySelector('[data-cmr-external-group="true"]'), null);
+        assert.ok(!excludedTarget.select.querySelector('[data-cmr-external-group="true"]'));
     } finally {
         await destroy();
         if (autoTarget) {
             assert.equal(autoTarget.select.listeners.get('change').length, 1);
-            assert.equal(autoTarget.select.querySelector('[data-cmr-external-group="true"]'), null);
+            assert.ok(!autoTarget.select.querySelector('[data-cmr-external-group="true"]'));
         }
         assert.equal(harness.eventSource.listenerCount, 0);
         assert.equal(harness.observers.filter(candidate => candidate.target).length, 0);

@@ -49,17 +49,64 @@
         <small id="cmr_model_help">제공업체를 선택하면 해당 모델 ID 규칙이 표시됩니다.</small>
     </form>
 
-    <div id="cmr_feedback" class="cmr-feedback" role="status" aria-live="polite" aria-atomic="true"></div>
+    <details id="cmr_bulk_add" class="cmr-inline-disclosure">
+        <summary>여러 모델 ID 한꺼번에 등록</summary>
+        <form id="cmr_bulk_add_form" class="cmr-bulk-add-form">
+            <label for="cmr_bulk_model_ids">모델 ID 목록</label>
+            <textarea
+                id="cmr_bulk_model_ids"
+                class="text_pole wide100p"
+                rows="4"
+                maxlength="65536"
+                autocomplete="off"
+                autocapitalize="none"
+                spellcheck="false"
+                placeholder="한 줄에 모델 ID 하나"
+                aria-describedby="cmr_bulk_model_help cmr_feedback"
+                required
+            ></textarea>
+            <div class="cmr-inline-actions">
+                <button type="submit" class="menu_button">모두 등록</button>
+            </div>
+            <small id="cmr_bulk_model_help">
+                <span class="cmr-sentence">현재 선택한 제공업체에 한 번에 최대 200개를 등록합니다.</span>
+                <span class="cmr-sentence">잘못된 행이 하나라도 있으면 아무 모델도 등록하지 않습니다.</span>
+                <span class="cmr-sentence">입력 안의 중복과 이미 등록된 모델은 건너뜁니다.</span>
+            </small>
+        </form>
+    </details>
+
+    <div class="cmr-feedback-row">
+        <div id="cmr_feedback" class="cmr-feedback" role="status" aria-live="polite" aria-atomic="true"></div>
+        <button id="cmr_undo_delete" type="button" class="menu_button cmr-undo-button" hidden>실행 취소</button>
+    </div>
 
     <section class="cmr-list-region" data-cmr-list-scope="all" aria-labelledby="cmr_list_title">
         <div class="cmr-list-header">
             <h3 id="cmr_list_title">전체 등록 모델</h3>
             <span id="cmr_model_count" class="cmr-list-count">제공업체 0곳 · 모델 0개</span>
         </div>
+        <div id="cmr_model_search_region" class="cmr-model-search" hidden>
+            <label class="cmr-visually-hidden" for="cmr_model_search">등록 모델 검색</label>
+            <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+            <input
+                id="cmr_model_search"
+                class="text_pole wide100p"
+                type="search"
+                maxlength="256"
+                autocomplete="off"
+                spellcheck="false"
+                placeholder="제공업체 또는 모델 ID 검색"
+                aria-controls="cmr_model_list"
+                aria-describedby="cmr_model_search_status"
+            >
+            <span id="cmr_model_search_status" class="cmr-visually-hidden" role="status" aria-live="polite"></span>
+        </div>
         <ul id="cmr_model_list" class="cmr-model-list" aria-describedby="cmr_model_list_help"></ul>
         <small id="cmr_model_list_help">
             <span class="cmr-sentence">등록한 모델은 제공업체별로 정리됩니다.</span>
             <span class="cmr-sentence">SillyTavern의 기존 모델 선택기와 감지된 다른 확장의 모델 칸에 추가됩니다.</span>
+            <span class="cmr-sentence">백업에서 비활성으로 가져온 모델은 목록에 남지만 모델 선택기에는 표시되지 않습니다.</span>
             <span class="cmr-sentence">자유 입력 방식은 기존 입력란에 모델 ID를 입력하세요.</span>
         </small>
     </section>
@@ -95,6 +142,15 @@
                 <button id="cmr_import_backup_button" type="button" class="menu_button cmr-file-button">백업 가져오기</button>
                 <input id="cmr_import_backup" class="cmr-visually-hidden" type="file" accept="application/json,.json" tabindex="-1">
             </div>
+            <section id="cmr_import_preview" class="cmr-import-preview" aria-labelledby="cmr_import_preview_title" hidden>
+                <h3 id="cmr_import_preview_title">백업 가져오기 미리보기</h3>
+                <div id="cmr_import_preview_summary" class="cmr-feedback" role="status" aria-live="polite" aria-atomic="true"></div>
+                <ul id="cmr_import_preview_list" class="cmr-change-list" aria-label="백업 변경 내역" tabindex="0"></ul>
+                <div class="cmr-import-preview-actions">
+                    <button id="cmr_import_preview_cancel" type="button" class="menu_button">취소</button>
+                    <button id="cmr_import_preview_apply" type="button" class="menu_button">변경 적용</button>
+                </div>
+            </section>
             <div id="cmr_diagnostic_summary" class="cmr-feedback" role="status" aria-live="polite" aria-atomic="true"></div>
             <ul id="cmr_diagnostic_list" class="cmr-diagnostic-list" aria-label="호환성 진단 결과" tabindex="0"></ul>
 
@@ -106,10 +162,20 @@
                 <div class="cmr-advanced-body">
                     <p class="cmr-tool-description">
                         <span class="cmr-sentence">안전한 Chat Completion 모델 칸에는 등록 모델을 자동으로 표시합니다.</span>
-                        <span class="cmr-sentence">문제가 생긴 대상만 연결에서 제외하세요.</span>
+                        <span class="cmr-sentence">연결 실패와 사용자가 제외한 대상만 기본 목록에 표시합니다.</span>
                     </p>
-                    <div id="cmr_external_status" class="cmr-feedback" role="status" aria-live="polite" aria-atomic="true"></div>
+                    <div id="cmr_external_status" class="cmr-feedback" role="status" aria-live="polite" aria-atomic="true" tabindex="-1"></div>
                     <ul id="cmr_external_list" class="cmr-external-list" aria-label="외부 확장 모델 연결 관리" tabindex="0"></ul>
+                    <details id="cmr_external_picker" class="cmr-inline-disclosure cmr-external-picker">
+                        <summary>문제가 생긴 모델 칸 제외</summary>
+                        <div class="cmr-external-picker-body">
+                            <p class="cmr-tool-description">
+                                <span class="cmr-sentence">CMR은 실제 요청 결과까지 자동으로 확인할 수 없습니다.</span>
+                                <span class="cmr-sentence">외부 기능에서 문제가 생긴 모델 칸만 선택해 제외하세요.</span>
+                            </p>
+                            <ul id="cmr_external_picker_list" class="cmr-external-list" aria-label="연결에서 제외할 외부 모델 칸" tabindex="0"></ul>
+                        </div>
+                    </details>
                     <small>
                         <span class="cmr-sentence">선택지가 보인다는 사실과 실제 요청에 해당 모델이 사용된다는 사실은 다릅니다.</span>
                         <span class="cmr-sentence">실제 기능을 한 번 실행한 뒤 요청 또는 결과를 확인하세요.</span>
@@ -124,7 +190,7 @@
         <div class="cmr-tool-body">
             <p class="cmr-sentence">SillyTavern과 외부 확장이 기존 Chat Completion 연결 및 요청 규격을 그대로 사용하는 모델 ID를 지원합니다.</p>
             <p>
-                <span class="cmr-sentence">감지된 표준 Chat Completion 모델 컨트롤에는 등록 모델 전체를 제공업체별로 추가합니다.</span>
+                <span class="cmr-sentence">감지된 표준 Chat Completion 모델 컨트롤에는 native option과 중복되지 않는 등록 모델을 target별 최대 512개까지 제공업체별로 추가합니다.</span>
                 <span class="cmr-sentence">자체 위젯이나 비채팅 모델 컨트롤은 변경하지 않습니다.</span>
                 <span class="cmr-sentence">전역 fetch를 가로채지 않습니다.</span>
             </p>

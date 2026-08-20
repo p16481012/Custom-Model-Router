@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 
 import {
     PORTABLE_SETTINGS_FORMAT,
+    PORTABLE_SETTINGS_MAX_LENGTH,
+    PORTABLE_SETTINGS_MAX_MODELS,
+    PORTABLE_SETTINGS_MAX_ROUTES,
     PORTABLE_SETTINGS_SCHEMA_VERSION,
     PortableSettingsError,
     createPortableSettings,
@@ -77,6 +80,55 @@ test('Registry·용도별 경로·외부 연결만 결정적 백업으로 만들
     });
     assert.match(pretty, /\n  "format"/);
     assert.equal(JSON.parse(pretty).createdAt, backup.createdAt);
+});
+
+test('portable 구조 경계 안의 자체 백업은 다시 읽히고 경계를 넘는 내보내기는 거부한다', () => {
+    const createLongModel = index => ({
+        id: `openrouter/${String(index).padStart(4, '0')}`.padEnd(256, 'x'),
+        provider: 'openrouter',
+        protocol: 'openai-chat-completions',
+        enabled: true,
+    });
+    const models = Array.from(
+        { length: PORTABLE_SETTINGS_MAX_MODELS },
+        (_, index) => createLongModel(index),
+    );
+    const serialized = stringifyPortableSettings({
+        registrySettings: { schemaVersion: 2, models, selectedModels: {} },
+        purposeRoutes: { schemaVersion: 1, routes: {} },
+        now: '2026-08-20T00:00:00.000Z',
+    });
+
+    assert.ok(serialized.length > 1_000_000);
+    assert.ok(new TextEncoder().encode(serialized).byteLength <= PORTABLE_SETTINGS_MAX_LENGTH);
+    assert.equal(parsePortableSettings(serialized).registrySettings.models.length, models.length);
+    assert.throws(
+        () => stringifyPortableSettings({
+            registrySettings: {
+                schemaVersion: 2,
+                models: [...models, createLongModel(PORTABLE_SETTINGS_MAX_MODELS)],
+                selectedModels: {},
+            },
+            purposeRoutes: { schemaVersion: 1, routes: {} },
+        }),
+        error => error instanceof PortableSettingsError && error.code === 'too_many_models',
+    );
+
+    const routes = Object.fromEntries(Array.from(
+        { length: PORTABLE_SETTINGS_MAX_ROUTES + 1 },
+        (_, index) => [`route-${String(index).padStart(3, '0')}`, {
+            provider: 'openai',
+            modelId: 'gpt-route-boundary',
+            adapterId: 'sillytavern.connection-profile',
+        }],
+    ));
+    assert.throws(
+        () => stringifyPortableSettings({
+            registrySettings: normalizeSettings(),
+            purposeRoutes: { schemaVersion: 1, routes },
+        }),
+        error => error instanceof PortableSettingsError && error.code === 'too_many_routes',
+    );
 });
 
 test('정상 백업을 검사하고 원본 설정을 변경하지 않는 값으로 파싱한다', () => {
@@ -291,6 +343,129 @@ test('이전·손상 저장값을 정규화하고 미래 저장 스키마는 복
     assert.equal(future.status, 'error');
     assert.equal(future.errors[0].code, 'future_registry_schema');
     assert.equal(Object.hasOwn(future, 'registrySettings'), false);
+});
+
+test('legacy 모델의 제거 필드는 원문 없이 복구 상세에 집계한다', () => {
+    const report = repairSettingsBundle({
+        registrySettings: {
+            schemaVersion: 1,
+            models: [{ id: 'gemini-legacy-detail', apiKey: 'LEGACY_MODEL_SECRET' }],
+            selectedModelId: 'gemini-legacy-detail',
+        },
+        purposeRoutes: { schemaVersion: 1, routes: {} },
+    });
+
+    const detail = report.details.items.find(item => item.code === 'model_unknown_fields_removed');
+    assert.deepEqual(detail, {
+        code: 'model_unknown_fields_removed',
+        action: 'removed',
+        pathCategory: 'registry.models',
+        count: 1,
+    });
+    assert.deepEqual(
+        report.warnings.map(issue => issue.code),
+        ['settings_migrated', 'invalid_records_removed'],
+    );
+    assert.doesNotMatch(JSON.stringify(report.details), /LEGACY_MODEL_SECRET|apiKey|gemini-legacy-detail/);
+});
+
+test('빈 첫 설치와 삭제 없는 정규화를 이관·레코드 제거와 구분한다', () => {
+    const fresh = repairSettingsBundle({});
+    assert.equal(fresh.ok, true);
+    assert.equal(fresh.status, 'ok');
+    assert.deepEqual(fresh.warnings, []);
+    assert.deepEqual(fresh.details, {
+        schemaVersion: 1,
+        totals: { removed: 0, changed: 0, rejected: 0 },
+        items: [],
+    });
+
+    const normalized = repairSettingsBundle({
+        registrySettings: {
+            schemaVersion: 2,
+            models: [{
+                id: 'MODEL_VALUE_SECRET',
+                provider: 'OpenAI',
+                protocol: 'WRONG_PROTOCOL_SECRET',
+                enabled: 'yes',
+            }],
+            selectedModels: { OpenAI: 'MODEL_VALUE_SECRET' },
+        },
+        purposeRoutes: { schemaVersion: 1, routes: {} },
+    });
+    assert.equal(normalized.ok, true);
+    assert.equal(normalized.status, 'warning');
+    assert.deepEqual(normalized.beforeCounts, { models: 1, selections: 1, routes: 0 });
+    assert.deepEqual(normalized.afterCounts, normalized.beforeCounts);
+    assert.deepEqual(normalized.warnings, [{
+        severity: 'warning',
+        code: 'settings_normalized',
+        path: '$',
+        message: '저장된 모델·선택·경로 값을 현재 규칙에 맞게 정규화했습니다.',
+    }]);
+    assert.deepEqual(normalized.details.totals, { removed: 0, changed: 2, rejected: 0 });
+    assert.deepEqual(normalized.details.items.map(item => item.code), [
+        'model_record_normalized',
+        'selection_record_normalized',
+    ]);
+    assert.doesNotMatch(
+        JSON.stringify({ warnings: normalized.warnings, details: normalized.details }),
+        /MODEL_VALUE_SECRET|WRONG_PROTOCOL_SECRET|OpenAI/,
+    );
+
+    const missingSchema = repairSettingsBundle({
+        registrySettings: {
+            models: [{
+                id: 'gpt-schema-normalized',
+                provider: 'openai',
+                protocol: 'openai-chat-completions',
+                enabled: true,
+            }],
+            selectedModels: {},
+        },
+        purposeRoutes: { routes: {} },
+    });
+    assert.deepEqual(missingSchema.warnings.map(issue => issue.code), ['settings_normalized']);
+    assert.equal(
+        missingSchema.details.items.filter(item => item.code === 'schema_normalized').length,
+        2,
+    );
+    assert.equal(missingSchema.details.items.some(item => item.code === 'schema_migrated'), false);
+
+    const migratedAndNormalized = repairSettingsBundle({
+        registrySettings: {
+            schemaVersion: 1,
+            models: 'BROKEN_CONTAINER_SECRET',
+        },
+        purposeRoutes: { schemaVersion: 1, routes: {} },
+    });
+    assert.deepEqual(migratedAndNormalized.warnings.map(issue => issue.code), [
+        'settings_migrated',
+        'settings_normalized',
+    ]);
+    assert.equal(migratedAndNormalized.details.totals.removed, 0);
+    assert.doesNotMatch(
+        JSON.stringify({
+            warnings: migratedAndNormalized.warnings,
+            details: migratedAndNormalized.details,
+        }),
+        /BROKEN_CONTAINER_SECRET/,
+    );
+
+    const invalidRoots = repairSettingsBundle({
+        registrySettings: 'REGISTRY_ROOT_SECRET',
+        purposeRoutes: ['ROUTES_ROOT_SECRET'],
+    });
+    assert.deepEqual(invalidRoots.warnings.map(issue => issue.code), ['settings_normalized']);
+    assert.deepEqual(invalidRoots.details.totals, { removed: 0, changed: 2, rejected: 0 });
+    assert.deepEqual(invalidRoots.details.items.map(item => item.code), [
+        'registry_container_replaced',
+        'routes_root_container_replaced',
+    ]);
+    assert.doesNotMatch(
+        JSON.stringify({ warnings: invalidRoots.warnings, details: invalidRoots.details }),
+        /REGISTRY_ROOT_SECRET|ROUTES_ROOT_SECRET/,
+    );
 });
 
 test('정규화 설정의 비열거 하위 호환 getter를 중복 선택 레코드로 오인하지 않는다', () => {

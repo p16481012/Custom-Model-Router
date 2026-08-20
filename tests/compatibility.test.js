@@ -13,6 +13,11 @@ import {
     getMostSevereCheck,
     normalizeSillyTavernVersion,
 } from '../src/compatibility.js';
+import {
+    EXTERNAL_INJECTED_OPTION_LIMIT,
+    EXTERNAL_MANAGED_OPTION_WARNING_THRESHOLD,
+    EXTERNAL_TARGET_LIMIT,
+} from '../src/external-integrations.js';
 import { getProviders } from '../src/providers.js';
 
 function createContext(overrides = {}) {
@@ -464,6 +469,161 @@ test('외부 모델 칸 후보를 직접 연결과 비채팅 제외로 분해하
     }, [{ resolution: { source: 'direct' }, bridge: { status: 'failed' } }]);
     assert.equal(bridgeFailure.status, 'failed');
     assert.equal(bridgeFailure.details.invariants.noBridgeFailures, false);
+});
+
+test('managed DOM option 예산은 512개 모델×4 direct target까지 통과하고 초과는 구조 오류와 구분해 경고한다', () => {
+    const directTargets = (count, options = {}) => Array.from({ length: count }, (_, index) => ({
+        resolution: { source: 'direct' },
+        bridge: {
+            status: 'connected',
+            eligibleModelCount: options.eligiblePerTarget ?? EXTERNAL_INJECTED_OPTION_LIMIT,
+            expectedManagedOptionCount: options.expectedPerTarget ?? EXTERNAL_INJECTED_OPTION_LIMIT,
+            capacityLimited: index < (options.capacityLimitedCount ?? 0),
+        },
+    }));
+    const vectorTargets = Array.from({ length: 13 }, () => ({
+        extensionLabel: 'Vectors',
+        resolution: { source: 'risk-blocked', excludedReason: 'embedding-model' },
+        bridge: { status: 'idle' },
+    }));
+    const metrics = (
+        directCount,
+        eligibleManagedOptionCount,
+        expectedManagedOptionCount,
+        actualManagedOptionCount,
+        capacityLimitedTargetCount = 0,
+        activeRegistryModelCount = EXTERNAL_INJECTED_OPTION_LIMIT,
+    ) => ({
+        observerCount: 1,
+        targetCount: directCount + vectorTargets.length,
+        boundCount: directCount,
+        directCount,
+        userExcludedCount: 0,
+        connectedCount: directCount,
+        idleCount: 0,
+        failedCount: 0,
+        listenerCount: directCount,
+        activeRegistryModelCount,
+        eligibleManagedOptionCount,
+        expectedManagedOptionCount,
+        actualManagedOptionCount,
+        capacityLimitedTargetCount,
+    });
+
+    assert.equal(
+        EXTERNAL_MANAGED_OPTION_WARNING_THRESHOLD,
+        EXTERNAL_INJECTED_OPTION_LIMIT * 4,
+    );
+    const atBudgetTargets = [...directTargets(4), ...vectorTargets];
+    const atBudget = diagnoseExternalRuntimeResources(
+        metrics(
+            4,
+            EXTERNAL_MANAGED_OPTION_WARNING_THRESHOLD,
+            EXTERNAL_MANAGED_OPTION_WARNING_THRESHOLD,
+            EXTERNAL_MANAGED_OPTION_WARNING_THRESHOLD,
+        ),
+        atBudgetTargets,
+    );
+    assert.equal(atBudget.status, 'passed');
+    assert.equal(atBudget.details.excludedCount, vectorTargets.length);
+    assert.equal(atBudget.details.expectedManagedOptionCount, EXTERNAL_MANAGED_OPTION_WARNING_THRESHOLD);
+    assert.equal(atBudget.details.managedOptionBudgetExceeded, false);
+    assert.equal(atBudget.details.managedOptionCapacityLimited, false);
+
+    const capacityTargets = [
+        ...directTargets(1, {
+            eligiblePerTarget: EXTERNAL_INJECTED_OPTION_LIMIT + 1,
+            capacityLimitedCount: 1,
+        }),
+        ...vectorTargets,
+    ];
+    const capacityLimited = diagnoseExternalRuntimeResources(
+        metrics(
+            1,
+            EXTERNAL_INJECTED_OPTION_LIMIT + 1,
+            EXTERNAL_INJECTED_OPTION_LIMIT,
+            EXTERNAL_INJECTED_OPTION_LIMIT,
+            1,
+            EXTERNAL_INJECTED_OPTION_LIMIT + 1,
+        ),
+        capacityTargets,
+    );
+    assert.equal(capacityLimited.status, 'warning');
+    assert.equal(capacityLimited.details.managedOptionBudgetExceeded, false);
+    assert.equal(capacityLimited.details.managedOptionCapacityLimited, true);
+    assert.equal(capacityLimited.details.managedOptionPerTargetLimit, EXTERNAL_INJECTED_OPTION_LIMIT);
+    assert.match(
+        capacityLimited.message,
+        new RegExp(`외부 모델 칸 1곳은 표시 가능한 CMR 선택지가 대상당 ${EXTERNAL_INJECTED_OPTION_LIMIT}개를 넘어 일부만 표시됩니다`),
+    );
+
+    const aboveBudgetTargets = [...directTargets(5), ...vectorTargets];
+    const expectedAboveBudget = EXTERNAL_INJECTED_OPTION_LIMIT * 5;
+    const warning = diagnoseExternalRuntimeResources(
+        metrics(5, expectedAboveBudget, expectedAboveBudget, EXTERNAL_MANAGED_OPTION_WARNING_THRESHOLD + 1),
+        aboveBudgetTargets,
+    );
+    assert.equal(warning.status, 'warning');
+    assert.match(warning.message, new RegExp(`권장 한도 ${EXTERNAL_MANAGED_OPTION_WARNING_THRESHOLD}개`));
+    assert.equal(warning.details.managedOptionWarningThreshold, EXTERNAL_MANAGED_OPTION_WARNING_THRESHOLD);
+    assert.equal(warning.details.managedOptionBudgetExceeded, true);
+    assert.equal(warning.details.managedOptionCapacityLimited, false);
+    assert.equal(warning.details.invariants.managedOptionEstimateMatches, true);
+    assert.equal(warning.details.invariants.managedOptionsWithinEstimate, true);
+
+    const failed = diagnoseExternalRuntimeResources({
+        ...metrics(5, expectedAboveBudget, expectedAboveBudget, EXTERNAL_MANAGED_OPTION_WARNING_THRESHOLD + 1),
+        boundCount: 4,
+    }, aboveBudgetTargets);
+    assert.equal(failed.status, 'failed');
+    assert.equal(failed.details.managedOptionBudgetExceeded, true);
+    assert.equal(failed.details.invariants.directBindingsMatch, false);
+
+    const estimateMismatch = diagnoseExternalRuntimeResources(
+        metrics(
+            1,
+            EXTERNAL_INJECTED_OPTION_LIMIT,
+            EXTERNAL_INJECTED_OPTION_LIMIT - 1,
+            EXTERNAL_INJECTED_OPTION_LIMIT - 1,
+        ),
+        [...directTargets(1), ...vectorTargets],
+    );
+    assert.equal(estimateMismatch.status, 'failed');
+    assert.equal(estimateMismatch.details.invariants.managedOptionEstimateMatches, false);
+
+    const actualAboveEstimate = diagnoseExternalRuntimeResources(
+        metrics(
+            1,
+            EXTERNAL_INJECTED_OPTION_LIMIT,
+            EXTERNAL_INJECTED_OPTION_LIMIT,
+            EXTERNAL_INJECTED_OPTION_LIMIT + 1,
+        ),
+        [...directTargets(1), ...vectorTargets],
+    );
+    assert.equal(actualAboveEstimate.status, 'failed');
+    assert.equal(actualAboveEstimate.details.invariants.managedOptionsWithinEstimate, false);
+
+    const hardCap = EXTERNAL_TARGET_LIMIT * EXTERNAL_INJECTED_OPTION_LIMIT;
+    const maxDirectTargets = directTargets(EXTERNAL_TARGET_LIMIT);
+    const capSentinel = diagnoseExternalRuntimeResources({
+        observerCount: 1,
+        targetCount: EXTERNAL_TARGET_LIMIT,
+        boundCount: EXTERNAL_TARGET_LIMIT,
+        directCount: EXTERNAL_TARGET_LIMIT,
+        userExcludedCount: 0,
+        connectedCount: EXTERNAL_TARGET_LIMIT,
+        idleCount: 0,
+        failedCount: 0,
+        listenerCount: EXTERNAL_TARGET_LIMIT,
+        activeRegistryModelCount: EXTERNAL_INJECTED_OPTION_LIMIT,
+        eligibleManagedOptionCount: hardCap,
+        expectedManagedOptionCount: hardCap,
+        actualManagedOptionCount: hardCap + 1,
+        capacityLimitedTargetCount: 0,
+    }, maxDirectTargets);
+    assert.equal(capSentinel.status, 'failed');
+    assert.equal(capSentinel.details.actualManagedOptionCount, hardCap + 1);
+    assert.equal(capSentinel.details.invariants.managedOptionCountsWithinHardCap, false);
 });
 
 test('외부 제외 사유의 특수 객체 키도 독립된 진단 개수로 보존한다', () => {

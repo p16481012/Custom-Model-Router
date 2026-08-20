@@ -1,8 +1,8 @@
 # 공개 Registry API
 
-Custom Model Router v0.6.9는 다른 SillyTavern 확장이 내부 파일 경로에 의존하지 않고 등록 모델과 용도별 라우팅을 사용할 수 있도록 `globalThis.CustomModelRouter`를 제공합니다. Registry API 계약 버전은 `1.1.0`, Routing API 계약 버전은 `1.0.0`이며 v0.5.0과 동일합니다.
+Custom Model Router v0.6.10은 다른 SillyTavern 확장이 내부 파일 경로에 의존하지 않고 등록 모델과 용도별 라우팅을 사용할 수 있도록 `globalThis.CustomModelRouter`를 제공합니다. Registry API 계약 버전은 `1.1.0`, Routing API 계약 버전은 `1.0.0`이며 v0.5.0과 동일합니다.
 
-v0.6.0의 범용 DOM 모델 브리지, 호환성 진단과 설정 백업·복구, v0.6.7의 Playwright UI 회귀 검사 인프라는 이 전역 API 계약에 포함되지 않습니다. v0.6.9의 일반 UI는 정상 외부 대상 목록을 표시하지 않으며, 실제 주입·런타임 문제가 있을 때만 경고 카드를 보여줍니다. 대상별 제외·복구와 UI 주입 상태는 진단 섹션의 고급 외부 연결 관리에 있고, 실제 요청 반영은 별도로 확인해야 합니다. 이 UI·외부 저장 schema v2 변경도 공개 API 버전과 호출 계약을 바꾸지 않습니다. Routing API는 개발자 또는 연동 확장이 명시적으로 사용하는 opt-in 계약이며 일반 라우팅 UI는 없습니다. 용도별 경로에는 Connection Profile ID만 저장되고 프로필 본문·API 키·endpoint는 복제되지 않습니다.
+v0.6.0의 범용 DOM 모델 브리지, 호환성 진단과 설정 백업·복구, v0.6.7의 Playwright UI 회귀 검사 인프라는 이 전역 API 계약에 포함되지 않습니다. v0.6.10의 조건부 모델 검색·일괄 등록·삭제 실행 취소·백업 미리보기와 예외 중심 외부 관리 UI도 공개 Registry/Routing API 버전을 바꾸지 않습니다. 대상별 제외·복구와 UI 주입 상태는 진단 섹션의 고급 외부 연결 관리에 있고, 실제 요청 반영은 별도로 확인해야 합니다. 외부 저장 schema v2 역시 공개 API 호출 계약과 별개입니다. Routing API는 개발자 또는 연동 확장이 명시적으로 사용하는 opt-in 계약이며 일반 라우팅 UI는 없습니다. 용도별 경로에는 Connection Profile ID만 저장되고 프로필 본문·API 키·endpoint는 복제되지 않습니다.
 
 ## 호환성 확인
 
@@ -76,7 +76,7 @@ v0.5.0의 Registry/Routing API는 소비 확장이 직접 호출해야 하는 op
 
 1. 표준 `select`, 텍스트 `input`, `datalist` 중 model/LLM 의미를 가진 외부 컨트롤을 찾습니다.
 2. ID·name·label, 상위 확장 표식과 모델 control 구조를 조합해 Chat Completion 모델 칸인지 판별합니다.
-3. 안전한 대상에는 Registry의 모든 provider 모델을 provider별 optgroup으로 추가합니다. 사용자가 schema v2에서 명시적으로 제외한 target은 주입하지 않습니다.
+3. 안전한 대상에는 native option과 중복되지 않는 Registry provider 모델을 target별 최대 512개까지 provider별 optgroup으로 추가합니다. 사용자가 schema v2에서 명시적으로 제외한 target은 주입하지 않습니다.
 4. Vectors·embedding 등 위험 분류로 제외한 대상과 사용자가 제외한 대상은 서로 다른 상태로 유지합니다.
 5. 외부 provider select와 option의 `data-type`이 있으면 CMR option에도 provider alias를 보존해 외부 확장의 자체 필터가 동작하게 합니다.
 6. 외부 확장이 컨트롤을 다시 렌더링하면 CMR option을 다시 추가합니다. 동일 target의 새 컨트롤 값이 비어 있을 때만 마지막 CMR 선택을 provider 식별자와 함께 복원하며, 외부 확장이 둔 유효한 현재값은 덮어쓰지 않습니다.
@@ -93,11 +93,17 @@ v0.5.0의 Registry/Routing API는 소비 확장이 직접 호출해야 하는 op
 | `zai`, `Z.AI`, `GLM` | `zai` |
 | `openai-compatible`, `LM Studio`, `Ollama`, `local api` | `custom` |
 
-Caption처럼 하나의 model select에 provider별 option이 함께 들어 있고 `data-type`으로 구분하는 경우에는 외부 provider 값을 CMR option에도 보존합니다. 모든 provider 모델은 `제공업체 이름 · 사용자 모델` optgroup으로 구분합니다. 단, CMR Registry는 모델의 vision 능력을 저장하지 않으므로 실제 Caption 호환성은 모델과 계정에서 확인해야 합니다.
+Caption처럼 하나의 model select에 provider별 option이 함께 들어 있고 `data-type`으로 구분하는 경우에는 외부 provider 값을 CMR option에도 보존합니다. target별 512개 한도 안에서 주입한 provider 모델은 `제공업체 이름 · 사용자 모델` optgroup으로 구분합니다. 단, CMR Registry는 모델의 vision 능력을 저장하지 않으므로 실제 Caption 호환성은 모델과 계정에서 확인해야 합니다.
 
 ### 네트워크 경계
 
 DOM 브리지는 전역 `fetch` 또는 `XMLHttpRequest`를 monkey patch하지 않습니다. 외부 확장의 API 키, endpoint와 요청 본문을 읽거나 수정하지 않고, 그 확장이 이미 등록한 `input`/`change` 이벤트를 통해 선택값을 저장하도록 합니다. 고급 관리의 **선택지 연결됨**은 CMR option 주입 성공만 뜻하며 실제 요청 호환성을 인증하지 않습니다. 목록 표시와 실제 요청 반영은 서로 다른 검증 단계이므로 기능을 실행한 뒤 Network 요청 JSON의 `model`이 선택한 ID인지 확인해야 합니다.
+
+### 관리 UI와 option 한도
+
+고급 외부 연결 관리의 기본 목록에는 bridge 실패 대상과 schema v2에서 사용자가 제외한 대상만 나타납니다. 정상 direct 대상은 사용자가 **문제가 생긴 모델 칸 제외**를 펼쳤을 때만 선택기에 표시합니다. Vectors·embedding·TTS·Stable Diffusion 같은 위험 대상은 두 관리 목록 모두에 행을 만들지 않고 진단 집계에만 포함합니다.
+
+외부 target 하나에는 native option과 중복되는 항목을 제외한 표시 가능한 CMR 후보 중 최대 512개만 주입합니다. 이 target별 후보가 512개를 넘으면 용량 주의를 표시합니다. 모든 direct target의 예상 CMR option 합계 또는 실제 CMR option 합계가 2,048개를 넘으면 별도의 성능 주의를 표시합니다. 위험 분류 대상과 native option은 CMR option 예산에서 제외합니다. 이 한도와 경고는 DOM 브리지 구현 계약이며 `CustomModelRouter.listModels()` 결과를 줄이지 않습니다. 따라서 활성 Registry 모델 총수가 512개를 넘는다는 사실만으로 target별 용량 경고가 발생하지는 않습니다.
 
 ### 의도적 제외
 
@@ -138,5 +144,11 @@ schema v1과 v0.6.0~v0.6.5 설정·백업에 남은 provider 고정·`manual`·`
 ## Portable backup schema v2
 
 portable backup 최상위는 `format`, `schemaVersion`, `createdAt`, `registry`, `purposeRoutes`, `externalIntegrations`만 가집니다. `externalIntegrations`는 내부 schema v2의 빈 `mappings`, target별 `selectedModels`와 명시적 `excludedTargets`를 포함해 내보내기·가져오기 round trip 합니다. 개발자용 `purposeRoutes`는 일반 라우팅 UI가 없어도 보존됩니다. API 키, endpoint, provider 계정 설정, 외부 요청 본문과 Connection Profile 본문은 포함되지 않습니다.
+
+portable JSON은 UTF-8 기준 최대 8,000,000바이트, 모델 5,000개, route 256개입니다. 생성·직렬화·파싱 단계가 같은 상한을 사용하므로 성공한 내보내기 결과는 다시 가져올 수 있습니다.
+
+v0.6.10 관리 UI는 가져온 설정을 곧바로 적용하지 않고 현재 설정과 비교한 모델·선택·route·외부 target의 추가·충돌·삭제 요약을 먼저 표시합니다. 사용자가 적용하기 전에 설정 revision이 달라지면 미리보기를 다시 만들도록 중단하며, 현재 사용 중인 custom-only 모델을 삭제하는 변경은 `model_in_use`로 차단합니다. 이 미리보기는 UI 안전장치이고 portable schema 자체를 변경하지 않습니다.
+
+저장값 복구 보고서의 `details`는 schema 버전, 안전한 범주와 모델·선택·route 레코드의 제거·병합·정규화·거부 사유 코드 및 개수를 포함합니다. 원래 레코드 값, target ID, Connection Profile ID와 비밀정보는 상세 보고에 복제하지 않습니다.
 
 v0.5.0에서 내보낸 portable schema v1 백업은 `registry`와 `purposeRoutes`를 보존하고 빈 `externalIntegrations`를 추가해 portable schema v2로 이관합니다. 외부 연결 schema v1과 v0.6.0~v0.6.5 백업은 Registry·route·정상 형식의 `selectedModels`를 보존하고 legacy mapping·`disabled`를 제거하며, 이를 v2 사용자 제외로 변환하지 않습니다. v2 백업의 `excludedTargets`는 정상 `selectedModels`와 함께 복원됩니다. 선택·제외 target 합집합이 외부 schema 한도 512개를 넘는 백업은 일부 기록을 조용히 버리지 않고 가져오기를 거부합니다. 알 수 없는 필드나 미래 portable/Registry/route/external schema는 기존 설정을 변경하지 않고 거부합니다.

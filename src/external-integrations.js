@@ -14,6 +14,10 @@ export const EXTERNAL_MODEL_SELECTOR = '[data-cmr-external-model="true"]';
 export const EXTERNAL_GROUP_SELECTOR = '[data-cmr-external-group="true"]';
 export const EXTERNAL_TARGET_LIMIT = 512;
 export const EXTERNAL_INJECTED_OPTION_LIMIT = 512;
+// 한 target의 512개 hard cap을 최대 4개 direct target까지 허용한다.
+// 그보다 큰 DOM은 차단하지 않고 호환성 진단에서 성능 주의로 알린다.
+export const EXTERNAL_MANAGED_OPTION_WARNING_THRESHOLD = EXTERNAL_INJECTED_OPTION_LIMIT * 4;
+const EXTERNAL_MANAGED_OPTION_COUNT_LIMIT = EXTERNAL_TARGET_LIMIT * EXTERNAL_INJECTED_OPTION_LIMIT;
 const EXTERNAL_DATALIST_ATTRIBUTE = 'data-cmr-external-datalist';
 const EXTERNAL_DATALIST_PREVIOUS_LIST_ATTRIBUTE = 'data-cmr-previous-list';
 const EXTERNAL_DATALIST_HAD_LIST_ATTRIBUTE = 'data-cmr-had-list';
@@ -800,6 +804,41 @@ export function discoverExternalModelTargets(root, options = {}) {
     return targets;
 }
 
+/**
+ * 고급 UI가 target 식별자·control label·현재 값을 복사하지 않고 안전 제외 현황을 묶어 표시한다.
+ */
+export function summarizeRiskBlockedTargets(value) {
+    const groups = new Map();
+    let inspectedTargets = 0;
+    for (const target of Array.isArray(value) ? value : []) {
+        if (inspectedTargets >= EXTERNAL_TARGET_LIMIT) {
+            break;
+        }
+        inspectedTargets += 1;
+        let source;
+        let extensionLabel;
+        try {
+            source = target?.resolution?.source;
+            extensionLabel = normalizeText(target?.extensionLabel).slice(0, 80) || '외부 확장';
+        } catch {
+            continue;
+        }
+        if (source !== 'risk-blocked') {
+            continue;
+        }
+        const key = extensionLabel.toLowerCase();
+        const current = groups.get(key);
+        if (current) {
+            current.count += 1;
+        } else {
+            groups.set(key, { extensionLabel, count: 1 });
+        }
+    }
+    return [...groups.values()]
+        .sort((left, right) => left.extensionLabel.localeCompare(right.extensionLabel, 'ko'))
+        .map(summary => ({ ...summary }));
+}
+
 export function normalizeExternalMappings(value) {
     // 과거 disabled를 다시 적용하면 모델이 사라지던 회귀가 되살아난다.
     // v0.6.0~v0.6.5 mapping은 mode에 관계없이 모두 폐기한다.
@@ -940,7 +979,51 @@ function enabledModelIds(providerId, models) {
         .filter(model => !model?.provider || normalizeProviderId(model.provider) === providerId)
         .map(model => validateProviderModelId(providerId, model?.id))
         .filter(validation => validation.ok)
-        .map(validation => validation.id))].slice(0, EXTERNAL_INJECTED_OPTION_LIMIT);
+        .map(validation => validation.id))];
+}
+
+function countActiveRegistryModels(providerEntries) {
+    const modelKeys = new Set();
+    for (const entry of Array.isArray(providerEntries) ? providerEntries : []) {
+        const providerId = normalizeProviderId(entry?.providerId);
+        if (!isSupportedProvider(providerId)) {
+            continue;
+        }
+        for (const model of Array.isArray(entry?.models) ? entry.models : []) {
+            if (model?.enabled === false
+                || (model?.provider && normalizeProviderId(model.provider) !== providerId)) {
+                continue;
+            }
+            const validation = validateProviderModelId(providerId, model?.id);
+            if (!validation.ok) {
+                continue;
+            }
+            modelKeys.add(`${providerId}\u001f${validation.id}`);
+            if (modelKeys.size > EXTERNAL_MANAGED_OPTION_COUNT_LIMIT) {
+                return EXTERNAL_MANAGED_OPTION_COUNT_LIMIT + 1;
+            }
+        }
+    }
+    return modelKeys.size;
+}
+
+function countDirectManagedOptions(targets) {
+    const managedOptions = new Set();
+    for (const target of Array.isArray(targets) ? targets : []) {
+        if (target?.resolution?.source !== 'direct') {
+            continue;
+        }
+        for (const option of getOptions(target?.optionHost)) {
+            if (!isManagedOption(option)) {
+                continue;
+            }
+            managedOptions.add(option);
+            if (managedOptions.size > EXTERNAL_MANAGED_OPTION_COUNT_LIMIT) {
+                return EXTERNAL_MANAGED_OPTION_COUNT_LIMIT + 1;
+            }
+        }
+    }
+    return managedOptions.size;
 }
 
 function getExternalProviderAttributes(target, providerId, options = {}) {
@@ -1073,7 +1156,9 @@ export function syncExternalTarget(target, providerId, models, options = {}) {
         .filter(option => !isManagedOption(option) && !isManagedGroup(option?.parentElement))
         .filter(option => nativeOptionMatchesProvider(option, normalizedProviderId, externalAttributes))
         .map(option => String(option.value)));
-    const ids = enabledModelIds(normalizedProviderId, models).filter(id => !nativeIds.has(id));
+    const eligibleIds = enabledModelIds(normalizedProviderId, models)
+        .filter(id => !nativeIds.has(id));
+    const ids = eligibleIds.slice(0, EXTERNAL_INJECTED_OPTION_LIMIT);
     removeExternalTargetModels(target);
 
     if (ids.length) {
@@ -1111,6 +1196,9 @@ export function syncExternalTarget(target, providerId, models, options = {}) {
         providerId: normalizedProviderId,
         injectedIds: ids,
         nativeIds: [...nativeIds],
+        eligibleModelCount: eligibleIds.length,
+        expectedManagedOptionCount: ids.length,
+        capacityLimited: eligibleIds.length > EXTERNAL_INJECTED_OPTION_LIMIT,
         reason: null,
     };
 }
@@ -1157,21 +1245,20 @@ export function syncExternalTargetProviders(target, providerEntries, options = {
         .filter(option => !isManagedOption(option) && !isManagedGroup(option?.parentElement));
     const injectedModels = [];
     const nativeModels = [];
+    let eligibleModelCount = 0;
     removeExternalTargetModels(target);
 
     let remaining = EXTERNAL_INJECTED_OPTION_LIMIT;
     for (const entry of entries) {
-        if (remaining <= 0) {
-            break;
-        }
         const externalAttributes = getExternalProviderAttributes(target, entry.providerId, options);
         const nativeIds = new Set(nativeOptions
             .filter(option => nativeOptionMatchesProvider(option, entry.providerId, externalAttributes))
             .map(option => String(option.value)));
         nativeModels.push(...[...nativeIds].map(modelId => ({ providerId: entry.providerId, modelId })));
-        const ids = enabledModelIds(entry.providerId, entry.models)
-            .filter(id => !nativeIds.has(id))
-            .slice(0, remaining);
+        const eligibleIds = enabledModelIds(entry.providerId, entry.models)
+            .filter(id => !nativeIds.has(id));
+        eligibleModelCount += eligibleIds.length;
+        const ids = eligibleIds.slice(0, Math.max(remaining, 0));
         remaining -= ids.length;
         if (!ids.length) {
             continue;
@@ -1218,7 +1305,14 @@ export function syncExternalTargetProviders(target, providerEntries, options = {
             }
         }
     }
-    return { injectedModels, nativeModels, reason: null };
+    return {
+        injectedModels,
+        nativeModels,
+        eligibleModelCount,
+        expectedManagedOptionCount: injectedModels.length,
+        capacityLimited: eligibleModelCount > EXTERNAL_INJECTED_OPTION_LIMIT,
+        reason: null,
+    };
 }
 
 function mutationOnlyTouchesManagedNodes(record) {
@@ -1332,6 +1426,7 @@ export function createExternalIntegrationController(options = {}) {
     let active = false;
     let targets = [];
     let generation = 0;
+    let activeRegistryModelCount = 0;
     let excludedTargetIds = normalizeExcludedTargetIdSet(
         options.excludedTargetIds ?? options.excludedTargets,
     );
@@ -1636,6 +1731,10 @@ export function createExternalIntegrationController(options = {}) {
         const nextTargets = discoverExternalModelTargets(root, options);
         stabilizeTargetIds(nextTargets);
         const nextControls = new Set(nextTargets.map(target => target.control));
+        // Registry 재고는 direct target의 존재 여부와 무관한 런타임 지표다.
+        // scan마다 한 번만 snapshot을 만들고 모든 direct target 동기화에도 같은 값을 쓴다.
+        const currentProviderEntries = getProviderEntries();
+        const nextActiveRegistryModelCount = countActiveRegistryModels(currentProviderEntries);
         // 재탐지마다 현재 descriptor를 기준으로 다시 바인딩해 교체된 provider control을 놓치지 않는다.
         for (const element of [...bindings.keys()]) {
             unbindElement(element);
@@ -1669,27 +1768,23 @@ export function createExternalIntegrationController(options = {}) {
                 }
                 target.resolution = resolution;
                 if (resolution.source === 'direct') {
-                    const providerEntries = getProviderEntries();
-                    const registryModelCount = providerEntries.reduce((total, entry) => (
-                        total + enabledModelIds(entry.providerId, entry.models).length
-                    ), 0);
+                    const providerEntries = currentProviderEntries;
+                    const registryModelCount = nextActiveRegistryModelCount;
                     const syncResult = syncManagedTarget(target, () => (
                         syncExternalTargetProviders(target, providerEntries, options)
                     ));
-                    const expectedModelKeys = new Set(providerEntries.flatMap(entry => (
-                        enabledModelIds(entry.providerId, entry.models)
-                            .map(modelId => `${entry.providerId}\u001f${modelId}`)
-                    )));
+                    const expectedModelKeys = new Set(
+                        (Array.isArray(syncResult?.injectedModels) ? syncResult.injectedModels : [])
+                            .map(model => `${model.providerId}\u001f${model.modelId}`),
+                    );
                     const actualManagedModels = getOptions(target.optionHost)
                         .filter(option => isManagedOption(option))
                         .map(option => ({
                             providerId: normalizeProviderId(getAttribute(option, 'data-cmr-provider')),
                             modelId: String(option.value),
                         }));
-                    const representedModelKeys = new Set([
-                        ...(Array.isArray(syncResult?.nativeModels) ? syncResult.nativeModels : []),
-                        ...actualManagedModels,
-                    ].map(model => `${model.providerId}\u001f${model.modelId}`));
+                    const representedModelKeys = new Set(actualManagedModels
+                        .map(model => `${model.providerId}\u001f${model.modelId}`));
                     const missingModelCount = [...expectedModelKeys]
                         .filter(modelKey => !representedModelKeys.has(modelKey)).length;
                     const injectedCount = actualManagedModels.length;
@@ -1702,6 +1797,13 @@ export function createExternalIntegrationController(options = {}) {
                             : (bridgeIssue ? 'failed' : 'connected'),
                         issueCode: registryModelCount === 0 ? 'registry-empty' : bridgeIssue,
                         injectedCount: bridgeIssue ? 0 : injectedCount,
+                        eligibleModelCount: Number.isInteger(syncResult?.eligibleModelCount)
+                            ? syncResult.eligibleModelCount
+                            : 0,
+                        expectedManagedOptionCount: Number.isInteger(syncResult?.expectedManagedOptionCount)
+                            ? syncResult.expectedManagedOptionCount
+                            : 0,
+                        capacityLimited: syncResult?.capacityLimited === true,
                     };
                     if (bridgeIssue) {
                         removeExternalTargetModels(target, null, { removeOwnedHost: true });
@@ -1748,6 +1850,7 @@ export function createExternalIntegrationController(options = {}) {
                 };
             }
         }
+        activeRegistryModelCount = nextActiveRegistryModelCount;
         targets = nextTargets;
         try {
             options.onTargetsChanged?.([...targets]);
@@ -1818,18 +1921,45 @@ export function createExternalIntegrationController(options = {}) {
         for (const element of [...bindings.keys()]) {
             unbindElement(element);
         }
+        activeRegistryModelCount = 0;
         targets = [];
     }
 
     function getMetrics() {
-        const directCount = targets.filter(target => target.resolution?.source === 'direct').length;
+        const directTargets = targets.filter(target => target.resolution?.source === 'direct');
+        const directCount = directTargets.length;
         const userExcludedCount = targets.filter(target => target.resolution?.source === 'user-excluded').length;
+        const registryModelCount = active ? activeRegistryModelCount : 0;
+        const sumBridgeCount = key => {
+            let total = 0;
+            for (const target of directTargets) {
+                const value = target?.bridge?.[key];
+                if (Number.isInteger(value) && value > 0) {
+                    total += value;
+                    if (total > EXTERNAL_MANAGED_OPTION_COUNT_LIMIT) {
+                        return EXTERNAL_MANAGED_OPTION_COUNT_LIMIT + 1;
+                    }
+                }
+            }
+            return total;
+        };
+        const eligibleManagedOptionCount = active ? sumBridgeCount('eligibleModelCount') : 0;
+        const expectedManagedOptionCount = active ? sumBridgeCount('expectedManagedOptionCount') : 0;
+        const capacityLimitedTargetCount = active
+            ? directTargets.filter(target => target?.bridge?.capacityLimited === true).length
+            : 0;
+        const actualManagedOptionCount = active ? countDirectManagedOptions(targets) : 0;
         return {
             observerCount: active && observer ? 1 : 0,
             targetCount: targets.length,
             boundCount: managedTargets.size,
             directCount,
             userExcludedCount,
+            activeRegistryModelCount: registryModelCount,
+            eligibleManagedOptionCount,
+            expectedManagedOptionCount,
+            actualManagedOptionCount,
+            capacityLimitedTargetCount,
             connectedCount: targets.filter(target => (
                 target.resolution?.source === 'direct' && target.bridge?.status === 'connected'
             )).length,
@@ -1888,6 +2018,7 @@ export function createExternalIntegrationController(options = {}) {
         requestSync,
         getTargets: () => [...targets],
         getTargetDetails,
+        getRiskBlockedSummary: () => summarizeRiskBlockedTargets(targets),
         getExcludedTargetIds: () => [...excludedTargetIds],
         getMappings: () => ({}),
         getMetrics,

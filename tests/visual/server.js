@@ -60,6 +60,10 @@ function fixtureScript() {
                 { id: 'openrouter', label: 'OpenRouter' },
                 { id: 'zai', label: 'Z.AI (GLM)' },
             ];
+            const MODEL_SCROLL_THRESHOLD = 6;
+            const MODEL_SEARCH_THRESHOLD = 12;
+            const EXTERNAL_OPTION_PER_TARGET_LIMIT = 512;
+            const EXTERNAL_OPTION_WARNING_THRESHOLD = 2048;
 
             const providerSelect = document.getElementById('cmr_provider');
             for (const provider of providers) {
@@ -68,6 +72,11 @@ function fixtureScript() {
                 option.textContent = provider.label;
                 providerSelect.append(option);
             }
+            providerSelect.value = providers[0].id;
+
+            let registeredModels = [];
+            let modelSearchQuery = '';
+            let pendingDeletion = null;
 
             function modelId(index) {
                 if (index === 0) {
@@ -77,30 +86,72 @@ function fixtureScript() {
                 return prefixes[index % prefixes.length] + '-' + String(index + 1).padStart(3, '0');
             }
 
-            function renderModels(total) {
+            function configureModels(total) {
+                registeredModels = [];
+                for (let index = 0; index < Math.max(0, Number(total) || 0); index += 1) {
+                    registeredModels.push({
+                        provider: providers[index % providers.length].id,
+                        id: modelId(index),
+                    });
+                }
+                pendingDeletion = null;
+                modelSearchQuery = '';
+                document.getElementById('cmr_model_search').value = '';
+                renderModels();
+                renderUndo();
+            }
+
+            function renderModels() {
                 const list = document.getElementById('cmr_model_list');
                 const count = document.getElementById('cmr_model_count');
-                const groups = providers.map(provider => ({ provider, models: [] }));
-                for (let index = 0; index < total; index += 1) {
-                    groups[index % groups.length].models.push(modelId(index));
+                const searchRegion = document.getElementById('cmr_model_search_region');
+                const searchStatus = document.getElementById('cmr_model_search_status');
+                const searchVisible = registeredModels.length > MODEL_SEARCH_THRESHOLD;
+                searchRegion.hidden = !searchVisible;
+                if (!searchVisible) {
+                    modelSearchQuery = '';
+                    document.getElementById('cmr_model_search').value = '';
                 }
-
-                const populated = groups.filter(group => group.models.length).length;
-                count.textContent = '제공업체 ' + populated + '곳 · 모델 ' + total + '개';
-                list.dataset.scrollable = String(total > 6);
-                if (total > 6) {
+                const normalizedQuery = modelSearchQuery.trim().toLocaleLowerCase('ko');
+                const visibleModels = registeredModels.filter(model => {
+                    const provider = providers.find(item => item.id === model.provider);
+                    return !normalizedQuery
+                        || (provider?.label + ' ' + model.provider + ' ' + model.id)
+                            .toLocaleLowerCase('ko')
+                            .includes(normalizedQuery);
+                });
+                const groups = providers.map(provider => ({
+                    provider,
+                    models: visibleModels.filter(model => model.provider === provider.id),
+                }));
+                const populated = new Set(registeredModels.map(model => model.provider)).size;
+                count.textContent = normalizedQuery
+                    ? '검색 ' + visibleModels.length + '/' + registeredModels.length + '개'
+                    : '제공업체 ' + populated + '곳 · 모델 ' + registeredModels.length + '개';
+                searchStatus.textContent = normalizedQuery
+                    ? '등록 모델 ' + registeredModels.length + '개 중 ' + visibleModels.length + '개를 표시합니다.'
+                    : '';
+                list.dataset.scrollable = String(visibleModels.length > MODEL_SCROLL_THRESHOLD);
+                if (visibleModels.length > MODEL_SCROLL_THRESHOLD) {
                     list.tabIndex = 0;
-                    list.setAttribute('aria-label', '등록 모델 ' + total + '개. 스크롤하여 모두 확인할 수 있습니다.');
+                    list.setAttribute('aria-label', '표시 중인 등록 모델 ' + visibleModels.length + '개. 스크롤하여 모두 확인할 수 있습니다.');
                 } else {
                     list.removeAttribute('tabindex');
                     list.removeAttribute('aria-label');
                 }
                 list.replaceChildren();
 
-                if (total === 0) {
+                if (registeredModels.length === 0) {
                     const empty = document.createElement('li');
                     empty.className = 'cmr-empty';
                     empty.textContent = '등록한 모델이 없습니다.';
+                    list.append(empty);
+                    return;
+                }
+                if (visibleModels.length === 0) {
+                    const empty = document.createElement('li');
+                    empty.className = 'cmr-empty';
+                    empty.textContent = '검색 조건과 일치하는 등록 모델이 없습니다.';
                     list.append(empty);
                     return;
                 }
@@ -124,7 +175,8 @@ function fixtureScript() {
                     const providerList = document.createElement('ul');
                     providerList.className = 'cmr-provider-model-list';
                     providerList.setAttribute('aria-label', groupData.provider.label + ' 등록 모델');
-                    for (const id of groupData.models) {
+                    for (const model of groupData.models) {
+                        const id = model.id;
                         const row = document.createElement('li');
                         row.className = 'cmr-model-row';
                         row.dataset.provider = groupData.provider.id;
@@ -143,6 +195,9 @@ function fixtureScript() {
                         const remove = document.createElement('button');
                         remove.type = 'button';
                         remove.className = 'menu_button cmr-icon-button cmr-delete-button';
+                        remove.dataset.cmrAction = 'delete';
+                        remove.dataset.provider = groupData.provider.id;
+                        remove.dataset.modelId = id;
                         remove.title = '등록 삭제';
                         remove.setAttribute('aria-label', groupData.provider.label + ' ' + id + ' 모델 등록 삭제');
                         const icon = document.createElement('i');
@@ -158,166 +213,299 @@ function fixtureScript() {
                 }
             }
 
+            function renderUndo() {
+                const button = document.getElementById('cmr_undo_delete');
+                button.hidden = !pendingDeletion;
+                if (pendingDeletion) {
+                    button.setAttribute('aria-label', pendingDeletion.id + ' 모델 삭제 실행 취소');
+                }
+            }
+
+            document.getElementById('cmr_model_search').addEventListener('input', event => {
+                modelSearchQuery = event.currentTarget.value;
+                renderModels();
+            });
+
+            document.getElementById('cmr_model_list').addEventListener('click', event => {
+                const button = event.target.closest('[data-cmr-action="delete"]');
+                if (!button) return;
+                const index = registeredModels.findIndex(model => (
+                    model.provider === button.dataset.provider && model.id === button.dataset.modelId
+                ));
+                if (index < 0) return;
+                pendingDeletion = { ...registeredModels[index], index };
+                registeredModels.splice(index, 1);
+                document.getElementById('cmr_feedback').textContent = pendingDeletion.id + ' 모델 등록을 삭제했습니다.';
+                renderModels();
+                renderUndo();
+                document.getElementById('cmr_undo_delete').focus();
+            });
+
+            document.getElementById('cmr_undo_delete').addEventListener('click', () => {
+                if (!pendingDeletion) return;
+                const restored = pendingDeletion;
+                registeredModels.splice(Math.min(restored.index, registeredModels.length), 0, {
+                    provider: restored.provider,
+                    id: restored.id,
+                });
+                pendingDeletion = null;
+                document.getElementById('cmr_feedback').textContent = restored.id + ' 모델 등록을 복구했습니다.';
+                renderModels();
+                renderUndo();
+            });
+
+            document.getElementById('cmr_bulk_add_form').addEventListener('submit', event => {
+                event.preventDefault();
+                const textarea = document.getElementById('cmr_bulk_model_ids');
+                const provider = providerSelect.value;
+                const existing = new Set(registeredModels.map(model => model.provider + '\u0000' + model.id));
+                const additions = [];
+                for (const rawLine of textarea.value.split(/\r?\n/)) {
+                    const id = rawLine.trim();
+                    const key = provider + '\u0000' + id;
+                    if (!id || existing.has(key)) continue;
+                    existing.add(key);
+                    additions.push({ provider, id });
+                }
+                registeredModels.push(...additions);
+                pendingDeletion = null;
+                textarea.value = '';
+                document.getElementById('cmr_feedback').textContent = '모델 ' + additions.length + '개를 등록했습니다.';
+                renderModels();
+                renderUndo();
+            });
+
             let externalScenario = {
-                total: 0,
-                excludedTargets: new Set(),
-                failedTargets: new Set(),
+                targets: [],
                 failureProneTargets: new Set(),
                 runtimeProblem: false,
+                capacityLimitedTargetCount: 0,
+                expectedManagedOptionCount: 0,
+                actualManagedOptionCount: 0,
             };
 
-            function configureExternal(total, excludedTotal = 0, problemTotal = 0, runtimeProblem = false) {
+            function configureExternal({
+                total = 0,
+                excludedTotal = 0,
+                problemTotal = 0,
+                riskBlockedTotal = 0,
+                runtimeProblem = false,
+                capacityLimitedTargetCount = 0,
+                expectedManagedOptionCount = 0,
+                actualManagedOptionCount = 0,
+            } = {}) {
                 const safeTotal = Math.max(0, Number(total) || 0);
-                const safeProblems = Math.min(safeTotal, Math.max(0, Number(problemTotal) || 0));
+                const safeRiskBlocked = Math.min(safeTotal, Math.max(0, Number(riskBlockedTotal) || 0));
+                const safeProblems = Math.min(
+                    safeTotal - safeRiskBlocked,
+                    Math.max(0, Number(problemTotal) || 0),
+                );
                 const safeExcluded = Math.min(
-                    safeTotal - safeProblems,
+                    safeTotal - safeRiskBlocked - safeProblems,
                     Math.max(0, Number(excludedTotal) || 0),
                 );
-                const connectedTotal = safeTotal - safeExcluded - safeProblems;
-                const excludedTargets = new Set();
-                const failedTargets = new Set();
-                for (let index = connectedTotal; index < connectedTotal + safeExcluded; index += 1) {
-                    excludedTargets.add('fixture-target-' + index);
-                }
-                for (let index = connectedTotal + safeExcluded; index < safeTotal; index += 1) {
-                    failedTargets.add('fixture-target-' + index);
+                const connectedTotal = safeTotal - safeExcluded - safeProblems - safeRiskBlocked;
+                const targets = [];
+                for (let index = 0; index < safeTotal; index += 1) {
+                    const isExcluded = index >= connectedTotal && index < connectedTotal + safeExcluded;
+                    const isFailed = index >= connectedTotal + safeExcluded
+                        && index < connectedTotal + safeExcluded + safeProblems;
+                    const isRiskBlocked = index >= safeTotal - safeRiskBlocked;
+                    targets.push({
+                        targetId: 'fixture-target-' + index,
+                        label: isRiskBlocked ? '안전상 제외 ' + (index + 1) : '외부 확장 ' + (index + 1),
+                        controlLabel: 'Chat Completion 모델 칸 ' + (index + 1),
+                        source: isRiskBlocked ? 'risk-blocked' : (isExcluded ? 'user-excluded' : 'direct'),
+                        bridgeStatus: isFailed ? 'failed' : 'connected',
+                    });
                 }
                 externalScenario = {
-                    total: safeTotal,
-                    excludedTargets,
-                    failedTargets,
-                    failureProneTargets: new Set(failedTargets),
+                    targets,
+                    failureProneTargets: new Set(targets
+                        .filter(target => target.bridgeStatus === 'failed')
+                        .map(target => target.targetId)),
                     runtimeProblem: Boolean(runtimeProblem),
+                    capacityLimitedTargetCount: Math.max(0, Number(capacityLimitedTargetCount) || 0),
+                    expectedManagedOptionCount: Math.max(0, Number(expectedManagedOptionCount) || 0),
+                    actualManagedOptionCount: Math.max(0, Number(actualManagedOptionCount) || 0),
                 };
                 renderExternal();
             }
 
+            function createExternalRow(target) {
+                const row = document.createElement('li');
+                row.className = 'cmr-model-row cmr-external-row';
+                row.dataset.targetId = target.targetId;
+                const summary = document.createElement('div');
+                summary.className = 'cmr-model-summary';
+                const heading = document.createElement('span');
+                heading.className = 'cmr-external-heading';
+                const name = document.createElement('strong');
+                name.className = 'cmr-external-name';
+                name.textContent = target.targetId === 'fixture-target-0'
+                    ? '공백없이아주긴외부확장모델선택기이름'.repeat(8)
+                    : target.label;
+                const control = document.createElement('small');
+                control.className = 'cmr-external-control';
+                control.textContent = target.controlLabel;
+                const meta = document.createElement('span');
+                meta.className = 'cmr-external-meta';
+                const state = document.createElement('span');
+                state.className = 'cmr-external-state';
+                const verification = document.createElement('span');
+                verification.className = 'cmr-external-verification';
+                if (target.source === 'user-excluded') {
+                    state.dataset.state = 'excluded';
+                    state.textContent = '사용자 제외';
+                    verification.textContent = 'CMR 선택지를 표시하지 않음';
+                } else if (target.bridgeStatus === 'failed') {
+                    state.dataset.state = 'failed';
+                    state.textContent = '선택지 연결 실패';
+                    verification.textContent = '이 대상 제외 가능';
+                } else {
+                    state.dataset.state = 'connected';
+                    state.textContent = '선택지 연결됨';
+                    verification.textContent = '실제 요청 확인 필요';
+                }
+                meta.append(state, verification);
+                heading.append(name, control, meta);
+                summary.append(heading);
+
+                const actions = document.createElement('div');
+                actions.className = 'cmr-external-actions';
+                const action = document.createElement('button');
+                const shouldRestore = target.source === 'user-excluded';
+                action.type = 'button';
+                action.className = 'menu_button cmr-icon-button';
+                action.dataset.cmrExternalAction = shouldRestore ? 'restore' : 'exclude';
+                action.dataset.targetId = target.targetId;
+                action.title = shouldRestore ? '다시 연결' : '이 대상 연결 제외';
+                action.setAttribute(
+                    'aria-label',
+                    target.label + ' · ' + target.controlLabel
+                        + (shouldRestore ? ' 다시 연결' : ' 연결에서 제외'),
+                );
+                const icon = document.createElement('i');
+                icon.className = shouldRestore ? 'fa-solid fa-rotate-left' : 'fa-solid fa-eye-slash';
+                icon.setAttribute('aria-hidden', 'true');
+                action.append(icon);
+                actions.append(action);
+                row.append(summary, actions);
+                return row;
+            }
+
+            function appendExternalRows(list, targets, emptyMessage) {
+                list.replaceChildren();
+                for (const target of targets) list.append(createExternalRow(target));
+                if (!targets.length) {
+                    const empty = document.createElement('li');
+                    empty.className = 'cmr-empty';
+                    empty.textContent = emptyMessage;
+                    list.append(empty);
+                }
+            }
+
             function renderExternal() {
                 const list = document.getElementById('cmr_external_list');
+                const pickerList = document.getElementById('cmr_external_picker_list');
                 const count = document.getElementById('cmr_external_count');
                 const status = document.getElementById('cmr_external_status');
                 const warning = document.getElementById('cmr_external_warning');
                 const warningText = document.getElementById('cmr_external_warning_text');
-                const failedTotal = externalScenario.failedTargets.size;
-                const excludedTotal = externalScenario.excludedTargets.size;
-                const connectedTotal = externalScenario.total - failedTotal - excludedTotal;
-                const hasProblem = failedTotal > 0 || externalScenario.runtimeProblem;
-                count.textContent = '연결 ' + connectedTotal + '개 · 제외 ' + excludedTotal + '개';
-                status.dataset.state = hasProblem ? 'error' : 'ok';
-                status.textContent = failedTotal
-                    ? failedTotal + '개 대상의 선택지 연결을 확인해야 합니다.'
+                const failedTargets = externalScenario.targets.filter(target => (
+                    target.source === 'direct' && target.bridgeStatus === 'failed'
+                ));
+                const excludedTargets = externalScenario.targets.filter(target => target.source === 'user-excluded');
+                const selectableTargets = externalScenario.targets.filter(target => (
+                    target.source === 'direct' && target.bridgeStatus !== 'failed'
+                ));
+                const optionCapacityLimited = externalScenario.capacityLimitedTargetCount > 0;
+                const managedOptionCount = Math.max(
+                    externalScenario.expectedManagedOptionCount,
+                    externalScenario.actualManagedOptionCount,
+                );
+                const optionBudgetExceeded = managedOptionCount > EXTERNAL_OPTION_WARNING_THRESHOLD;
+                const hasProblem = failedTargets.length > 0 || externalScenario.runtimeProblem
+                    || optionCapacityLimited || optionBudgetExceeded;
+
+                count.textContent = failedTargets.length || excludedTargets.length
+                    ? '문제 ' + failedTargets.length + '개 · 사용자 제외 ' + excludedTargets.length + '개'
+                    : (optionCapacityLimited || optionBudgetExceeded ? '성능 주의' : '설정 없음');
+                status.dataset.state = failedTargets.length || externalScenario.runtimeProblem
+                    ? 'error'
+                    : (optionCapacityLimited || optionBudgetExceeded ? 'warning' : 'ok');
+                status.textContent = failedTargets.length
+                    ? failedTargets.length + '개 대상의 선택지 연결을 확인해야 합니다.'
                     : externalScenario.runtimeProblem
                         ? '외부 연결 감시 자원을 확인해야 합니다.'
-                        : connectedTotal + '개 연결 · 0개 대기 · ' + excludedTotal + '개 사용자 제외';
+                        : optionCapacityLimited
+                            ? '외부 모델 칸 ' + externalScenario.capacityLimitedTargetCount
+                                + '곳은 표시 가능한 CMR 선택지가 ' + EXTERNAL_OPTION_PER_TARGET_LIMIT
+                                + '개를 넘어 일부만 표시합니다.'
+                            : optionBudgetExceeded
+                                ? '외부 모델 선택지 ' + managedOptionCount
+                                    + '개가 권장 한도 2048개를 초과했습니다.'
+                                : excludedTargets.length
+                                    ? excludedTargets.length + '개 대상을 사용자가 연결에서 제외했습니다.'
+                                    : '현재 조치가 필요한 외부 연결 문제가 없습니다.';
+
+                const warningMessages = [];
+                if (failedTargets.length) {
+                    warningMessages.push(failedTargets.length + '개 모델 칸에 선택지를 표시하지 못했습니다.');
+                } else if (externalScenario.runtimeProblem) {
+                    warningMessages.push('외부 연결 감시 자원 상태가 예상과 다릅니다.');
+                }
+                if (!failedTargets.length && !externalScenario.runtimeProblem && optionCapacityLimited) {
+                    warningMessages.push('외부 모델 칸 ' + externalScenario.capacityLimitedTargetCount
+                        + '곳은 표시 가능한 CMR 선택지가 ' + EXTERNAL_OPTION_PER_TARGET_LIMIT
+                        + '개를 넘어 일부만 표시합니다.');
+                } else if (!failedTargets.length && !externalScenario.runtimeProblem && optionBudgetExceeded) {
+                    warningMessages.push('외부 모델 선택지 ' + managedOptionCount
+                        + '개가 권장 한도 2048개를 초과했습니다.');
+                }
                 warning.hidden = !hasProblem;
-                warningText.textContent = failedTotal
-                    ? failedTotal + '개 모델 칸에 선택지를 표시하지 못했습니다.'
-                    : externalScenario.runtimeProblem
-                        ? '외부 연결 감시 자원 상태가 예상과 다릅니다.'
-                        : '';
-                list.replaceChildren();
-
-                if (externalScenario.total === 0) {
-                    const empty = document.createElement('li');
-                    empty.className = 'cmr-empty';
-                    empty.textContent = '현재 화면에서 외부 확장의 모델 칸을 찾지 못했습니다.';
-                    list.append(empty);
-                    return;
-                }
-
-                for (let index = 0; index < externalScenario.total; index += 1) {
-                    const targetId = 'fixture-target-' + index;
-                    const isExcluded = externalScenario.excludedTargets.has(targetId);
-                    const isFailed = externalScenario.failedTargets.has(targetId);
-                    const row = document.createElement('li');
-                    row.className = 'cmr-model-row cmr-external-row';
-                    row.dataset.targetId = targetId;
-                    const summary = document.createElement('div');
-                    summary.className = 'cmr-model-summary';
-                    const heading = document.createElement('span');
-                    heading.className = 'cmr-external-heading';
-                    const name = document.createElement('strong');
-                    name.className = 'cmr-external-name';
-                    name.textContent = index === 0
-                        ? '공백없이아주긴외부확장모델선택기이름'.repeat(8)
-                        : '외부 확장 ' + (index + 1);
-                    const control = document.createElement('small');
-                    control.className = 'cmr-external-control';
-                    control.textContent = 'Chat Completion 모델 칸 ' + (index + 1);
-                    const meta = document.createElement('span');
-                    meta.className = 'cmr-external-meta';
-                    const state = document.createElement('span');
-                    state.className = 'cmr-external-state';
-                    const verification = document.createElement('span');
-                    verification.className = 'cmr-external-verification';
-                    if (isFailed) {
-                        state.dataset.state = 'failed';
-                        state.textContent = '선택지 연결 실패';
-                        verification.textContent = '고급 진단 확인 필요';
-                    } else if (isExcluded) {
-                        state.dataset.state = 'excluded';
-                        state.textContent = '연결 제외';
-                        verification.textContent = 'CMR 선택지를 표시하지 않음';
-                    } else {
-                        state.dataset.state = 'connected';
-                        state.textContent = '선택지 연결됨';
-                        verification.textContent = '실제 요청 확인 필요';
-                    }
-                    meta.append(state, verification);
-                    heading.append(name, control, meta);
-                    summary.append(heading);
-
-                    const actions = document.createElement('div');
-                    actions.className = 'cmr-external-actions';
-                    const action = document.createElement('button');
-                    action.type = 'button';
-                    action.className = 'menu_button cmr-icon-button';
-                    action.dataset.cmrExternalAction = isExcluded ? 'restore' : 'exclude';
-                    action.dataset.targetId = row.dataset.targetId;
-                    action.title = isExcluded ? '다시 연결' : '이 대상 연결 제외';
-                    action.setAttribute(
-                        'aria-label',
-                        name.textContent + ' · ' + control.textContent
-                            + (isExcluded ? ' 다시 연결' : ' 연결에서 제외'),
-                    );
-                    const icon = document.createElement('i');
-                    icon.className = isExcluded
-                        ? 'fa-solid fa-rotate-left'
-                        : 'fa-solid fa-eye-slash';
-                    icon.setAttribute('aria-hidden', 'true');
-                    action.append(icon);
-                    actions.append(action);
-                    row.append(summary, actions);
-                    list.append(row);
-                }
+                warningText.textContent = warningMessages.join('\n');
+                appendExternalRows(
+                    list,
+                    [...failedTargets, ...excludedTargets],
+                    '연결 실패나 사용자 제외 대상이 없습니다.',
+                );
+                appendExternalRows(
+                    pickerList,
+                    selectableTargets,
+                    '현재 화면에서 직접 제외할 수 있는 외부 모델 칸이 없습니다.',
+                );
             }
 
-            document.getElementById('cmr_external_list').addEventListener('click', event => {
+            document.getElementById('cmr_external_advanced').addEventListener('click', event => {
                 const action = event.target.closest('[data-cmr-external-action]');
                 if (!action) return;
-                const targetId = action.dataset.targetId;
+                const target = externalScenario.targets.find(item => item.targetId === action.dataset.targetId);
+                if (!target) return;
                 if (action.dataset.cmrExternalAction === 'exclude') {
-                    externalScenario.excludedTargets.add(targetId);
-                    externalScenario.failedTargets.delete(targetId);
+                    target.source = 'user-excluded';
+                    target.bridgeStatus = 'connected';
                 } else {
-                    externalScenario.excludedTargets.delete(targetId);
-                    if (externalScenario.failureProneTargets.has(targetId)) {
-                        externalScenario.failedTargets.add(targetId);
-                    }
+                    target.source = 'direct';
+                    target.bridgeStatus = externalScenario.failureProneTargets.has(target.targetId)
+                        ? 'failed'
+                        : 'connected';
                 }
                 renderExternal();
                 [...document.querySelectorAll('[data-cmr-external-action]')]
-                    .find(candidate => candidate.dataset.targetId === targetId)
+                    .find(candidate => candidate.dataset.targetId === target.targetId)
                     ?.focus();
             });
 
-            function renderDiagnostics(total) {
+            function renderDiagnostics(total, optionWarning = false) {
                 const list = document.getElementById('cmr_diagnostic_list');
                 const summary = document.getElementById('cmr_diagnostic_summary');
-                summary.dataset.state = 'ok';
-                summary.textContent = total
-                    ? '호환성 진단 예시 결과입니다.'
-                    : '진단을 실행하면 버전·이벤트·모델 컨트롤·중복 자원을 확인합니다.';
+                summary.dataset.state = optionWarning ? 'warning' : 'ok';
+                summary.textContent = optionWarning
+                    ? '호환성 검사에서 외부 모델 선택지 성능 주의를 찾았습니다.'
+                    : (total
+                        ? '호환성 진단 예시 결과입니다.'
+                        : '진단을 실행하면 버전·이벤트·모델 컨트롤·중복 자원을 확인합니다.');
                 list.replaceChildren();
                 for (let index = 0; index < total; index += 1) {
                     const item = document.createElement('li');
@@ -326,30 +514,86 @@ function fixtureScript() {
                         + ' · 실제 Chromium 배치 검사용 진단 항목 ' + (index + 1) + '입니다.';
                     list.append(item);
                 }
+                if (optionWarning) {
+                    const item = document.createElement('li');
+                    item.dataset.status = 'warning';
+                    item.textContent = '외부 모델 선택지 DOM 옵션이 권장 한도를 초과했습니다.';
+                    list.append(item);
+                }
             }
+
+            function renderImportPreview(visible, itemCount = 3) {
+                const preview = document.getElementById('cmr_import_preview');
+                const summary = document.getElementById('cmr_import_preview_summary');
+                const list = document.getElementById('cmr_import_preview_list');
+                preview.hidden = !visible;
+                list.replaceChildren();
+                if (!visible) {
+                    summary.textContent = '';
+                    return;
+                }
+                summary.dataset.state = 'warning';
+                summary.textContent = '추가 2건 · 변경 충돌 1건 · 삭제 1건';
+                const changes = ['addition', 'conflict', 'deletion'];
+                for (let index = 0; index < itemCount; index += 1) {
+                    const item = document.createElement('li');
+                    item.dataset.change = changes[index % changes.length];
+                    item.textContent = (index % 3 === 0
+                        ? '모델 추가 · Google Vertex AI · gemini-import-preview-'
+                        : index % 3 === 1
+                            ? '모델 선택 변경 · OpenRouter · '
+                            : '기능 경로 삭제 · translation · ') + (index + 1);
+                    list.append(item);
+                }
+            }
+
+            document.getElementById('cmr_import_preview_cancel').addEventListener('click', () => {
+                renderImportPreview(false);
+                document.getElementById('cmr_feedback').textContent = '백업 가져오기를 취소했습니다.';
+            });
+            document.getElementById('cmr_import_preview_apply').addEventListener('click', () => {
+                renderImportPreview(false);
+                document.getElementById('cmr_feedback').textContent = '미리보기에서 확인한 변경을 적용했습니다.';
+            });
 
             globalThis.setUiRegressionState = ({
                 modelCount = 0,
                 externalCount = 0,
                 externalExcludedCount = 0,
                 externalProblemCount = 0,
+                externalRiskBlockedCount = 0,
                 externalRuntimeProblem = false,
+                externalCapacityLimitedTargetCount = 0,
+                externalExpectedManagedOptionCount = 0,
+                externalActualManagedOptionCount = 0,
                 diagnosticCount = 0,
+                diagnosticOptionWarning = false,
+                showImportPreview = false,
+                importPreviewItemCount = 3,
                 openDetails = false,
                 openAdvanced = openDetails,
+                openPicker = false,
+                openBulk = false,
             } = {}) => {
-                renderModels(modelCount);
-                configureExternal(
-                    externalCount,
-                    externalExcludedCount,
-                    externalProblemCount,
-                    externalRuntimeProblem,
-                );
-                renderDiagnostics(diagnosticCount);
+                configureModels(modelCount);
+                configureExternal({
+                    total: externalCount,
+                    excludedTotal: externalExcludedCount,
+                    problemTotal: externalProblemCount,
+                    riskBlockedTotal: externalRiskBlockedCount,
+                    runtimeProblem: externalRuntimeProblem,
+                    capacityLimitedTargetCount: externalCapacityLimitedTargetCount,
+                    expectedManagedOptionCount: externalExpectedManagedOptionCount,
+                    actualManagedOptionCount: externalActualManagedOptionCount,
+                });
+                renderDiagnostics(diagnosticCount, diagnosticOptionWarning);
+                renderImportPreview(showImportPreview, importPreviewItemCount);
                 for (const details of document.querySelectorAll('#cmr_settings details')) {
                     details.open = openDetails;
                 }
                 document.getElementById('cmr_external_advanced').open = openAdvanced;
+                document.getElementById('cmr_external_picker').open = openPicker;
+                document.getElementById('cmr_bulk_add').open = openBulk;
             };
 
             document.getElementById('cmr_external_warning_open').addEventListener('click', () => {
@@ -357,7 +601,8 @@ function fixtureScript() {
                 const advanced = document.getElementById('cmr_external_advanced');
                 operations.open = true;
                 advanced.open = true;
-                advanced.querySelector('summary').focus();
+                const failedAction = advanced.querySelector('#cmr_external_list [data-cmr-external-action="exclude"]');
+                (failedAction ?? document.getElementById('cmr_external_status') ?? advanced.querySelector('summary')).focus();
             });
 
             const dialog = document.getElementById('cmr_manager_dialog');

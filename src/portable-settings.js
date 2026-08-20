@@ -26,9 +26,15 @@ import {
 
 export const PORTABLE_SETTINGS_FORMAT = 'custom-model-router-portable-settings';
 export const PORTABLE_SETTINGS_SCHEMA_VERSION = 2;
-export const PORTABLE_SETTINGS_MAX_LENGTH = 1_000_000;
+// The structural limits below produce at most about 6 MB even when every
+// model ID, route and external selection is filled to its own maximum. Keep a
+// bounded margin so every backup successfully created here can be parsed by
+// the same version without weakening the import size guard indefinitely.
+export const PORTABLE_SETTINGS_MAX_LENGTH = 8_000_000;
 export const PORTABLE_SETTINGS_MAX_MODELS = 5_000;
 export const PORTABLE_SETTINGS_MAX_ROUTES = 256;
+export const SETTINGS_IMPORT_PREVIEW_SCHEMA_VERSION = 1;
+export const SETTINGS_REPAIR_DETAILS_SCHEMA_VERSION = 1;
 
 const ROOT_KEYS = Object.freeze(['format', 'schemaVersion', 'createdAt', 'registry', 'purposeRoutes', 'externalIntegrations']);
 const REGISTRY_KEYS = Object.freeze(['schemaVersion', 'models', 'selectedModels']);
@@ -105,6 +111,16 @@ function normalizeCreatedAt(value) {
     return date.toISOString();
 }
 
+function getUtf8ByteLength(value) {
+    const text = String(value ?? '');
+    if (typeof TextEncoder === 'function') {
+        return new TextEncoder().encode(text).byteLength;
+    }
+    // JSON.stringify escapes lone surrogates, so encodeURIComponent is safe for
+    // serialized portable settings on older runtimes without TextEncoder.
+    return encodeURIComponent(text).replace(/%[0-9A-F]{2}|./g, 'x').length;
+}
+
 /**
  * 전달받은 객체에서 모델 Registry와 용도별 경로 필드만 새 객체로 복사한다.
  * API 키, 엔드포인트, Service Account, Connection Profile 본문은 읽거나 복사하지 않는다.
@@ -136,7 +152,7 @@ export function createPortableSettings(options = {}) {
             error?.message ?? '외부 확장 연결 설정을 내보낼 수 없습니다.',
         );
     }
-    return {
+    const portable = {
         format: PORTABLE_SETTINGS_FORMAT,
         schemaVersion: PORTABLE_SETTINGS_SCHEMA_VERSION,
         createdAt: normalizeCreatedAt(options.createdAt ?? options.now),
@@ -144,11 +160,31 @@ export function createPortableSettings(options = {}) {
         purposeRoutes: clonePurposeRoutes(options.purposeRoutes),
         externalIntegrations: cloneExternalSettings(options.externalSettings),
     };
+    if (portable.registry.models.length > PORTABLE_SETTINGS_MAX_MODELS) {
+        throw new PortableSettingsError(
+            'too_many_models',
+            `모델은 최대 ${PORTABLE_SETTINGS_MAX_MODELS.toLocaleString('ko-KR')}개까지 내보낼 수 있습니다.`,
+        );
+    }
+    if (Object.keys(portable.purposeRoutes.routes).length > PORTABLE_SETTINGS_MAX_ROUTES) {
+        throw new PortableSettingsError(
+            'too_many_routes',
+            `용도별 경로는 최대 ${PORTABLE_SETTINGS_MAX_ROUTES}개까지 내보낼 수 있습니다.`,
+        );
+    }
+    return portable;
 }
 
 export function stringifyPortableSettings(options = {}, space = 2) {
     const indentation = Number.isInteger(space) ? Math.min(Math.max(space, 0), 8) : 2;
-    return JSON.stringify(createPortableSettings(options), null, indentation);
+    const serialized = JSON.stringify(createPortableSettings(options), null, indentation);
+    if (getUtf8ByteLength(serialized) > PORTABLE_SETTINGS_MAX_LENGTH) {
+        throw new PortableSettingsError(
+            'backup_too_large',
+            `백업 JSON은 UTF-8 기준 ${PORTABLE_SETTINGS_MAX_LENGTH.toLocaleString('ko-KR')}바이트 이하여야 합니다.`,
+        );
+    }
+    return serialized;
 }
 
 function createIssue(severity, code, path, message) {
@@ -174,12 +210,12 @@ function addUnknownKeyIssues(issues, value, allowedKeys, path) {
 
 function parseInput(input, issues) {
     if (typeof input === 'string') {
-        if (input.length > PORTABLE_SETTINGS_MAX_LENGTH) {
+        if (getUtf8ByteLength(input) > PORTABLE_SETTINGS_MAX_LENGTH) {
             issues.push(createIssue(
                 'error',
                 'backup_too_large',
                 '$',
-                `백업 JSON은 ${PORTABLE_SETTINGS_MAX_LENGTH.toLocaleString('ko-KR')}자 이하여야 합니다.`,
+                `백업 JSON은 UTF-8 기준 ${PORTABLE_SETTINGS_MAX_LENGTH.toLocaleString('ko-KR')}바이트 이하여야 합니다.`,
             ));
             return null;
         }
@@ -201,12 +237,12 @@ function parseInput(input, issues) {
         if (typeof serialized !== 'string') {
             throw new TypeError('직렬화할 수 없음');
         }
-        if (serialized.length > PORTABLE_SETTINGS_MAX_LENGTH) {
+        if (getUtf8ByteLength(serialized) > PORTABLE_SETTINGS_MAX_LENGTH) {
             issues.push(createIssue(
                 'error',
                 'backup_too_large',
                 '$',
-                `백업 JSON은 ${PORTABLE_SETTINGS_MAX_LENGTH.toLocaleString('ko-KR')}자 이하여야 합니다.`,
+                `백업 JSON은 UTF-8 기준 ${PORTABLE_SETTINGS_MAX_LENGTH.toLocaleString('ko-KR')}바이트 이하여야 합니다.`,
             ));
             return null;
         }
@@ -651,6 +687,312 @@ export function parsePortableSettings(input) {
     };
 }
 
+function compareText(left, right) {
+    return String(left).localeCompare(String(right), 'en');
+}
+
+function createModelIdentity(model) {
+    return {
+        provider: model.provider,
+        modelId: model.id,
+    };
+}
+
+function createModelMap(settings) {
+    return new Map(settings.models.map(model => [
+        JSON.stringify([model.provider, model.id]),
+        model,
+    ]));
+}
+
+function compareRegistryModels(current, imported) {
+    const currentModels = createModelMap(current);
+    const importedModels = createModelMap(imported);
+    const additions = [];
+    const conflicts = [];
+    const deletions = [];
+
+    for (const [key, model] of importedModels) {
+        const previous = currentModels.get(key);
+        if (!previous) {
+            additions.push(createModelIdentity(model));
+            continue;
+        }
+        const changedKeys = ['protocol', 'enabled'].filter(field => previous[field] !== model[field]);
+        if (changedKeys.length) {
+            conflicts.push({ ...createModelIdentity(model), changedKeys });
+        }
+    }
+    for (const [key, model] of currentModels) {
+        if (!importedModels.has(key)) {
+            deletions.push(createModelIdentity(model));
+        }
+    }
+
+    const sortModels = (left, right) => (
+        compareText(left.provider, right.provider) || compareText(left.modelId, right.modelId)
+    );
+    additions.sort(sortModels);
+    conflicts.sort(sortModels);
+    deletions.sort(sortModels);
+    return { additions, conflicts, deletions };
+}
+
+function compareRegistrySelections(current, imported) {
+    const additions = [];
+    const conflicts = [];
+    const deletions = [];
+    const providers = new Set([
+        ...Object.keys(current.selectedModels),
+        ...Object.keys(imported.selectedModels),
+    ]);
+
+    for (const provider of [...providers].sort(compareText)) {
+        const currentModelId = current.selectedModels[provider];
+        const importedModelId = imported.selectedModels[provider];
+        if (currentModelId === undefined) {
+            additions.push({ provider, modelId: importedModelId });
+        } else if (importedModelId === undefined) {
+            deletions.push({ provider, modelId: currentModelId });
+        } else if (currentModelId !== importedModelId) {
+            conflicts.push({ provider, currentModelId, importedModelId });
+        }
+    }
+    return { additions, conflicts, deletions };
+}
+
+function routeKeys(route) {
+    return ROUTE_KEYS.filter(key => Object.hasOwn(route, key));
+}
+
+function comparePurposeRoutes(current, imported) {
+    const additions = [];
+    const conflicts = [];
+    const deletions = [];
+    const purposes = new Set([
+        ...Object.keys(current.routes),
+        ...Object.keys(imported.routes),
+    ]);
+
+    for (const purpose of [...purposes].sort(compareText)) {
+        const currentRoute = current.routes[purpose];
+        const importedRoute = imported.routes[purpose];
+        if (!currentRoute) {
+            additions.push({ purpose, keys: routeKeys(importedRoute) });
+            continue;
+        }
+        if (!importedRoute) {
+            deletions.push({ purpose, keys: routeKeys(currentRoute) });
+            continue;
+        }
+        const changedKeys = ROUTE_KEYS.filter(key => currentRoute[key] !== importedRoute[key]);
+        if (changedKeys.length) {
+            conflicts.push({ purpose, changedKeys });
+        }
+    }
+    return { additions, conflicts, deletions };
+}
+
+function createExternalTargetStates(settings) {
+    const targetIds = new Set([
+        ...Object.keys(settings.selectedModels),
+        ...Object.keys(settings.excludedTargets),
+    ]);
+    return new Map([...targetIds].map(targetId => [targetId, {
+        selections: Object.entries(settings.selectedModels[targetId] ?? {})
+            .sort(([left], [right]) => compareText(left, right)),
+        excluded: settings.excludedTargets[targetId] === true,
+    }]));
+}
+
+function countExternalSettings(settings) {
+    const targets = createExternalTargetStates(settings);
+    return {
+        targets: targets.size,
+        selectedTargets: Object.keys(settings.selectedModels).length,
+        selections: Object.values(settings.selectedModels)
+            .reduce((total, selections) => total + Object.keys(selections).length, 0),
+        excludedTargets: Object.keys(settings.excludedTargets).length,
+    };
+}
+
+function compareExternalSettings(current, imported) {
+    const currentTargets = createExternalTargetStates(current);
+    const importedTargets = createExternalTargetStates(imported);
+    let targetAdditions = 0;
+    let targetConflicts = 0;
+    let targetDeletions = 0;
+    let selectionAdditions = 0;
+    let selectionConflicts = 0;
+    let selectionDeletions = 0;
+    let exclusionAdditions = 0;
+    let exclusionDeletions = 0;
+
+    for (const [targetId, importedState] of importedTargets) {
+        const currentState = currentTargets.get(targetId);
+        if (!currentState) {
+            targetAdditions += 1;
+        } else if (JSON.stringify(currentState) !== JSON.stringify(importedState)) {
+            targetConflicts += 1;
+        }
+    }
+    for (const targetId of currentTargets.keys()) {
+        if (!importedTargets.has(targetId)) {
+            targetDeletions += 1;
+        }
+    }
+
+    const currentSelections = new Map();
+    const importedSelections = new Map();
+    for (const [targetId, selections] of Object.entries(current.selectedModels)) {
+        for (const [provider, modelId] of Object.entries(selections)) {
+            currentSelections.set(JSON.stringify([targetId, provider]), modelId);
+        }
+    }
+    for (const [targetId, selections] of Object.entries(imported.selectedModels)) {
+        for (const [provider, modelId] of Object.entries(selections)) {
+            importedSelections.set(JSON.stringify([targetId, provider]), modelId);
+        }
+    }
+    for (const [key, modelId] of importedSelections) {
+        if (!currentSelections.has(key)) {
+            selectionAdditions += 1;
+        } else if (currentSelections.get(key) !== modelId) {
+            selectionConflicts += 1;
+        }
+    }
+    for (const key of currentSelections.keys()) {
+        if (!importedSelections.has(key)) {
+            selectionDeletions += 1;
+        }
+    }
+    for (const targetId of Object.keys(imported.excludedTargets)) {
+        if (!Object.hasOwn(current.excludedTargets, targetId)) {
+            exclusionAdditions += 1;
+        }
+    }
+    for (const targetId of Object.keys(current.excludedTargets)) {
+        if (!Object.hasOwn(imported.excludedTargets, targetId)) {
+            exclusionDeletions += 1;
+        }
+    }
+
+    return {
+        currentCounts: countExternalSettings(current),
+        importedCounts: countExternalSettings(imported),
+        changes: {
+            targets: {
+                additions: targetAdditions,
+                conflicts: targetConflicts,
+                deletions: targetDeletions,
+            },
+            selections: {
+                additions: selectionAdditions,
+                conflicts: selectionConflicts,
+                deletions: selectionDeletions,
+            },
+            exclusions: {
+                additions: exclusionAdditions,
+                conflicts: 0,
+                deletions: exclusionDeletions,
+            },
+        },
+    };
+}
+
+function changeSetHasEntries(changeSet) {
+    return changeSet.additions.length > 0
+        || changeSet.conflicts.length > 0
+        || changeSet.deletions.length > 0;
+}
+
+function countChangeSet(changeSet) {
+    return changeSet.additions.length + changeSet.conflicts.length + changeSet.deletions.length;
+}
+
+/**
+ * 검증·정규화를 마친 현재/가져오기 설정만 비교한다. 모델 ID 외의 경로 값은
+ * 노출하지 않고 외부 target은 원문 식별자 대신 개수만 반환한다.
+ */
+export function createSettingsImportPreview(options = {}) {
+    const currentRegistry = cloneRegistrySettings(options.currentRegistrySettings);
+    const importedRegistry = cloneRegistrySettings(options.importedRegistrySettings);
+    const currentRoutes = clonePurposeRoutes(options.currentPurposeRoutes);
+    const importedRoutes = clonePurposeRoutes(options.importedPurposeRoutes);
+    const currentExternal = cloneExternalSettings(options.currentExternalSettings);
+    const importedExternal = cloneExternalSettings(options.importedExternalSettings);
+    const models = compareRegistryModels(currentRegistry, importedRegistry);
+    const selections = compareRegistrySelections(currentRegistry, importedRegistry);
+    const routes = comparePurposeRoutes(currentRoutes, importedRoutes);
+    const external = compareExternalSettings(currentExternal, importedExternal);
+    // `targets` is derived from selections/exclusions. Counting both would report the
+    // same external record twice, so the headline uses only the concrete records.
+    const externalSummary = [external.changes.selections, external.changes.exclusions]
+        .reduce((summary, changes) => ({
+        additions: summary.additions + changes.additions,
+        conflicts: summary.conflicts + changes.conflicts,
+        deletions: summary.deletions + changes.deletions,
+        }), { additions: 0, conflicts: 0, deletions: 0 });
+    const externalChangeCount = Object.values(external.changes).reduce((total, changes) => (
+        total + changes.additions + changes.conflicts + changes.deletions
+    ), 0);
+    const hasChanges = changeSetHasEntries(models)
+        || changeSetHasEntries(selections)
+        || changeSetHasEntries(routes)
+        || externalChangeCount > 0;
+
+    return {
+        schemaVersion: SETTINGS_IMPORT_PREVIEW_SCHEMA_VERSION,
+        status: hasChanges ? 'changes' : 'no-change',
+        hasChanges,
+        summary: {
+            additions: models.additions.length
+                + selections.additions.length
+                + routes.additions.length
+                + externalSummary.additions,
+            conflicts: models.conflicts.length
+                + selections.conflicts.length
+                + routes.conflicts.length
+                + externalSummary.conflicts,
+            deletions: models.deletions.length
+                + selections.deletions.length
+                + routes.deletions.length
+                + externalSummary.deletions,
+        },
+        registry: {
+            models,
+            selections,
+            changeCount: countChangeSet(models) + countChangeSet(selections),
+        },
+        routes: {
+            ...routes,
+            changeCount: countChangeSet(routes),
+        },
+        external,
+    };
+}
+
+/**
+ * portable 원문을 기존 원자 검증기로 먼저 검사한 뒤 안전한 미리보기만 반환한다.
+ * invalid/future schema는 parsePortableSettings와 동일한 오류로 중단한다.
+ */
+export function previewPortableSettingsImport(input, current = {}) {
+    const parsed = parsePortableSettings(input);
+    const preview = createSettingsImportPreview({
+        currentRegistrySettings: current.registrySettings,
+        currentPurposeRoutes: current.purposeRoutes,
+        currentExternalSettings: current.externalSettings,
+        importedRegistrySettings: parsed.registrySettings,
+        importedPurposeRoutes: parsed.purposeRoutes,
+        importedExternalSettings: parsed.externalSettings,
+    });
+    return {
+        ...preview,
+        importStatus: parsed.report.status,
+        warningCodes: parsed.report.warnings.map(issue => issue.code),
+    };
+}
+
 function countRecordEntries(value) {
     return isRecord(value) ? Object.keys(value).length : 0;
 }
@@ -666,12 +1008,259 @@ function countRegistrySelections(value) {
     return Object.keys(selectedModels).length + (legacyIsDistinct ? 1 : 0);
 }
 
+function createRepairDetailCollector() {
+    const records = new Map();
+    return {
+        add(code, action, pathCategory, count = 1) {
+            if (!Number.isInteger(count) || count <= 0) {
+                return;
+            }
+            const key = JSON.stringify([code, action, pathCategory]);
+            const current = records.get(key) ?? { code, action, pathCategory, count: 0 };
+            current.count += count;
+            records.set(key, current);
+        },
+        finish() {
+            const items = [...records.values()].sort((left, right) => (
+                compareText(left.pathCategory, right.pathCategory)
+                || compareText(left.action, right.action)
+                || compareText(left.code, right.code)
+            ));
+            const totals = { removed: 0, changed: 0, rejected: 0 };
+            for (const item of items) {
+                totals[item.action] += item.count;
+            }
+            return {
+                schemaVersion: SETTINGS_REPAIR_DETAILS_SCHEMA_VERSION,
+                totals,
+                items,
+            };
+        },
+    };
+}
+
+function countUnknownFields(value, allowedKeys) {
+    if (!isRecord(value)) {
+        return 0;
+    }
+    const allowed = new Set(allowedKeys);
+    return Object.keys(value).filter(key => !allowed.has(key)).length;
+}
+
+function isLegacyRegistrySettings(source) {
+    return source.schemaVersion === 1
+        || (
+            source.schemaVersion === undefined
+            && Object.hasOwn(source, 'selectedModelId')
+            && !Object.hasOwn(source, 'selectedModels')
+        );
+}
+
+function classifySchemaRepair(source, currentVersion, legacySchema = false) {
+    if (legacySchema) {
+        return 'migrated';
+    }
+    if (Object.keys(source).length > 0 && source.schemaVersion !== currentVersion) {
+        return 'normalized';
+    }
+    return null;
+}
+
+function analyzeRegistryRepair(source, normalized, details) {
+    const legacySchema = isLegacyRegistrySettings(source);
+    details.add(
+        'registry_unknown_fields_removed',
+        'removed',
+        'registry',
+        countUnknownFields(source, [...REGISTRY_KEYS, 'selectedModelId']),
+    );
+    const schemaRepair = classifySchemaRepair(source, SETTINGS_SCHEMA_VERSION, legacySchema);
+    if (schemaRepair === 'migrated') {
+        details.add('schema_migrated', 'changed', 'registry.schema', 1);
+    } else if (schemaRepair === 'normalized') {
+        details.add('schema_normalized', 'changed', 'registry.schema', 1);
+    }
+
+    if (!Array.isArray(source.models)) {
+        if (source.models !== undefined) {
+            details.add('models_container_replaced', 'changed', 'registry.models', 1);
+        }
+    } else {
+        const seenModels = new Set();
+        for (const candidate of source.models) {
+            if (!isRecord(candidate)) {
+                details.add('model_invalid_removed', 'removed', 'registry.models', 1);
+                continue;
+            }
+            const providerId = legacySchema
+                ? VERTEX_PROVIDER
+                : normalizeProviderId(candidate.provider);
+            const validation = validateProviderModelId(providerId, candidate.id);
+            if (!isSupportedProvider(providerId) || !validation.ok) {
+                details.add('model_invalid_removed', 'removed', 'registry.models', 1);
+                continue;
+            }
+            const key = JSON.stringify([providerId, validation.id]);
+            if (seenModels.has(key)) {
+                details.add('model_duplicate_merged', 'removed', 'registry.models', 1);
+                continue;
+            }
+            seenModels.add(key);
+            if (legacySchema) {
+                details.add(
+                    'model_unknown_fields_removed',
+                    'removed',
+                    'registry.models',
+                    countUnknownFields(candidate, ['id']),
+                );
+                continue;
+            }
+            const provider = getProvider(providerId);
+            const canonical = {
+                id: validation.id,
+                provider: providerId,
+                protocol: provider.protocol,
+                enabled: candidate.enabled !== false,
+            };
+            const knownValueChanged = MODEL_KEYS.some(field => candidate[field] !== canonical[field]);
+            const unknownFieldCount = countUnknownFields(candidate, MODEL_KEYS);
+            if (knownValueChanged) {
+                details.add('model_record_normalized', 'changed', 'registry.models', 1);
+            }
+            details.add(
+                'model_unknown_fields_removed',
+                'removed',
+                'registry.models',
+                unknownFieldCount,
+            );
+        }
+    }
+
+    const selectedSource = isRecord(source.selectedModels) ? source.selectedModels : {};
+    if (source.selectedModels !== undefined && !isRecord(source.selectedModels)) {
+        details.add('selections_container_replaced', 'changed', 'registry.selections', 1);
+    }
+    const selectionCandidates = Object.entries(selectedSource).map(([provider, modelId]) => ({
+        provider,
+        modelId,
+        legacy: false,
+    }));
+    const hasVertexSelection = Object.hasOwn(selectedSource, VERTEX_PROVIDER);
+    if (!hasVertexSelection && source.selectedModelId !== undefined) {
+        selectionCandidates.push({
+            provider: VERTEX_PROVIDER,
+            modelId: source.selectedModelId,
+            legacy: true,
+        });
+    } else if (hasVertexSelection
+        && source.selectedModelId
+        && selectedSource[VERTEX_PROVIDER] !== source.selectedModelId) {
+        details.add('legacy_selection_conflict_removed', 'removed', 'registry.selections', 1);
+    }
+    const seenProviders = new Set();
+    for (const candidate of selectionCandidates) {
+        const providerId = normalizeProviderId(candidate.provider);
+        const validation = validateProviderModelId(providerId, candidate.modelId);
+        const selectable = validation.ok && normalized.models.some(model => (
+            model.enabled && model.provider === providerId && model.id === validation.id
+        ));
+        if (!isSupportedProvider(providerId) || !validation.ok || !selectable) {
+            details.add('selection_invalid_removed', 'removed', 'registry.selections', 1);
+            continue;
+        }
+        if (seenProviders.has(providerId)) {
+            details.add('selection_duplicate_merged', 'removed', 'registry.selections', 1);
+            continue;
+        }
+        seenProviders.add(providerId);
+        if (!candidate.legacy
+            && (candidate.provider !== providerId || candidate.modelId !== validation.id)) {
+            details.add('selection_record_normalized', 'changed', 'registry.selections', 1);
+        }
+    }
+}
+
+function analyzeRoutesRepair(source, details) {
+    details.add(
+        'routes_unknown_fields_removed',
+        'removed',
+        'routes',
+        countUnknownFields(source, PURPOSE_ROUTES_KEYS),
+    );
+    if (classifySchemaRepair(source, PURPOSE_ROUTES_SCHEMA_VERSION) === 'normalized') {
+        details.add('schema_normalized', 'changed', 'routes.schema', 1);
+    }
+    if (!isRecord(source.routes)) {
+        if (source.routes !== undefined) {
+            details.add('routes_container_replaced', 'changed', 'routes.entries', 1);
+        }
+        return;
+    }
+
+    const seenPurposes = new Set();
+    for (const [candidatePurpose, candidateRoute] of Object.entries(source.routes)) {
+        const purposeValidation = validatePurposeId(candidatePurpose);
+        const routeValidation = validatePurposeRoute(candidateRoute);
+        if (!purposeValidation.ok || !routeValidation.ok) {
+            details.add('route_invalid_removed', 'removed', 'routes.entries', 1);
+            continue;
+        }
+        if (seenPurposes.has(purposeValidation.id)) {
+            details.add('route_duplicate_merged', 'removed', 'routes.entries', 1);
+            continue;
+        }
+        seenPurposes.add(purposeValidation.id);
+        const canonical = routeValidation.route;
+        const knownValueChanged = candidatePurpose !== purposeValidation.id
+            || ROUTE_KEYS.some(field => candidateRoute[field] !== canonical[field]);
+        if (knownValueChanged) {
+            details.add('route_record_normalized', 'changed', 'routes.entries', 1);
+        }
+        details.add(
+            'route_unknown_fields_removed',
+            'removed',
+            'routes.entries',
+            countUnknownFields(candidateRoute, ROUTE_KEYS),
+        );
+    }
+}
+
+function createRepairDetails(registrySource, routesSource, registrySettings, rootRepairs = {}) {
+    const details = createRepairDetailCollector();
+    if (rootRepairs.registry === true) {
+        details.add('registry_container_replaced', 'changed', 'registry', 1);
+    }
+    if (rootRepairs.routes === true) {
+        details.add('routes_root_container_replaced', 'changed', 'routes', 1);
+    }
+    analyzeRegistryRepair(registrySource, registrySettings, details);
+    analyzeRoutesRepair(routesSource, details);
+    return details.finish();
+}
+
+function createRejectedRepairDetails(errors) {
+    const details = createRepairDetailCollector();
+    for (const issue of errors) {
+        const pathCategory = issue.code === 'future_registry_schema'
+            ? 'registry.schema'
+            : 'routes.schema';
+        details.add(issue.code, 'rejected', pathCategory, 1);
+    }
+    return details.finish();
+}
+
 /**
  * 현재 확장 저장값을 복구한다. 미래 스키마는 조용히 낮추지 않고 명시적으로 중단한다.
  */
 export function repairSettingsBundle(options = {}) {
-    const registrySource = isRecord(options.registrySettings) ? options.registrySettings : {};
-    const routesSource = isRecord(options.purposeRoutes) ? options.purposeRoutes : {};
+    const rawRegistrySettings = options.registrySettings;
+    const rawPurposeRoutes = options.purposeRoutes;
+    const registrySource = isRecord(rawRegistrySettings) ? rawRegistrySettings : {};
+    const routesSource = isRecord(rawPurposeRoutes) ? rawPurposeRoutes : {};
+    const rootRepairs = {
+        registry: rawRegistrySettings !== undefined && !isRecord(rawRegistrySettings),
+        routes: rawPurposeRoutes !== undefined && !isRecord(rawPurposeRoutes),
+    };
     const registryVersion = registrySource.schemaVersion;
     const routesVersion = routesSource.schemaVersion;
     const errors = [];
@@ -699,11 +1288,18 @@ export function repairSettingsBundle(options = {}) {
             summary: '미래 스키마 저장값은 확장을 업데이트한 뒤 다시 시도해 주세요.',
             errors,
             warnings: [],
+            details: createRejectedRepairDetails(errors),
         };
     }
 
     const registrySettings = cloneRegistrySettings(registrySource);
     const purposeRoutes = clonePurposeRoutes(routesSource);
+    const details = createRepairDetails(
+        registrySource,
+        routesSource,
+        registrySettings,
+        rootRepairs,
+    );
     const beforeCounts = {
         models: Array.isArray(registrySource.models) ? registrySource.models.length : 0,
         selections: countRegistrySelections(registrySource),
@@ -714,9 +1310,11 @@ export function repairSettingsBundle(options = {}) {
         selections: Object.keys(registrySettings.selectedModels).length,
         routes: Object.keys(purposeRoutes.routes).length,
     };
-    const migrated = registryVersion !== SETTINGS_SCHEMA_VERSION
-        || routesVersion !== PURPOSE_ROUTES_SCHEMA_VERSION;
-    const repaired = Object.keys(beforeCounts).some(key => beforeCounts[key] !== afterCounts[key]);
+    const migrated = details.items.some(item => item.code === 'schema_migrated');
+    const removed = details.totals.removed > 0
+        || Object.keys(beforeCounts).some(key => beforeCounts[key] > afterCounts[key]);
+    const repaired = Object.keys(beforeCounts).some(key => beforeCounts[key] !== afterCounts[key])
+        || details.items.some(item => item.code !== 'schema_migrated');
     const warnings = [];
     if (migrated) {
         warnings.push(createIssue(
@@ -726,12 +1324,19 @@ export function repairSettingsBundle(options = {}) {
             '이전 저장 스키마를 현재 버전으로 이관했습니다.',
         ));
     }
-    if (repaired) {
+    if (removed) {
         warnings.push(createIssue(
             'warning',
             'invalid_records_removed',
             '$',
             '손상되거나 중복된 모델·선택·경로 레코드를 제외했습니다.',
+        ));
+    } else if (repaired) {
+        warnings.push(createIssue(
+            'warning',
+            'settings_normalized',
+            '$',
+            '저장된 모델·선택·경로 값을 현재 규칙에 맞게 정규화했습니다.',
         ));
     }
 
@@ -745,6 +1350,7 @@ export function repairSettingsBundle(options = {}) {
         purposeRoutes,
         beforeCounts,
         afterCounts,
+        details,
         errors: [],
         warnings,
     };

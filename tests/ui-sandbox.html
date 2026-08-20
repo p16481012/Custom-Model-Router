@@ -191,7 +191,7 @@
                             </small>
                         </div>
 
-                        <form class="cmr-add-form">
+                        <form id="cmr_add_form" class="cmr-add-form">
                             <label for="cmr_model_id">Google Vertex AI 모델 ID</label>
                             <div class="cmr-input-row">
                                 <input id="cmr_model_id" class="text_pole" type="text" value="gemini-next-preview" aria-label="모델 ID 예시">
@@ -205,10 +205,29 @@
                             <small>Google 모델 경로 한 구간만 입력합니다.</small>
                         </form>
 
+                        <details id="cmr_bulk_add" class="cmr-inline-disclosure">
+                            <summary>여러 모델 ID 한꺼번에 등록</summary>
+                            <form id="cmr_bulk_add_form" class="cmr-bulk-add-form">
+                                <label for="cmr_bulk_model_ids">모델 ID 목록</label>
+                                <textarea id="cmr_bulk_model_ids" class="text_pole wide100p" rows="4" placeholder="한 줄에 모델 ID 하나"></textarea>
+                                <div class="cmr-inline-actions"><button type="button" class="menu_button">모두 등록</button></div>
+                            </form>
+                        </details>
+
+                        <div class="cmr-feedback-row">
+                            <div id="cmr_feedback" class="cmr-feedback" role="status" aria-live="polite"></div>
+                            <button id="cmr_undo_delete" type="button" class="menu_button cmr-undo-button" hidden>실행 취소</button>
+                        </div>
+
                         <section class="cmr-list-region" data-cmr-list-scope="all" aria-labelledby="cmr_list_title">
                             <div class="cmr-list-header">
                                 <h3 id="cmr_list_title">전체 등록 모델</h3>
                                 <span id="cmr_model_count" class="cmr-list-count">제공업체 3곳 · 모델 7개</span>
+                            </div>
+                            <div id="cmr_model_search_region" class="cmr-model-search" hidden>
+                                <label class="cmr-visually-hidden" for="cmr_model_search">등록 모델 검색</label>
+                                <span aria-hidden="true">⌕</span>
+                                <input id="cmr_model_search" class="text_pole wide100p" type="search" placeholder="제공업체 또는 모델 ID 검색">
                             </div>
                             <ul id="cmr_model_list" class="cmr-model-list" data-scrollable="true">
                                 <li class="cmr-provider-group">
@@ -286,6 +305,15 @@
                                     <button type="button" class="menu_button">백업 내보내기</button>
                                     <button type="button" class="menu_button">백업 가져오기</button>
                                 </div>
+                                <section id="cmr_import_preview" class="cmr-import-preview" hidden>
+                                    <h3>백업 가져오기 미리보기</h3>
+                                    <div id="cmr_import_preview_summary" class="cmr-feedback" role="status">추가 2건 · 변경 충돌 1건 · 삭제 1건</div>
+                                    <ul id="cmr_import_preview_list" class="cmr-change-list" tabindex="0" aria-label="백업 변경 내역"></ul>
+                                    <div class="cmr-import-preview-actions">
+                                        <button type="button" class="menu_button">취소</button>
+                                        <button type="button" class="menu_button">변경 적용</button>
+                                    </div>
+                                </section>
                                 <ul id="cmr_diagnostic_list" class="cmr-diagnostic-list" tabindex="0" aria-label="호환성 진단 결과">
                                     <li data-status="warning">수동 샌드박스이므로 실제 호환성 진단은 실행하지 않습니다.</li>
                                 </ul>
@@ -293,21 +321,21 @@
                                 <details id="cmr_external_advanced" class="cmr-advanced-section" open>
                                     <summary>
                                         <span>고급: 외부 연결 관리</span>
-                                        <span id="cmr_external_count" class="cmr-list-count">연결 2개 · 제외 1개</span>
+                                        <span id="cmr_external_count" class="cmr-list-count">문제 1개 · 사용자 제외 1개</span>
                                     </summary>
                                     <div class="cmr-advanced-body">
                                         <p class="cmr-tool-description">
                                             <span class="cmr-sentence">안전한 Chat Completion 모델 칸에는 등록 모델을 자동으로 표시합니다.</span>
-                                            <span class="cmr-sentence">문제가 생긴 대상만 연결에서 제외하세요.</span>
+                                            <span class="cmr-sentence">연결 실패와 사용자가 제외한 대상만 기본 목록에 표시합니다.</span>
                                         </p>
-                                        <div id="cmr_external_status" class="cmr-feedback" data-state="ok" role="status" aria-live="polite">2개 연결 · 0개 대기 · 1개 사용자 제외</div>
+                                        <div id="cmr_external_status" class="cmr-feedback" data-state="error" role="status" aria-live="polite">1개 대상의 선택지 연결을 확인해야 합니다.</div>
                                         <ul id="cmr_external_list" class="cmr-external-list" tabindex="0" aria-label="외부 확장 모델 연결 관리">
                                             <li class="cmr-model-row cmr-external-row">
                                                 <div class="cmr-model-summary">
                                                     <span class="cmr-external-heading">
                                                         <strong class="cmr-external-name">번역 확장</strong>
                                                         <small class="cmr-external-control">번역 모델</small>
-                                                        <span class="cmr-external-meta"><span class="cmr-external-state" data-state="connected">선택지 연결됨</span><span class="cmr-external-verification">실제 요청 확인 필요</span></span>
+                                                        <span class="cmr-external-meta"><span class="cmr-external-state" data-state="failed">선택지 연결 실패</span><span class="cmr-external-verification">이 대상 제외 가능</span></span>
                                                     </span>
                                                 </div>
                                                 <div class="cmr-external-actions"><button class="menu_button cmr-icon-button" type="button" aria-label="번역 확장 연결에서 제외">⊘</button></div>
@@ -315,24 +343,32 @@
                                             <li class="cmr-model-row cmr-external-row">
                                                 <div class="cmr-model-summary">
                                                     <span class="cmr-external-heading">
-                                                        <strong class="cmr-external-name">공백없이아주긴외부확장모델선택기이름말줄임검증</strong>
-                                                        <small class="cmr-external-control">Chat Completion 모델 칸</small>
-                                                        <span class="cmr-external-meta"><span class="cmr-external-state" data-state="connected">선택지 연결됨</span><span class="cmr-external-verification">실제 요청 확인 필요</span></span>
-                                                    </span>
-                                                </div>
-                                                <div class="cmr-external-actions"><button class="menu_button cmr-icon-button" type="button" aria-label="긴 이름 확장 연결에서 제외">⊘</button></div>
-                                            </li>
-                                            <li class="cmr-model-row cmr-external-row">
-                                                <div class="cmr-model-summary">
-                                                    <span class="cmr-external-heading">
                                                         <strong class="cmr-external-name">장문 분석 확장</strong>
                                                         <small class="cmr-external-control">분석 모델 입력란</small>
-                                                        <span class="cmr-external-meta"><span class="cmr-external-state" data-state="excluded">연결 제외</span><span class="cmr-external-verification">CMR 선택지를 표시하지 않음</span></span>
+                                                        <span class="cmr-external-meta"><span class="cmr-external-state" data-state="excluded">사용자 제외</span><span class="cmr-external-verification">CMR 선택지를 표시하지 않음</span></span>
                                                     </span>
                                                 </div>
                                                 <div class="cmr-external-actions"><button class="menu_button cmr-icon-button" type="button" aria-label="장문 분석 확장 다시 연결">↶</button></div>
                                             </li>
                                         </ul>
+                                        <details id="cmr_external_picker" class="cmr-inline-disclosure cmr-external-picker" open>
+                                            <summary>문제가 생긴 모델 칸 제외</summary>
+                                            <div class="cmr-external-picker-body">
+                                                <p class="cmr-tool-description">외부 기능에서 문제가 생긴 모델 칸만 선택해 제외하세요.</p>
+                                                <ul id="cmr_external_picker_list" class="cmr-external-list" tabindex="0" aria-label="연결에서 제외할 외부 모델 칸">
+                                                    <li class="cmr-model-row cmr-external-row">
+                                                        <div class="cmr-model-summary">
+                                                            <span class="cmr-external-heading">
+                                                                <strong class="cmr-external-name">공백없이아주긴외부확장모델선택기이름말줄임검증</strong>
+                                                                <small class="cmr-external-control">Chat Completion 모델 칸</small>
+                                                                <span class="cmr-external-meta"><span class="cmr-external-state" data-state="connected">선택지 연결됨</span><span class="cmr-external-verification">실제 요청 확인 필요</span></span>
+                                                            </span>
+                                                        </div>
+                                                        <div class="cmr-external-actions"><button class="menu_button cmr-icon-button" type="button" aria-label="긴 이름 확장 연결에서 제외">⊘</button></div>
+                                                    </li>
+                                                </ul>
+                                            </div>
+                                        </details>
                                         <small>
                                             <span class="cmr-sentence">선택지가 보인다는 사실과 실제 요청에 해당 모델이 사용된다는 사실은 다릅니다.</span>
                                             <span class="cmr-sentence">실제 기능을 한 번 실행한 뒤 요청 또는 결과를 확인하세요.</span>
@@ -391,7 +427,10 @@
                     panelVisible: !panel.hidden,
                     providerGroupCount: document.querySelectorAll('.cmr-provider-group').length,
                     modelRowCount: document.querySelectorAll('#cmr_model_list .cmr-model-row').length,
-                    externalRowCount: document.querySelectorAll('#cmr_external_list .cmr-external-row').length,
+                    externalActionRowCount: document.querySelectorAll('#cmr_external_list .cmr-external-row').length,
+                    externalPickerRowCount: document.querySelectorAll('#cmr_external_picker_list .cmr-external-row').length,
+                    riskBlockedRowsExposed: [...document.querySelectorAll('#cmr_external_list, #cmr_external_picker_list')]
+                        .some(list => list.textContent.includes('안전상 제외')),
                     modelListScrollableFlag: modelList.dataset.scrollable === 'true',
                     modelListOverflowY: listStyle.overflowY,
                     modelListClientHeight: modelList.clientHeight,

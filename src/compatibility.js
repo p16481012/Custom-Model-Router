@@ -1,4 +1,9 @@
 import { getProvider, getProviders } from './providers.js';
+import {
+    EXTERNAL_INJECTED_OPTION_LIMIT,
+    EXTERNAL_MANAGED_OPTION_WARNING_THRESHOLD,
+    EXTERNAL_TARGET_LIMIT,
+} from './external-integrations.js';
 
 export const DIAGNOSTIC_SCHEMA_VERSION = 2;
 export const MINIMUM_SILLYTAVERN_VERSION = '1.18.0';
@@ -50,6 +55,7 @@ const BOUNDED_RESOURCE_LIMITS = Object.freeze({
 });
 
 const STATUS_RANK = Object.freeze({ passed: 0, warning: 1, failed: 2 });
+const EXTERNAL_MANAGED_OPTION_COUNT_LIMIT = EXTERNAL_TARGET_LIMIT * EXTERNAL_INJECTED_OPTION_LIMIT;
 
 function isObject(value) {
     return value !== null && typeof value === 'object';
@@ -686,6 +692,16 @@ export function diagnoseExternalRuntimeResources(metrics = {}, targets = []) {
     const idleCount = normalizeRuntimeCount(metrics.idleCount);
     const failedCount = normalizeRuntimeCount(metrics.failedCount);
     const listenerCount = normalizeRuntimeCount(metrics.listenerCount);
+    // 비정상 입력도 진단 JSON을 무한히 키우지 않도록 hard cap 초과는 한 칸의 sentinel로만 보존한다.
+    const normalizeManagedOptionCount = value => Math.min(
+        normalizeRuntimeCount(value),
+        EXTERNAL_MANAGED_OPTION_COUNT_LIMIT + 1,
+    );
+    const activeRegistryModelCount = normalizeManagedOptionCount(metrics.activeRegistryModelCount);
+    const eligibleManagedOptionCount = normalizeManagedOptionCount(metrics.eligibleManagedOptionCount);
+    const expectedManagedOptionCount = normalizeManagedOptionCount(metrics.expectedManagedOptionCount);
+    const actualManagedOptionCount = normalizeManagedOptionCount(metrics.actualManagedOptionCount);
+    const capacityLimitedTargetCount = normalizeRuntimeCount(metrics.capacityLimitedTargetCount);
     const actualDirectCount = normalizedTargets.filter(target => (
         target?.resolution?.source === 'direct'
     )).length;
@@ -716,6 +732,24 @@ export function diagnoseExternalRuntimeResources(metrics = {}, targets = []) {
         excludedReasonCounts.set(reason, (excludedReasonCounts.get(reason) ?? 0) + 1);
     }
     const excludedByReason = Object.fromEntries(excludedReasonCounts);
+    const sumTargetBridgeCount = key => Math.min(
+        normalizedTargets.reduce((total, target) => (
+            target?.resolution?.source === 'direct'
+                ? total + normalizeRuntimeCount(target?.bridge?.[key])
+                : total
+        ), 0),
+        EXTERNAL_MANAGED_OPTION_COUNT_LIMIT + 1,
+    );
+    const derivedEligibleManagedOptionCount = sumTargetBridgeCount('eligibleModelCount');
+    const derivedExpectedManagedOptionCount = sumTargetBridgeCount('expectedManagedOptionCount');
+    const derivedCapacityLimitedTargetCount = normalizedTargets.filter(target => (
+        target?.resolution?.source === 'direct' && target?.bridge?.capacityLimited === true
+    )).length;
+    const managedOptionBudgetExceeded = Math.max(
+        expectedManagedOptionCount,
+        actualManagedOptionCount,
+    ) > EXTERNAL_MANAGED_OPTION_WARNING_THRESHOLD;
+    const managedOptionCapacityLimited = capacityLimitedTargetCount > 0;
 
     const invariants = {
         singleObserver: observerCount === 1,
@@ -730,17 +764,37 @@ export function diagnoseExternalRuntimeResources(metrics = {}, targets = []) {
         noBridgeFailures: failedCount === 0,
         directBindingsMatch: boundCount === connectedCount + idleCount,
         listenerBindingsMatch: listenerCount === expectedListenerCount,
+        managedOptionEligibilityMatches: eligibleManagedOptionCount === derivedEligibleManagedOptionCount,
+        managedOptionEstimateMatches: expectedManagedOptionCount === derivedExpectedManagedOptionCount,
+        capacityLimitedTargetsMatch: capacityLimitedTargetCount === derivedCapacityLimitedTargetCount,
+        managedOptionCountsCoherent: expectedManagedOptionCount <= eligibleManagedOptionCount
+            && capacityLimitedTargetCount <= directCount,
+        managedOptionsWithinEstimate: actualManagedOptionCount <= expectedManagedOptionCount,
+        managedOptionCountsWithinHardCap: expectedManagedOptionCount <= EXTERNAL_MANAGED_OPTION_COUNT_LIMIT
+            && actualManagedOptionCount <= EXTERNAL_MANAGED_OPTION_COUNT_LIMIT,
     };
     const valid = Object.values(invariants).every(Boolean);
     const inventory = `후보 ${targetCount}개 = 연결 정책 ${directCount}개 + 사용자 제외 ${userExcludedCount}개 + 비채팅·비호환 제외 ${excludedCount}개`;
+    const hasManagedOptionWarning = managedOptionBudgetExceeded || managedOptionCapacityLimited;
+    const status = valid ? (hasManagedOptionWarning ? 'warning' : 'passed') : 'failed';
+    const managedOptionWarnings = [
+        managedOptionCapacityLimited
+            ? `외부 모델 칸 ${capacityLimitedTargetCount}곳은 표시 가능한 CMR 선택지가 대상당 ${EXTERNAL_INJECTED_OPTION_LIMIT}개를 넘어 일부만 표시됩니다.`
+            : null,
+        managedOptionBudgetExceeded
+            ? `외부 모델 선택지 DOM 옵션이 권장 한도 ${EXTERNAL_MANAGED_OPTION_WARNING_THRESHOLD}개를 초과했습니다. 최대 예상 ${expectedManagedOptionCount}개 · 실제 ${actualManagedOptionCount}개.`
+            : null,
+    ].filter(Boolean).join(' ');
 
     return createCheck(
         'external-model-controls',
         'external',
-        valid ? 'passed' : 'failed',
-        valid
-            ? `외부 모델 칸 ${inventory}`
-            : `외부 모델 칸 런타임 집계가 일치하지 않습니다. ${inventory}`,
+        status,
+        !valid
+            ? `외부 모델 칸 런타임 집계가 일치하지 않습니다. ${inventory}`
+            : (hasManagedOptionWarning
+                ? `${managedOptionWarnings} ${inventory}`
+                : `외부 모델 칸 ${inventory}`),
         {
             observerCount,
             targetCount,
@@ -752,6 +806,15 @@ export function diagnoseExternalRuntimeResources(metrics = {}, targets = []) {
             userExcludedCount,
             listenerCount,
             expectedListenerCount,
+            activeRegistryModelCount,
+            eligibleManagedOptionCount,
+            expectedManagedOptionCount,
+            actualManagedOptionCount,
+            capacityLimitedTargetCount,
+            managedOptionPerTargetLimit: EXTERNAL_INJECTED_OPTION_LIMIT,
+            managedOptionWarningThreshold: EXTERNAL_MANAGED_OPTION_WARNING_THRESHOLD,
+            managedOptionBudgetExceeded,
+            managedOptionCapacityLimited,
             excludedCount,
             excludedByReason,
             invariants,

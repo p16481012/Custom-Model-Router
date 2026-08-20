@@ -129,9 +129,40 @@
 }
 
 #cmr_settings .cmr-provider-field,
-#cmr_settings .cmr-add-form {
+#cmr_settings .cmr-add-form,
+#cmr_settings .cmr-bulk-add-form {
     display: grid;
     gap: 0.32rem;
+}
+
+#cmr_settings .cmr-inline-disclosure {
+    font-size: 0.84rem;
+}
+
+#cmr_settings .cmr-inline-disclosure > summary {
+    cursor: pointer;
+    font-weight: 600;
+    inline-size: fit-content;
+}
+
+#cmr_settings .cmr-bulk-add-form {
+    margin-block-start: 0.5rem;
+}
+
+#cmr_settings .cmr-bulk-add-form textarea {
+    box-sizing: border-box;
+    min-block-size: 5.5rem;
+    resize: vertical;
+}
+
+#cmr_settings .cmr-inline-actions {
+    display: flex;
+    justify-content: flex-end;
+}
+
+#cmr_settings .cmr-inline-actions > .menu_button {
+    min-block-size: 2rem;
+    padding-inline: 0.75rem;
 }
 
 #cmr_settings .cmr-provider-field select,
@@ -231,9 +262,13 @@
 }
 
 #cmr_settings .cmr-advanced-body {
+    box-sizing: border-box;
+    clear: both;
     display: grid;
     gap: 0.55rem;
+    inline-size: 100%;
     margin-block-start: 0.6rem;
+    min-width: 0;
     padding-block-end: 0.15rem;
 }
 
@@ -260,6 +295,62 @@
     cursor: pointer;
 }
 
+#cmr_settings .cmr-import-preview {
+    border: 1px solid var(--SmartThemeBorderColor, currentColor);
+    border-radius: 0.45rem;
+    display: grid;
+    gap: 0.5rem;
+    padding: 0.65rem;
+}
+
+#cmr_settings .cmr-import-preview[hidden] {
+    display: none;
+}
+
+#cmr_settings .cmr-import-preview h3 {
+    font-size: 0.9rem;
+}
+
+#cmr_settings .cmr-change-list {
+    list-style: none;
+    margin: 0;
+    max-block-size: 11rem;
+    overscroll-behavior: contain;
+    overflow-y: auto;
+    padding: 0;
+    scrollbar-width: none;
+}
+
+#cmr_settings .cmr-change-list::-webkit-scrollbar {
+    display: none;
+}
+
+#cmr_settings .cmr-change-list li {
+    border-block-start: 1px solid var(--SmartThemeBorderColor, currentColor);
+    font-size: 0.8rem;
+    line-height: 1.4;
+    padding: 0.38rem 0.15rem;
+}
+
+#cmr_settings .cmr-change-list li[data-change="conflict"] {
+    color: var(--golden, #f2c94c);
+}
+
+#cmr_settings .cmr-change-list li[data-change="deletion"] {
+    color: var(--warning-color, #e57373);
+}
+
+#cmr_settings .cmr-import-preview-actions {
+    display: flex;
+    gap: 0.45rem;
+    justify-content: flex-end;
+}
+
+#cmr_settings .cmr-import-preview-actions > .menu_button {
+    min-block-size: 2rem;
+    padding-inline: 0.7rem;
+}
+
 #cmr_settings .cmr-visually-hidden {
     block-size: 1px;
     clip: rect(0 0 0 0);
@@ -277,6 +368,12 @@
     list-style: none;
     margin: 0;
     padding: 0;
+}
+
+#cmr_settings .cmr-external-picker-body {
+    display: grid;
+    gap: 0.5rem;
+    margin-block-start: 0.5rem;
 }
 
 #cmr_settings .cmr-diagnostic-list {
@@ -372,6 +469,28 @@
     display: none;
 }
 
+#cmr_settings .cmr-feedback-row {
+    align-items: center;
+    display: flex;
+    gap: 0.55rem;
+    min-width: 0;
+}
+
+#cmr_settings .cmr-feedback-row .cmr-feedback {
+    flex: 1 1 auto;
+}
+
+#cmr_settings .cmr-undo-button.menu_button {
+    flex: 0 0 auto;
+    min-block-size: 2rem;
+    padding-inline: 0.65rem;
+    white-space: nowrap;
+}
+
+#cmr_settings .cmr-undo-button[hidden] {
+    display: none !important;
+}
+
 #cmr_settings .cmr-input-row {
     gap: 0.45rem;
 }
@@ -405,6 +524,22 @@
 
 #cmr_settings .cmr-list-header h3 {
     font-size: 1rem;
+}
+
+#cmr_settings .cmr-model-search {
+    align-items: center;
+    display: grid;
+    gap: 0.4rem;
+    grid-template-columns: auto minmax(0, 1fr);
+    position: relative;
+}
+
+#cmr_settings .cmr-model-search[hidden] {
+    display: none;
+}
+
+#cmr_settings .cmr-model-search > .fa-solid {
+    opacity: 0.68;
 }
 
 #cmr_settings .cmr-model-list {
@@ -480,11 +615,27 @@
 #cmr_settings .cmr-model-id {
     direction: ltr;
     display: block;
+    flex: 1 1 auto;
     min-width: 0;
     overflow: hidden;
     text-align: start;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+#cmr_settings .cmr-model-state {
+    border: 1px solid var(--SmartThemeBorderColor, currentColor);
+    border-radius: 999px;
+    flex: 0 0 auto;
+    font-size: 0.7rem;
+    line-height: 1.35;
+    opacity: 0.78;
+    padding: 0.06rem 0.38rem;
+    white-space: nowrap;
+}
+
+#cmr_settings .cmr-model-state[data-state="disabled"] {
+    border-style: dashed;
 }
 
 #cmr_settings .cmr-model-actions {

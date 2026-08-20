@@ -23,12 +23,16 @@ test('패널 헤더는 버전 배지와 중복 닫기 버튼을 만들지 않는
     assert.doesNotMatch(css, /\.cmr-panel-close\b/);
 });
 
-test('등록 모델 영역은 전체 보기와 제공업체별 그룹 계약을 사용한다', async () => {
-    const [html, css] = await readUiFiles();
+test('등록 모델 영역은 전체 보기와 12개 초과 검색 계약을 사용한다', async () => {
+    const [html, css, index] = await readUiFiles();
 
     assert.match(html, /class="cmr-list-region" data-cmr-list-scope="all"/);
     assert.match(html, /id="cmr_list_title">전체 등록 모델</);
     assert.match(html, /id="cmr_model_count"[^>]*>제공업체 0곳 · 모델 0개</);
+    assert.match(html, /id="cmr_model_search_region"[^>]*\bhidden\b/);
+    assert.match(html, /id="cmr_model_search"[^>]*type="search"[^>]*aria-controls="cmr_model_list"/s);
+    assert.match(index, /const searchVisible = shouldShowModelSearch\(models\.length\)/);
+    assert.match(index, /filterRegisteredModels\(\s*models,\s*modelSearchQuery/s);
     for (const className of [
         'cmr-provider-group',
         'cmr-provider-group-header',
@@ -40,13 +44,47 @@ test('등록 모델 영역은 전체 보기와 제공업체별 그룹 계약을 
     }
 });
 
+test('대량 등록·삭제 실행 취소·백업 미리보기는 접근 가능한 독립 흐름을 갖는다', async () => {
+    const [html, css, index] = await readUiFiles();
+
+    for (const id of [
+        'cmr_bulk_add',
+        'cmr_bulk_add_form',
+        'cmr_bulk_model_ids',
+        'cmr_undo_delete',
+        'cmr_import_preview',
+        'cmr_import_preview_summary',
+        'cmr_import_preview_list',
+        'cmr_import_preview_cancel',
+        'cmr_import_preview_apply',
+    ]) {
+        assert.match(html, new RegExp(`id="${id}"`));
+    }
+    assert.match(html, /id="cmr_bulk_model_ids"[\s\S]*?placeholder="한 줄에 모델 ID 하나"/);
+    assert.match(html, /id="cmr_undo_delete"[^>]*\bhidden\b/);
+    assert.match(html, /id="cmr_import_preview"[^>]*\bhidden\b/);
+    assert.match(html, /id="cmr_import_preview_list"[^>]*aria-label="백업 변경 내역"[^>]*tabindex="0"/);
+    assert.match(index, /#cmr_bulk_add_form'\)\?\.addEventListener\('submit', onBulkAddModels\)/);
+    assert.match(index, /#cmr_undo_delete'\)\?\.addEventListener\('click', onUndoModelDeletion\)/);
+    assert.match(index, /#cmr_import_preview_apply'\)\?\.addEventListener\('click', onApplyImportPreview\)/);
+    assert.match(index, /#cmr_import_preview_cancel'\)\?\.addEventListener\('click', onCancelImportPreview\)/);
+    assert.match(css, /\.cmr-bulk-add-form textarea\s*{[^}]*resize:\s*vertical/s);
+    assert.match(css, /\.cmr-undo-button\[hidden\]\s*{[^}]*display:\s*none\s*!important/s);
+    assert.match(css, /\.cmr-import-preview\[hidden\]\s*{[^}]*display:\s*none/s);
+    assert.match(css, /\.cmr-change-list\s*{[^}]*max-block-size:[^;}]+;[^}]*overflow-y:\s*auto[^}]*scrollbar-width:\s*none/s);
+    assert.match(css, /\.cmr-change-list::\-webkit-scrollbar\s*{[^}]*display:\s*none/s);
+});
+
 test('모델 목록은 6개 초과 표식에서만 내부 스크롤하고 스크롤바를 숨긴다', async () => {
-    const [, css] = await readUiFiles();
+    const [, css, index] = await readUiFiles();
 
     assert.match(css, /\.cmr-model-list\s*{[^}]*overflow:\s*visible/s);
     assert.match(css, /\.cmr-model-list\[data-scrollable="true"\]\s*{[^}]*max-block-size:[^;}]+;[^}]*overflow-y:\s*auto[^}]*scrollbar-width:\s*none/s);
     assert.match(css, /\.cmr-model-list\[data-scrollable="true"\]::\-webkit-scrollbar\s*{[^}]*display:\s*none/s);
     assert.match(css, /\.cmr-icon-button\.menu_button\s*{[^}]*inline-size:\s*1\.75rem\s*!important[^}]*min-inline-size:\s*1\.75rem\s*!important/s);
+    assert.match(css, /\.cmr-model-state\s*{[^}]*border-radius:\s*999px/s);
+    assert.match(index, /state\.textContent = '비활성'/);
+    assert.match(index, /const models = normalizeSettings\(settings\)\.models/);
 });
 
 test('한국어 설명은 문장 블록과 공백 기준 줄바꿈을 사용한다', async () => {
@@ -54,7 +92,7 @@ test('한국어 설명은 문장 블록과 공백 기준 줄바꿈을 사용한�
 
     const expectedSentenceCounts = {
         cmr_provider_help: 2,
-        cmr_model_list_help: 3,
+        cmr_model_list_help: 4,
         cmr_operations_description: 2,
     };
     for (const [id, expectedCount] of Object.entries(expectedSentenceCounts)) {
@@ -70,7 +108,7 @@ test('한국어 설명은 문장 블록과 공백 기준 줄바꿈을 사용한�
 });
 
 test('외부 연결 UI는 평상시 숨기고 문제 경고와 고급 제외 관리만 제공한다', async () => {
-    const [html, css] = await readUiFiles();
+    const [html, css, index] = await readUiFiles();
 
     assert.doesNotMatch(html, /id="cmr_external_section"/);
     for (const id of [
@@ -80,6 +118,8 @@ test('외부 연결 UI는 평상시 숨기고 문제 경고와 고급 제외 관
         'cmr_external_count',
         'cmr_external_status',
         'cmr_external_list',
+        'cmr_external_picker',
+        'cmr_external_picker_list',
     ]) {
         assert.match(html, new RegExp(`id="${id}"`));
     }
@@ -89,11 +129,29 @@ test('외부 연결 UI는 평상시 숨기고 문제 경고와 고급 제외 관
     assert.match(operations, /id="cmr_external_advanced"/);
     assert.match(operations, /고급: 외부 연결 관리/);
     assert.match(operations, /id="cmr_external_list"[^>]*aria-label="외부 확장 모델 연결 관리"[^>]*tabindex="0"/);
-    assert.match(operations, /문제가 생긴 대상만 연결에서 제외하세요/);
+    assert.match(operations, /연결 실패와 사용자가 제외한 대상만 기본 목록에 표시합니다/);
+    assert.match(operations, /문제가 생긴 모델 칸 제외/);
+    assert.match(operations, /id="cmr_external_picker_list"[^>]*aria-label="연결에서 제외할 외부 모델 칸"[^>]*tabindex="0"/);
+    assert.match(operations, /외부 기능에서 문제가 생긴 모델 칸만 선택해 제외하세요/);
     assert.match(operations, /실제 요청에 해당 모델이 사용된다는 사실은 다릅니다/);
+    assert.match(index, /const directTargets = targets\.filter\(target => target\.resolution\?\.source === 'direct'\)/);
+    assert.match(index, /const failedTargets = directTargets\.filter\(target => target\.bridge\?\.status === 'failed'\)/);
+    assert.match(index, /const userExcludedTargets = targets\.filter\(target => target\.resolution\?\.source === 'user-excluded'\)/);
+    assert.match(index, /const selectableTargets = directTargets\.filter\(target => target\.bridge\?\.status !== 'failed'\)/);
+    assert.match(index, /appendExternalRows\(\s*list,\s*\[\.\.\.failedTargets, \.\.\.userExcludedTargets\]/s);
+    assert.match(index, /appendExternalRows\(\s*pickerList,\s*selectableTargets/s);
+    const renderer = index.match(/function renderExternalIntegrations\(\)\s*{([\s\S]*?)\n}\n\nfunction renderUi/)?.[1] ?? '';
+    assert.doesNotMatch(renderer, /risk-blocked/);
+    assert.match(index, /const capacityLimitedTargetCount = Math\.max\(0, metrics\.capacityLimitedTargetCount \?\? 0\)/);
+    assert.match(index, /const managedOptionCapacityLimited = capacityLimitedTargetCount > 0/);
+    assert.match(index, /managedOptionCount\s*>\s*EXTERNAL_MANAGED_OPTION_WARNING_THRESHOLD/);
+    assert.match(index, /외부 모델 칸 \$\{capacityLimitedTargetCount\}곳은 표시 가능한 CMR 선택지가 \$\{EXTERNAL_INJECTED_OPTION_LIMIT\}개를 넘어 일부만 표시합니다/);
+    assert.match(index, /외부 모델 선택지 \$\{managedOptionCount\}개가 권장 한도 \$\{EXTERNAL_MANAGED_OPTION_WARNING_THRESHOLD\}개를 초과했습니다/);
+    assert.match(index, /failedTargets\.length > 0 \|\| runtimeMismatch \|\| hasManagedOptionWarning/);
     assert.doesNotMatch(html, /cmr_external_refresh|data-cmr-external-mode|<dt>자동 연결|<dt>연결 안 함/);
     assert.match(css, /\.cmr-warning-card\b/);
     assert.match(css, /\.cmr-advanced-section\b/);
+    assert.match(css, /\.cmr-advanced-body\s*{[^}]*clear:\s*both[^}]*inline-size:\s*100%[^}]*min-width:\s*0/s);
     assert.match(css, /\.cmr-external-row\s*{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) auto/s);
     assert.match(css, /\.cmr-external-heading\s*{[^}]*display:\s*grid[^}]*flex:\s*1 1 auto/s);
     assert.match(css, /\.cmr-external-name\s*{[^}]*display:\s*block[^}]*text-overflow:\s*ellipsis[^}]*white-space:\s*nowrap/s);
