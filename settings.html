@@ -37,9 +37,13 @@
                 aria-describedby="cmr_provider_help cmr_model_help cmr_feedback"
                 required
             >
-            <button class="menu_button cmr-add-button" type="submit">
+            <button
+                class="menu_button cmr-add-button cmr-icon-button"
+                type="submit"
+                title="모델 등록"
+                aria-label="입력한 모델 ID 등록"
+            >
                 <i class="fa-solid fa-plus" aria-hidden="true"></i>
-                <span>추가</span>
             </button>
         </div>
         <small id="cmr_model_help">제공업체를 선택하면 해당 모델 ID 규칙이 표시됩니다.</small>
@@ -60,29 +64,29 @@
         </small>
     </section>
 
-    <details class="cmr-tool-section" id="cmr_external_section">
-        <summary>
-            <span>다른 확장 모델 연결</span>
-            <span id="cmr_external_count" class="cmr-list-count">연결 대상 0개</span>
-        </summary>
-        <div class="cmr-tool-body">
-            <p class="cmr-tool-description">
-                감지된 Chat Completion 모델 칸에 등록 모델 전체를 제공업체별로 표시합니다.
-            </p>
-            <div id="cmr_external_status" class="cmr-feedback" role="status" aria-live="polite" aria-atomic="true"></div>
-            <ul id="cmr_external_list" class="cmr-external-list" aria-label="감지한 외부 확장 모델 컨트롤" tabindex="0"></ul>
-            <small>
-                <span class="cmr-sentence">목록은 외부 확장의 화면 변경을 감지해 자동으로 갱신됩니다.</span>
-                <span class="cmr-sentence">임베딩, TTS, 이미지 생성 등 Chat Completion이 아닌 대상은 안전을 위해 제외합니다.</span>
-            </small>
+    <aside id="cmr_external_warning" class="cmr-warning-card" role="region" aria-labelledby="cmr_external_warning_title" hidden>
+        <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+        <div class="cmr-warning-content">
+            <strong id="cmr_external_warning_title">외부 모델 연결을 확인해 주세요.</strong>
+            <span id="cmr_external_warning_text" class="cmr-sentence-text" role="status" aria-live="polite"></span>
         </div>
-    </details>
+        <button
+            id="cmr_external_warning_open"
+            type="button"
+            class="menu_button cmr-icon-button"
+            title="외부 연결 관리 열기"
+            aria-label="고급 외부 연결 관리 열기"
+        >
+            <i class="fa-solid fa-sliders" aria-hidden="true"></i>
+        </button>
+    </aside>
 
     <details class="cmr-tool-section" id="cmr_operations_section">
         <summary>호환성 진단 및 CMR 설정 백업</summary>
         <div class="cmr-tool-body">
-            <p class="cmr-tool-description">
-                SillyTavern 공개 API·모델 컨트롤·런타임 자원을 검사하고, CMR의 등록 모델·경로·외부 선택 기록만 백업합니다. 저장값은 확장을 불러올 때 자동으로 검사하고 안전한 범위에서 정리합니다.
+            <p id="cmr_operations_description" class="cmr-tool-description">
+                <span class="cmr-sentence">SillyTavern 공개 API·모델 컨트롤·런타임 자원을 검사하고, CMR의 등록 모델·경로·외부 선택 기록만 백업합니다.</span>
+                <span class="cmr-sentence">저장값은 확장을 불러올 때 자동으로 검사하고 안전한 범위에서 정리합니다.</span>
             </p>
             <div class="cmr-operation-actions">
                 <button id="cmr_run_diagnostics" type="button" class="menu_button">진단 실행</button>
@@ -93,6 +97,25 @@
             </div>
             <div id="cmr_diagnostic_summary" class="cmr-feedback" role="status" aria-live="polite" aria-atomic="true"></div>
             <ul id="cmr_diagnostic_list" class="cmr-diagnostic-list" aria-label="호환성 진단 결과" tabindex="0"></ul>
+
+            <details id="cmr_external_advanced" class="cmr-advanced-section">
+                <summary>
+                    <span>고급: 외부 연결 관리</span>
+                    <span id="cmr_external_count" class="cmr-list-count">연결 0개</span>
+                </summary>
+                <div class="cmr-advanced-body">
+                    <p class="cmr-tool-description">
+                        <span class="cmr-sentence">안전한 Chat Completion 모델 칸에는 등록 모델을 자동으로 표시합니다.</span>
+                        <span class="cmr-sentence">문제가 생긴 대상만 연결에서 제외하세요.</span>
+                    </p>
+                    <div id="cmr_external_status" class="cmr-feedback" role="status" aria-live="polite" aria-atomic="true"></div>
+                    <ul id="cmr_external_list" class="cmr-external-list" aria-label="외부 확장 모델 연결 관리" tabindex="0"></ul>
+                    <small>
+                        <span class="cmr-sentence">선택지가 보인다는 사실과 실제 요청에 해당 모델이 사용된다는 사실은 다릅니다.</span>
+                        <span class="cmr-sentence">실제 기능을 한 번 실행한 뒤 요청 또는 결과를 확인하세요.</span>
+                    </small>
+                </div>
+            </details>
         </div>
     </details>
 

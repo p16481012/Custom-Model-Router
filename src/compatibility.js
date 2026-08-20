@@ -681,21 +681,37 @@ export function diagnoseExternalRuntimeResources(metrics = {}, targets = []) {
     const targetCount = normalizeRuntimeCount(metrics.targetCount);
     const boundCount = normalizeRuntimeCount(metrics.boundCount);
     const directCount = normalizeRuntimeCount(metrics.directCount);
+    const userExcludedCount = normalizeRuntimeCount(metrics.userExcludedCount);
+    const connectedCount = normalizeRuntimeCount(metrics.connectedCount);
+    const idleCount = normalizeRuntimeCount(metrics.idleCount);
+    const failedCount = normalizeRuntimeCount(metrics.failedCount);
     const listenerCount = normalizeRuntimeCount(metrics.listenerCount);
     const actualDirectCount = normalizedTargets.filter(target => (
         target?.resolution?.source === 'direct'
     )).length;
-    const excludedTargets = normalizedTargets.filter(target => (
+    const riskBlockedTargets = normalizedTargets.filter(target => (
         target?.resolution?.source === 'risk-blocked'
     ));
-    const excludedCount = excludedTargets.length;
+    const userExcludedTargets = normalizedTargets.filter(target => (
+        target?.resolution?.source === 'user-excluded'
+    ));
+    const actualConnectedCount = normalizedTargets.filter(target => (
+        target?.resolution?.source === 'direct' && target?.bridge?.status === 'connected'
+    )).length;
+    const actualIdleCount = normalizedTargets.filter(target => (
+        target?.resolution?.source === 'direct' && target?.bridge?.status === 'idle'
+    )).length;
+    const actualFailedCount = normalizedTargets.filter(target => (
+        target?.resolution?.source === 'direct' && target?.bridge?.status === 'failed'
+    )).length;
+    const excludedCount = riskBlockedTargets.length;
     const expectedListenerCount = normalizedTargets.reduce((count, target) => (
         count
         + (target?.resolution?.source === 'direct' ? 1 : 0)
         + (target?.providerControl && target.providerControl !== target.control ? 2 : 0)
     ), 0);
     const excludedReasonCounts = new Map();
-    for (const target of excludedTargets) {
+    for (const target of riskBlockedTargets) {
         const reason = String(target?.resolution?.excludedReason ?? 'unspecified').slice(0, 64);
         excludedReasonCounts.set(reason, (excludedReasonCounts.get(reason) ?? 0) + 1);
     }
@@ -705,12 +721,18 @@ export function diagnoseExternalRuntimeResources(metrics = {}, targets = []) {
         singleObserver: observerCount === 1,
         reportedTargetsMatch: targetCount === normalizedTargets.length,
         reportedDirectMatch: directCount === actualDirectCount,
-        candidatePartitionMatches: targetCount === directCount + excludedCount,
-        directBindingsMatch: boundCount === directCount,
+        reportedUserExcludedMatch: userExcludedCount === userExcludedTargets.length,
+        reportedBridgeStatesMatch: connectedCount === actualConnectedCount
+            && idleCount === actualIdleCount
+            && failedCount === actualFailedCount,
+        candidatePartitionMatches: targetCount === directCount + userExcludedCount + excludedCount,
+        bridgePartitionMatches: directCount === connectedCount + idleCount + failedCount,
+        noBridgeFailures: failedCount === 0,
+        directBindingsMatch: boundCount === connectedCount + idleCount,
         listenerBindingsMatch: listenerCount === expectedListenerCount,
     };
     const valid = Object.values(invariants).every(Boolean);
-    const inventory = `후보 ${targetCount}개 = 직접 연결 ${directCount}개 + 비채팅·비호환 제외 ${excludedCount}개`;
+    const inventory = `후보 ${targetCount}개 = 연결 정책 ${directCount}개 + 사용자 제외 ${userExcludedCount}개 + 비채팅·비호환 제외 ${excludedCount}개`;
 
     return createCheck(
         'external-model-controls',
@@ -724,6 +746,10 @@ export function diagnoseExternalRuntimeResources(metrics = {}, targets = []) {
             targetCount,
             boundCount,
             directCount,
+            connectedCount,
+            idleCount,
+            failedCount,
+            userExcludedCount,
             listenerCount,
             expectedListenerCount,
             excludedCount,

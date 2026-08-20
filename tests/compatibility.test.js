@@ -395,7 +395,18 @@ test('외부 observer 중복은 누적으로 찾되 외부 대상 수 변화 자
 test('외부 모델 칸 후보를 직접 연결과 비채팅 제외로 분해하고 런타임 불일치를 실패 처리한다', () => {
     const secretLabel = 'SECRET_PROJECT_AND_ENDPOINT';
     const targets = [
-        { label: secretLabel, targetId: 'cmr-ext-secret', resolution: { source: 'direct' } },
+        {
+            label: secretLabel,
+            targetId: 'cmr-ext-secret',
+            resolution: { source: 'direct' },
+            bridge: { status: 'connected' },
+        },
+        {
+            label: secretLabel,
+            targetId: 'cmr-ext-secret-user',
+            resolution: { source: 'user-excluded', excludedReason: 'user-excluded' },
+            bridge: { status: 'idle' },
+        },
         {
             label: secretLabel,
             targetId: 'cmr-ext-secret-2',
@@ -404,21 +415,27 @@ test('외부 모델 칸 후보를 직접 연결과 비채팅 제외로 분해하
     ];
     const passed = diagnoseExternalRuntimeResources({
         observerCount: 1,
-        targetCount: 2,
+        targetCount: 3,
         boundCount: 1,
         directCount: 1,
+        userExcludedCount: 1,
+        connectedCount: 1,
+        idleCount: 0,
+        failedCount: 0,
         listenerCount: 1,
     }, targets);
     assert.equal(passed.status, 'passed');
-    assert.match(passed.message, /후보 2개 = 직접 연결 1개 \+ 비채팅·비호환 제외 1개/);
+    assert.match(passed.message, /후보 3개 = 연결 정책 1개 \+ 사용자 제외 1개 \+ 비채팅·비호환 제외 1개/);
     assert.deepEqual(passed.details.excludedByReason, { 'embedding-model': 1 });
     assert.doesNotMatch(JSON.stringify(passed), /SECRET_PROJECT_AND_ENDPOINT|cmr-ext-secret/);
 
     const missingObserver = diagnoseExternalRuntimeResources({
         observerCount: 0,
-        targetCount: 2,
+        targetCount: 3,
         boundCount: 0,
         directCount: 1,
+        userExcludedCount: 1,
+        connectedCount: 1,
     }, targets);
     assert.equal(missingObserver.status, 'failed');
     assert.equal(missingObserver.details.invariants.singleObserver, false);
@@ -426,14 +443,27 @@ test('외부 모델 칸 후보를 직접 연결과 비채팅 제외로 분해하
 
     const duplicateListener = diagnoseExternalRuntimeResources({
         observerCount: 1,
-        targetCount: 2,
+        targetCount: 3,
         boundCount: 1,
         directCount: 1,
+        userExcludedCount: 1,
+        connectedCount: 1,
         listenerCount: 2,
     }, targets);
     assert.equal(duplicateListener.status, 'failed');
     assert.equal(duplicateListener.details.expectedListenerCount, 1);
     assert.equal(duplicateListener.details.invariants.listenerBindingsMatch, false);
+
+    const bridgeFailure = diagnoseExternalRuntimeResources({
+        observerCount: 1,
+        targetCount: 1,
+        boundCount: 0,
+        directCount: 1,
+        failedCount: 1,
+        listenerCount: 1,
+    }, [{ resolution: { source: 'direct' }, bridge: { status: 'failed' } }]);
+    assert.equal(bridgeFailure.status, 'failed');
+    assert.equal(bridgeFailure.details.invariants.noBridgeFailures, false);
 });
 
 test('외부 제외 사유의 특수 객체 키도 독립된 진단 개수로 보존한다', () => {
@@ -447,6 +477,10 @@ test('외부 제외 사유의 특수 객체 키도 독립된 진단 개수로 �
         targetCount: 3,
         boundCount: 0,
         directCount: 0,
+        userExcludedCount: 0,
+        connectedCount: 0,
+        idleCount: 0,
+        failedCount: 0,
         listenerCount: 0,
     }, targets);
 

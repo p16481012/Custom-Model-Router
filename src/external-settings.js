@@ -4,9 +4,9 @@ import {
     validateProviderModelId,
 } from './providers.js';
 
-export const EXTERNAL_SETTINGS_SCHEMA_VERSION = 1;
+export const EXTERNAL_SETTINGS_SCHEMA_VERSION = 2;
 export const EXTERNAL_SETTINGS_MAX_TARGETS = 512;
-// v0.6.5 이하 모듈 import 호환용 상수다. v0.6.6에서는 mapping을 저장하지 않는다.
+// v0.6.5 이하 모듈 import 호환용 상수다. legacy mapping은 모두 폐기한다.
 export const EXTERNAL_MAPPING_MANUAL = 'manual';
 export const EXTERNAL_MAPPING_DISABLED = 'disabled';
 
@@ -60,11 +60,12 @@ function validateTargetId(value) {
     return targetId;
 }
 
-function createSettings(selectedModels) {
+function createSettings(selectedModels, excludedTargets = {}) {
     return {
         schemaVersion: EXTERNAL_SETTINGS_SCHEMA_VERSION,
         mappings: {},
         selectedModels,
+        excludedTargets,
     };
 }
 
@@ -79,7 +80,7 @@ function checkFutureSchema(source) {
 }
 
 /**
- * 손상되거나 알 수 없는 필드는 버리고 외부 컨트롤 연결 설정을 schema v1으로 복구한다.
+ * 손상되거나 알 수 없는 필드는 버리고 외부 컨트롤 연결 설정을 schema v2로 복구한다.
  * 알 수 없는 미래 schema만은 조용히 낮추지 않고 명시적으로 거부한다.
  */
 export function normalizeExternalSettings(value) {
@@ -87,9 +88,29 @@ export function normalizeExternalSettings(value) {
     checkFutureSchema(source);
 
     const selectedModels = {};
+    const excludedTargets = {};
     const acceptedTargets = new Set();
 
-    // provider별 선택 기록은 재렌더 복구에 필요하므로 mapping보다 먼저 한도에 반영한다.
+    // 사용자가 문제 대상을 명시적으로 제외한 선택은 자동 복구 선호보다
+    // 안전에 영향을 주므로 512개 합산 한도에서 먼저 보존한다.
+    const excludedEntries = safeRead(source, 'schemaVersion') === EXTERNAL_SETTINGS_SCHEMA_VERSION
+        ? safeEntries(safeRead(source, 'excludedTargets'))
+        : [];
+    for (const [candidateTargetId, candidateExcluded] of excludedEntries) {
+        const targetId = normalizeTargetId(candidateTargetId);
+        if (candidateExcluded !== true
+            || !EXTERNAL_TARGET_ID_PATTERN.test(targetId)
+            || POLLUTION_KEYS.has(targetId)) {
+            continue;
+        }
+        if (!acceptedTargets.has(targetId) && acceptedTargets.size >= EXTERNAL_SETTINGS_MAX_TARGETS) {
+            continue;
+        }
+        acceptedTargets.add(targetId);
+        excludedTargets[targetId] = true;
+    }
+
+    // provider별 선택 기록은 재렌더 복구에 필요하므로 한도에 함께 반영한다.
     for (const [candidateTargetId, candidateSelections] of safeEntries(safeRead(source, 'selectedModels'))) {
         const targetId = normalizeTargetId(candidateTargetId);
         if (!EXTERNAL_TARGET_ID_PATTERN.test(targetId) || POLLUTION_KEYS.has(targetId)) {
@@ -116,9 +137,7 @@ export function normalizeExternalSettings(value) {
         }
     }
 
-    // v0.6.0~v0.6.5의 자동/직접/연결 안 함 및 제공업체 고정 mapping은 읽되
-    // v0.6.6의 단일 직접 연결 동작에는 필요하지 않으므로 저장값에서 제거한다.
-    return createSettings(selectedModels);
+    return createSettings(selectedModels, excludedTargets);
 }
 
 /**
@@ -127,11 +146,17 @@ export function normalizeExternalSettings(value) {
  */
 export function normalizeAutomaticExternalSettings(value) {
     const normalized = normalizeExternalSettings(value);
-    return createSettings({ ...normalized.selectedModels });
+    return createSettings(
+        { ...normalized.selectedModels },
+        { ...normalized.excludedTargets },
+    );
 }
 
 function assertTargetCapacity(settings, targetId) {
-    const targetIds = new Set(Object.keys(settings.selectedModels));
+    const targetIds = new Set([
+        ...Object.keys(settings.selectedModels),
+        ...Object.keys(settings.excludedTargets),
+    ]);
     if (!targetIds.has(targetId) && targetIds.size >= EXTERNAL_SETTINGS_MAX_TARGETS) {
         throw new ExternalSettingsError(
             'target_limit',
@@ -140,17 +165,17 @@ function assertTargetCapacity(settings, targetId) {
     }
 }
 
-/** @deprecated v0.6.6부터 모든 안전 대상은 직접 연결되므로 항상 null을 반환한다. */
+/** @deprecated legacy mapping은 모두 제거되어 항상 null을 반환한다. */
 export function getExternalMapping(value, targetId) {
     normalizeExternalSettings(value);
     void targetId;
     return null;
 }
 
-/** @deprecated legacy 호출을 검증한 뒤 mapping 없이 정규화한다. */
+/** @deprecated legacy 호출을 검증하되 새 excludedTargets로 되살리지 않는다. */
 export function setExternalMapping(value, targetId, mode) {
     const normalized = normalizeExternalSettings(value);
-    validateTargetId(targetId);
+    const normalizedTargetId = validateTargetId(targetId);
     const normalizedMode = normalizeProviderId(mode);
     if (normalizedMode !== EXTERNAL_MAPPING_MANUAL
         && normalizedMode !== EXTERNAL_MAPPING_DISABLED
@@ -160,13 +185,40 @@ export function setExternalMapping(value, targetId, mode) {
             '더 이상 지원하지 않는 외부 연결 방식입니다.',
         );
     }
+    void normalizedTargetId;
     return normalized;
 }
 
-/** @deprecated mapping은 정규화 단계에서 이미 제거된다. */
+/** @deprecated legacy mapping은 정규화 단계에서 이미 제거된다. */
 export function removeExternalMapping(value, targetId) {
     void targetId;
     return normalizeExternalSettings(value);
+}
+
+export function getExternalExcludedTargetIds(value) {
+    return Object.keys(normalizeExternalSettings(value).excludedTargets);
+}
+
+export function isExternalTargetExcluded(value, targetId) {
+    const normalizedTargetId = normalizeTargetId(targetId);
+    if (!EXTERNAL_TARGET_ID_PATTERN.test(normalizedTargetId)
+        || POLLUTION_KEYS.has(normalizedTargetId)) {
+        return false;
+    }
+    return normalizeExternalSettings(value).excludedTargets[normalizedTargetId] === true;
+}
+
+export function setExternalTargetExcluded(value, targetId, excluded = true) {
+    const normalized = normalizeExternalSettings(value);
+    const normalizedTargetId = validateTargetId(targetId);
+    const excludedTargets = { ...normalized.excludedTargets };
+    if (excluded === true) {
+        assertTargetCapacity(normalized, normalizedTargetId);
+        excludedTargets[normalizedTargetId] = true;
+    } else {
+        delete excludedTargets[normalizedTargetId];
+    }
+    return createSettings({ ...normalized.selectedModels }, excludedTargets);
 }
 
 export function getExternalSelectedModel(value, targetId, providerId) {
@@ -197,7 +249,7 @@ export function setExternalSelectedModel(value, targetId, providerId, modelId) {
         } else {
             delete selectedModels[normalizedTargetId];
         }
-        return createSettings(selectedModels);
+        return createSettings(selectedModels, { ...normalized.excludedTargets });
     }
 
     const validation = validateProviderModelId(normalizedProviderId, modelId);
@@ -209,7 +261,7 @@ export function setExternalSelectedModel(value, targetId, providerId, modelId) {
         ...selections,
         [normalizedProviderId]: validation.id,
     };
-    return createSettings(selectedModels);
+    return createSettings(selectedModels, { ...normalized.excludedTargets });
 }
 
 export function removeExternalSelectedModel(value, targetId, providerId) {
@@ -225,5 +277,5 @@ export function removeExternalTargetSelections(value, targetId) {
     }
     const selectedModels = { ...normalized.selectedModels };
     delete selectedModels[normalizedTargetId];
-    return createSettings(selectedModels);
+    return createSettings(selectedModels, { ...normalized.excludedTargets });
 }

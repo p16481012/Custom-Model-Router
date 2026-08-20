@@ -13,7 +13,7 @@ import {
 } from '../src/portable-settings.js';
 import { addModel, normalizeSettings, setSelectedModel } from '../src/registry.js';
 import { setPurposeRoute } from '../src/purpose-router.js';
-import { setExternalSelectedModel } from '../src/external-settings.js';
+import { setExternalSelectedModel, setExternalTargetExcluded } from '../src/external-settings.js';
 
 function createSettings() {
     let registrySettings = addModel(undefined, 'openai', 'gpt-future');
@@ -25,12 +25,13 @@ function createSettings() {
         adapterId: 'sillytavern.connection-profile',
         connectionProfileId: 'profile-summary',
     }, { registrySettings });
-    const externalSettings = setExternalSelectedModel(
+    let externalSettings = setExternalSelectedModel(
         undefined,
         'cmr-ext-1234abcd',
         'openai',
         'gpt-future',
     );
+    externalSettings = setExternalTargetExcluded(externalSettings, 'cmr-ext-1234abcd', true);
     return { registrySettings, purposeRoutes, externalSettings };
 }
 
@@ -63,6 +64,7 @@ test('Registry·용도별 경로·외부 연결만 결정적 백업으로 만들
         connectionProfileId: 'profile-summary',
     });
     assert.deepEqual(backup.externalIntegrations.mappings, {});
+    assert.deepEqual(backup.externalIntegrations.excludedTargets, { 'cmr-ext-1234abcd': true });
     assert.doesNotMatch(
         serialized,
         /REGISTRY_SECRET|ROUTES_SECRET|ROUTE_SECRET|PROFILE_SECRET|secret\.invalid/,
@@ -100,6 +102,7 @@ test('정상 백업을 검사하고 원본 설정을 변경하지 않는 값으�
     assert.equal(parsed.registrySettings.selectedModels.openai, 'gpt-future');
     assert.equal(parsed.purposeRoutes.routes.summary.modelId, 'gpt-future');
     assert.equal(parsed.externalSettings.selectedModels['cmr-ext-1234abcd'].openai, 'gpt-future');
+    assert.equal(parsed.externalSettings.excludedTargets['cmr-ext-1234abcd'], true);
     parsed.registrySettings.models[0].id = 'changed';
     assert.equal(source.registrySettings.models[0].id, 'gpt-future');
 });
@@ -110,6 +113,8 @@ test('v0.6.0~v0.6.5 legacy mapping 백업은 선택 기록만 남기고 제거�
         ...source,
         now: '2026-08-18T01:02:03.000Z',
     });
+    backup.externalIntegrations.schemaVersion = 1;
+    delete backup.externalIntegrations.excludedTargets;
     backup.externalIntegrations.mappings['cmr-ext-1234abcd'] = 'openai';
 
     const inspection = inspectPortableSettings(backup);
@@ -120,6 +125,37 @@ test('v0.6.0~v0.6.5 legacy mapping 백업은 선택 기록만 남기고 제거�
         parsed.externalSettings.selectedModels['cmr-ext-1234abcd'].openai,
         'gpt-future',
     );
+});
+
+test('external schema v2 백업은 폐기된 legacy mapping을 다시 허용하지 않는다', () => {
+    const backup = createPortableSettings({
+        ...createSettings(),
+        now: '2026-08-18T01:02:03.000Z',
+    });
+    backup.externalIntegrations.mappings['cmr-ext-1234abcd'] = 'disabled';
+
+    const report = inspectPortableSettings(backup);
+    assert.equal(report.ok, false);
+    assert.ok(report.errors.some(issue => issue.code === 'external_integrations_not_canonical'));
+});
+
+test('external schema v1 백업은 legacy disabled를 되살리지 않고 선택만 v2로 이관한다', () => {
+    const backup = createPortableSettings({
+        ...createSettings(),
+        now: '2026-08-18T01:02:03.000Z',
+    });
+    backup.externalIntegrations = {
+        schemaVersion: 1,
+        mappings: { 'cmr-ext-1234abcd': 'disabled' },
+        selectedModels: {
+            'cmr-ext-1234abcd': { openai: 'gpt-future' },
+        },
+    };
+
+    const parsed = parsePortableSettings(backup);
+    assert.deepEqual(parsed.externalSettings.excludedTargets, {});
+    assert.equal(parsed.externalSettings.schemaVersion, 2);
+    assert.equal(parsed.externalSettings.selectedModels['cmr-ext-1234abcd'].openai, 'gpt-future');
 });
 
 test('알 수 없는 필드와 그 값은 가져오기를 거부하되 진단에 비밀 값을 싣지 않는다', () => {
@@ -188,7 +224,12 @@ test('v0.5 schema v1 백업은 외부 연결 빈 설정으로 안전하게 이�
 
     const parsed = parsePortableSettings(backup);
     assert.equal(parsed.report.status, 'warning');
-    assert.deepEqual(parsed.externalSettings, { schemaVersion: 1, mappings: {}, selectedModels: {} });
+    assert.deepEqual(parsed.externalSettings, {
+        schemaVersion: 2,
+        mappings: {},
+        selectedModels: {},
+        excludedTargets: {},
+    });
 });
 
 test('Registry에서 사라진 용도별 모델은 경로를 보존하면서 주의로 보고한다', () => {

@@ -1155,7 +1155,8 @@ test('controller는 모든 안전 target을 직접 연결하고 재렌더·선�
     assert.equal(targets[0].resolution.source, 'direct');
     assert.equal(model.options.some(item => item.dataset.cmrExternalModel === 'true'), true);
     assert.deepEqual(controller.getMetrics(), {
-        observerCount: 1, targetCount: 1, boundCount: 1, directCount: 1, listenerCount: 3,
+        observerCount: 1, targetCount: 1, boundCount: 1, directCount: 1,
+        userExcludedCount: 0, connectedCount: 1, idleCount: 0, failedCount: 0, listenerCount: 3,
     });
 
     model.value = '';
@@ -1167,7 +1168,8 @@ test('controller는 모든 안전 target을 직접 연결하고 재렌더·선�
     assert.equal(targets[0].restoredModelId, 'claude-next');
     assert.equal(model.value, 'claude-next');
     assert.deepEqual(controller.getMetrics(), {
-        observerCount: 1, targetCount: 1, boundCount: 1, directCount: 1, listenerCount: 3,
+        observerCount: 1, targetCount: 1, boundCount: 1, directCount: 1,
+        userExcludedCount: 0, connectedCount: 1, idleCount: 0, failedCount: 0, listenerCount: 3,
     });
 
     model.value = 'native';
@@ -1198,7 +1200,8 @@ test('controller는 모든 안전 target을 직접 연결하고 재렌더·선�
     assert.equal(disconnected, true);
     assert.equal(model.options.some(item => item.dataset.cmrExternalModel === 'true'), false);
     assert.deepEqual(controller.getMetrics(), {
-        observerCount: 0, targetCount: 0, boundCount: 0, directCount: 0, listenerCount: 0,
+        observerCount: 0, targetCount: 0, boundCount: 0, directCount: 0,
+        userExcludedCount: 0, connectedCount: 0, idleCount: 0, failedCount: 0, listenerCount: 0,
     });
 });
 
@@ -1377,4 +1380,195 @@ test('직접 연결 controller는 중복 모델 ID도 실제 selected option met
         userInitiated: true,
     });
     collisionController.destroy();
+});
+
+test('명시적 제외는 target을 남기고 native fallback하며 선호 모델을 삭제하지 않는다', () => {
+    const documentRef = new FakeDocument();
+    const panel = documentRef.createElement('section');
+    panel.setAttribute('data-extension-name', 'Example Bridge');
+    const select = labeledModelSelect(documentRef, 'example_chat_model', 'Chat model');
+    panel.append(select.parentElement);
+    documentRef.append(panel);
+    select.append(option(documentRef, 'native-model'));
+    select.value = 'native-model';
+    const targetId = createExternalTargetId(select, { documentRef });
+    const externalValues = [];
+    const invalidations = [];
+    select.addEventListener('change', event => {
+        if (event.isTrusted !== true) {
+            externalValues.push(select.value);
+        }
+    });
+    const controller = createExternalIntegrationController({
+        root: documentRef,
+        documentRef,
+        getModels: providerId => providerId === 'openai'
+            ? [{ provider: 'openai', id: 'gpt-next' }]
+            : [],
+        getPreferredModels: id => id === targetId ? { openai: 'gpt-next' } : {},
+        onSelectionInvalidated: value => invalidations.push(value),
+        observerFactory: () => ({ observe() {}, disconnect() {} }),
+        eventFactory: type => ({ type, isTrusted: false }),
+    });
+
+    controller.start();
+    const managed = select.options.find(item => item.dataset.cmrExternalModel === 'true');
+    for (const item of select.options) {
+        item.selected = item === managed;
+    }
+    select.value = 'gpt-next';
+
+    controller.setTargetExcluded(targetId, true);
+    const excluded = controller.getTargets()[0];
+    assert.equal(excluded.resolution.source, 'user-excluded');
+    assert.deepEqual(excluded.bridge, {
+        status: 'idle', issueCode: 'user-excluded', injectedCount: 0,
+    });
+    assert.equal(select.value, 'native-model');
+    assert.deepEqual(externalValues, ['native-model']);
+    assert.deepEqual(invalidations, []);
+    assert.equal(select.options.some(item => item.dataset.cmrExternalModel === 'true'), false);
+    assert.deepEqual(controller.getExcludedTargetIds(), [targetId]);
+    assert.equal(controller.getMetrics().userExcludedCount, 1);
+    assert.equal(controller.getMetrics().idleCount, 0);
+    assert.deepEqual(controller.getTargetDetails()[0], {
+        targetId,
+        extensionLabel: 'Example Bridge',
+        label: 'Chat model',
+        controlType: 'select',
+        status: 'idle',
+        resolutionSource: 'user-excluded',
+        excludedReason: 'user-excluded',
+        bridge: { status: 'idle', issueCode: 'user-excluded', injectedCount: 0 },
+    });
+
+    controller.setTargetExcluded(targetId, false);
+    assert.equal(controller.getTargets()[0].resolution.source, 'direct');
+    assert.equal(controller.getTargets()[0].bridge.status, 'connected');
+    assert.equal(select.options.some(item => item.value === 'gpt-next'), true);
+    // 재연결은 선택지만 복구하고 외부 확장의 현재 native 선택을 강제로 덮지 않는다.
+    assert.equal(select.value, 'native-model');
+    assert.deepEqual(controller.getExcludedTargetIds(), []);
+    controller.destroy();
+});
+
+test('제외 대상 API는 ID를 정규화하고 512개 한도와 prototype pollution을 방어한다', () => {
+    const polluted = {};
+    Object.defineProperty(polluted, '__proto__', { enumerable: true, value: true });
+    for (let index = 0; index < EXTERNAL_TARGET_LIMIT + 4; index += 1) {
+        polluted[`cmr-ext-${index.toString(16).padStart(8, '0')}`] = true;
+    }
+    const controller = createExternalIntegrationController({ excludedTargetIds: polluted });
+    assert.equal(controller.getExcludedTargetIds().length, EXTERNAL_TARGET_LIMIT);
+    assert.equal(Object.hasOwn(Object.fromEntries(controller.getExcludedTargetIds().map(id => [id, true])), '__proto__'), false);
+    assert.throws(() => controller.setTargetExcluded('unsafe', true), TypeError);
+    assert.throws(() => controller.setTargetExcluded('cmr-ext-ffffffff', true), RangeError);
+
+    controller.setExcludedTargetIds([' CMR-EXT-1234ABCD ', 'unsafe', '__proto__']);
+    assert.deepEqual(controller.getExcludedTargetIds(), ['cmr-ext-1234abcd']);
+});
+
+test('초기 제외 목록을 비우면 생성 옵션의 오래된 값이 대상을 다시 막지 않는다', () => {
+    const documentRef = new FakeDocument();
+    const select = labeledModelSelect(documentRef, 'restored_chat_model', 'Restored model');
+    documentRef.append(select.parentElement);
+    const targetId = createExternalTargetId(select, { documentRef });
+    const controller = createExternalIntegrationController({
+        root: documentRef,
+        documentRef,
+        excludedTargetIds: [targetId],
+        getModels: providerId => providerId === 'openai'
+            ? [{ provider: 'openai', id: 'gpt-restored' }]
+            : [],
+        observerFactory: () => ({ observe() {}, disconnect() {} }),
+    });
+
+    controller.start();
+    assert.equal(controller.getTargets()[0].resolution.source, 'user-excluded');
+    controller.setExcludedTargetIds([]);
+    assert.equal(controller.getTargets()[0].resolution.source, 'direct');
+    assert.equal(select.options.some(item => item.value === 'gpt-restored'), true);
+    controller.destroy();
+});
+
+test('확장 label은 공통 root를 건너뛰고 가까운 확장 경계를 humanize한다', () => {
+    const documentRef = new FakeDocument();
+    const commonRoot = documentRef.createElement('div');
+    commonRoot.id = 'extensions_settings2';
+    const captionPanel = documentRef.createElement('section');
+    captionPanel.id = 'caption_settings';
+    const caption = labeledModelSelect(documentRef, 'caption_multimodal_model', 'Caption model');
+    captionPanel.append(caption.parentElement);
+    commonRoot.append(captionPanel);
+    documentRef.append(commonRoot);
+
+    const [target] = discoverExternalModelTargets(documentRef, { documentRef });
+    assert.equal(target.extensionLabel, 'Caption');
+});
+
+test('bridge 상태는 registry 빈 값·native 중복·target별 동기화 실패를 구분한다', () => {
+    const emptyDocument = new FakeDocument();
+    const emptySelect = labeledModelSelect(emptyDocument, 'empty_chat_model', 'Chat model');
+    emptySelect.append(option(emptyDocument, 'native'));
+    emptySelect.value = 'native';
+    const emptyController = createExternalIntegrationController({
+        root: emptyDocument,
+        documentRef: emptyDocument,
+        getModels: () => [],
+        observerFactory: () => ({ observe() {}, disconnect() {} }),
+    });
+    assert.deepEqual(emptyController.start()[0].bridge, {
+        status: 'idle', issueCode: 'registry-empty', injectedCount: 0,
+    });
+    emptyController.destroy();
+
+    const documentRef = new FakeDocument();
+    const bad = labeledModelSelect(documentRef, 'broken_chat_model', 'Broken chat model');
+    bad.append(option(documentRef, 'native'));
+    bad.value = 'native';
+    const good = labeledModelSelect(documentRef, 'good_chat_model', 'Good chat model');
+    // Registry model이 native에 이미 있어 주입 0개여도 bridge는 정상 연결이다.
+    good.append(option(documentRef, 'gpt-next'));
+    good.value = 'gpt-next';
+    const silent = labeledModelSelect(documentRef, 'silent_chat_model', 'Silent chat model');
+    silent.append(option(documentRef, 'native'));
+    silent.value = 'native';
+    const originalBadAppend = bad.append.bind(bad);
+    bad.append = (...children) => {
+        if (children.some(child => child.tagName === 'OPTGROUP')) {
+            throw new Error('third-party DOM rejected injection');
+        }
+        return originalBadAppend(...children);
+    };
+    const originalSilentAppend = silent.append.bind(silent);
+    silent.append = (...children) => {
+        if (children.some(child => child.tagName === 'OPTGROUP')) {
+            return undefined;
+        }
+        return originalSilentAppend(...children);
+    };
+    const controller = createExternalIntegrationController({
+        root: documentRef,
+        documentRef,
+        getModels: providerId => providerId === 'openai'
+            ? [{ provider: 'openai', id: 'gpt-next' }]
+            : [],
+        observerFactory: () => ({ observe() {}, disconnect() {} }),
+    });
+    const targets = controller.start();
+    const badTarget = targets.find(target => target.control === bad);
+    const goodTarget = targets.find(target => target.control === good);
+    const silentTarget = targets.find(target => target.control === silent);
+    assert.deepEqual(badTarget.bridge, {
+        status: 'failed', issueCode: 'sync-failed', injectedCount: 0,
+    });
+    assert.deepEqual(goodTarget.bridge, {
+        status: 'connected', issueCode: null, injectedCount: 0,
+    });
+    assert.deepEqual(silentTarget.bridge, {
+        status: 'failed', issueCode: 'models-not-injected', injectedCount: 0,
+    });
+    assert.equal(controller.getMetrics().failedCount, 2);
+    assert.equal(controller.getMetrics().connectedCount, 1);
+    controller.destroy();
 });

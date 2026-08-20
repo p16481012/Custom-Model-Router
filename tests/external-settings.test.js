@@ -5,8 +5,10 @@ import {
     EXTERNAL_SETTINGS_MAX_TARGETS,
     EXTERNAL_SETTINGS_SCHEMA_VERSION,
     ExternalSettingsError,
+    getExternalExcludedTargetIds,
     getExternalMapping,
     getExternalSelectedModel,
+    isExternalTargetExcluded,
     normalizeAutomaticExternalSettings,
     normalizeExternalSettings,
     removeExternalMapping,
@@ -14,22 +16,24 @@ import {
     removeExternalTargetSelections,
     setExternalMapping,
     setExternalSelectedModel,
+    setExternalTargetExcluded,
 } from '../src/external-settings.js';
 
 const TARGET = 'cmr-ext-1234abcd';
 
-test('빈 값과 손상된 최상위 값은 schema v1 빈 설정으로 정규화한다', () => {
+test('빈 값과 손상된 최상위 값은 schema v2 빈 설정으로 정규화한다', () => {
     const empty = {
         schemaVersion: EXTERNAL_SETTINGS_SCHEMA_VERSION,
         mappings: {},
         selectedModels: {},
+        excludedTargets: {},
     };
     assert.deepEqual(normalizeExternalSettings(), empty);
     assert.deepEqual(normalizeExternalSettings([]), empty);
     assert.deepEqual(normalizeExternalSettings({ mappings: 'bad', selectedModels: 42 }), empty);
 });
 
-test('legacy 연결 mode를 제거하고 provider별 선택과 안전한 필드만 정규화한다', () => {
+test('legacy 연결 mode는 disabled까지 폐기하고 provider별 선택만 schema v2로 이관한다', () => {
     const normalized = normalizeExternalSettings({
         schemaVersion: 1,
         mappings: {
@@ -50,7 +54,7 @@ test('legacy 연결 mode를 제거하고 provider별 선택과 안전한 필드�
     });
 
     assert.deepEqual(normalized, {
-        schemaVersion: 1,
+        schemaVersion: 2,
         mappings: {},
         selectedModels: {
             [TARGET]: {
@@ -58,26 +62,29 @@ test('legacy 연결 mode를 제거하고 provider별 선택과 안전한 필드�
                 openai: 'gpt-6-mini',
             },
         },
+        excludedTargets: {},
     });
     assert.equal(JSON.stringify(normalized).includes('must-drop'), false);
 });
 
 test('미래 schema는 조용히 낮추지 않고 명시적인 오류를 낸다', () => {
     assert.throws(
-        () => normalizeExternalSettings({ schemaVersion: 2, mappings: {}, selectedModels: {} }),
+        () => normalizeExternalSettings({ schemaVersion: 3, mappings: {}, selectedModels: {} }),
         error => error instanceof ExternalSettingsError && error.code === 'future_schema',
     );
 });
 
-test('legacy provider mapping은 제거하고 대상별 마지막 선택만 보존한다', () => {
+test('legacy provider mapping은 제거하고 대상별 마지막 선택과 v2 제외만 보존한다', () => {
     const mappings = {};
     for (let index = 0; index < EXTERNAL_SETTINGS_MAX_TARGETS; index += 1) {
         mappings[`cmr-ext-${index.toString(16).padStart(8, '0')}`] = 'openai';
     }
     const selectedTarget = 'cmr-ext-00000200';
+    const excludedTarget = 'cmr-ext-000001ff';
     const normalized = normalizeAutomaticExternalSettings({
         schemaVersion: EXTERNAL_SETTINGS_SCHEMA_VERSION,
         mappings,
+        excludedTargets: { [excludedTarget]: true },
         selectedModels: {
             [selectedTarget]: { vertexai: 'gemini-future' },
         },
@@ -87,8 +94,9 @@ test('legacy provider mapping은 제거하고 대상별 마지막 선택만 보�
     assert.deepEqual(normalized.selectedModels, {
         [selectedTarget]: { vertexai: 'gemini-future' },
     });
+    assert.deepEqual(normalized.excludedTargets, { [excludedTarget]: true });
     assert.throws(
-        () => normalizeAutomaticExternalSettings({ schemaVersion: 2 }),
+        () => normalizeAutomaticExternalSettings({ schemaVersion: 3 }),
         error => error instanceof ExternalSettingsError && error.code === 'future_schema',
     );
 });
@@ -102,10 +110,43 @@ test('legacy 연결 mutation API는 입력을 검증하되 mode를 다시 저장
     assert.equal(getExternalMapping(mapped, TARGET), null);
     assert.equal(getExternalMapping(disabled, TARGET), null);
     assert.deepEqual(removeExternalMapping(disabled, TARGET), {
-        schemaVersion: 1,
+        schemaVersion: 2,
         mappings: {},
         selectedModels: {},
+        excludedTargets: {},
     });
+});
+
+test('사용자 제외를 targetId별로 추가·해제하고 선택 선호는 보존한다', () => {
+    let settings = setExternalSelectedModel(undefined, TARGET, 'openai', 'gpt-6-mini');
+    settings = setExternalTargetExcluded(settings, TARGET, true);
+
+    assert.equal(isExternalTargetExcluded(settings, TARGET), true);
+    assert.deepEqual(getExternalExcludedTargetIds(settings), [TARGET]);
+    assert.equal(getExternalSelectedModel(settings, TARGET, 'openai'), 'gpt-6-mini');
+    assert.equal(getExternalMapping(settings, TARGET), null);
+
+    settings = setExternalTargetExcluded(settings, TARGET, false);
+    assert.equal(isExternalTargetExcluded(settings, TARGET), false);
+    assert.deepEqual(settings.excludedTargets, {});
+    assert.equal(getExternalSelectedModel(settings, TARGET, 'openai'), 'gpt-6-mini');
+});
+
+test('schema v1의 제외 필드와 legacy disabled는 폐기하고 v2의 명시적 제외만 읽는다', () => {
+    const legacy = normalizeExternalSettings({
+        schemaVersion: 1,
+        mappings: { [TARGET]: 'disabled' },
+        excludedTargets: { [TARGET]: true },
+        selectedModels: { [TARGET]: { openai: 'gpt-6-mini' } },
+    });
+    assert.deepEqual(legacy.excludedTargets, {});
+    assert.equal(legacy.selectedModels[TARGET].openai, 'gpt-6-mini');
+
+    const current = normalizeExternalSettings({
+        schemaVersion: 2,
+        excludedTargets: { [TARGET]: true },
+    });
+    assert.deepEqual(current.excludedTargets, { [TARGET]: true });
 });
 
 test('하나의 target에 provider별 선택을 독립 저장하고 선택만 제거한다', () => {
@@ -153,9 +194,12 @@ test('원형·getter 오류·prototype pollution 입력을 실행하거나 결�
     const circular = { openai: 'gpt-6-mini' };
     circular.self = circular;
     const source = {
+        schemaVersion: 2,
         mappings,
         selectedModels: { [TARGET]: circular },
+        excludedTargets: {},
     };
+    Object.defineProperty(source.excludedTargets, '__proto__', { enumerable: true, value: true });
     Object.defineProperty(source, 'unknown', {
         enumerable: true,
         get() { throw new Error('getter must not run'); },
@@ -164,6 +208,7 @@ test('원형·getter 오류·prototype pollution 입력을 실행하거나 결�
     const normalized = normalizeExternalSettings(source);
     assert.deepEqual(normalized.mappings, {});
     assert.deepEqual(normalized.selectedModels, { [TARGET]: { openai: 'gpt-6-mini' } });
+    assert.deepEqual(normalized.excludedTargets, {});
     assert.equal(Object.hasOwn(normalized.mappings, '__proto__'), false);
     assert.equal({}.polluted, undefined);
 });
@@ -182,4 +227,27 @@ test('provider별 선택 target을 최대 512개까지만 정규화하고 mutati
 
     const existing = Object.keys(normalized.selectedModels)[0];
     assert.equal(setExternalSelectedModel(normalized, existing, 'zai', 'glm-new').selectedModels[existing].zai, 'glm-new');
+});
+
+test('제외와 선택은 target 512개 합산 한도를 공유하고 제외를 먼저 보존한다', () => {
+    const excludedTargets = {};
+    for (let index = 0; index < EXTERNAL_SETTINGS_MAX_TARGETS + 4; index += 1) {
+        excludedTargets[`cmr-ext-${index.toString(16).padStart(8, '0')}`] = true;
+    }
+    const normalized = normalizeExternalSettings({
+        schemaVersion: 2,
+        excludedTargets,
+        selectedModels: { 'cmr-ext-ffffffff': { openai: 'gpt-new' } },
+    });
+    assert.equal(Object.keys(normalized.excludedTargets).length, EXTERNAL_SETTINGS_MAX_TARGETS);
+    assert.deepEqual(normalized.selectedModels, {});
+    assert.throws(
+        () => setExternalTargetExcluded(normalized, 'cmr-ext-ffffffff', true),
+        error => error instanceof ExternalSettingsError && error.code === 'target_limit',
+    );
+
+    const existing = Object.keys(normalized.excludedTargets)[0];
+    const withPreference = setExternalSelectedModel(normalized, existing, 'openai', 'gpt-existing');
+    assert.equal(withPreference.selectedModels[existing].openai, 'gpt-existing');
+    assert.equal(withPreference.excludedTargets[existing], true);
 });

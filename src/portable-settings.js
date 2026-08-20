@@ -35,7 +35,7 @@ const REGISTRY_KEYS = Object.freeze(['schemaVersion', 'models', 'selectedModels'
 const MODEL_KEYS = Object.freeze(['id', 'provider', 'protocol', 'enabled']);
 const PURPOSE_ROUTES_KEYS = Object.freeze(['schemaVersion', 'routes']);
 const ROUTE_KEYS = Object.freeze(['provider', 'modelId', 'adapterId', 'connectionProfileId']);
-const EXTERNAL_INTEGRATION_KEYS = Object.freeze(['schemaVersion', 'mappings', 'selectedModels']);
+const EXTERNAL_INTEGRATION_KEYS = Object.freeze(['schemaVersion', 'mappings', 'selectedModels', 'excludedTargets']);
 
 export class PortableSettingsError extends Error {
     constructor(code, message, issues = []) {
@@ -93,6 +93,7 @@ function cloneExternalSettings(value) {
                 { ...selections },
             ]),
         ),
+        excludedTargets: { ...normalized.excludedTargets },
     };
 }
 
@@ -486,13 +487,29 @@ function validateExternalIntegrations(value, issues) {
         return null;
     }
     addUnknownKeyIssues(issues, value, EXTERNAL_INTEGRATION_KEYS, path);
-    validateSchemaVersion(
-        issues,
-        value.schemaVersion,
-        EXTERNAL_SETTINGS_SCHEMA_VERSION,
-        `${path}.schemaVersion`,
-        '외부 확장 연결',
-    );
+    const externalSchemaVersion = value.schemaVersion;
+    if (!Number.isInteger(externalSchemaVersion)) {
+        issues.push(createIssue(
+            'error',
+            'schema_version_invalid',
+            `${path}.schemaVersion`,
+            '외부 확장 연결 스키마 버전이 올바르지 않습니다.',
+        ));
+    } else if (externalSchemaVersion > EXTERNAL_SETTINGS_SCHEMA_VERSION) {
+        issues.push(createIssue(
+            'error',
+            'future_schema_unsupported',
+            `${path}.schemaVersion`,
+            `외부 확장 연결 스키마 v${externalSchemaVersion}은 이 확장에서 지원하지 않습니다. 확장을 먼저 업데이트해 주세요.`,
+        ));
+    } else if (externalSchemaVersion < 1) {
+        issues.push(createIssue(
+            'error',
+            'schema_version_unsupported',
+            `${path}.schemaVersion`,
+            `외부 확장 연결 스키마 v${externalSchemaVersion}은 이 백업 형식에서 지원하지 않습니다.`,
+        ));
+    }
     let normalized;
     try {
         normalized = cloneExternalSettings(value);
@@ -508,13 +525,15 @@ function validateExternalIntegrations(value, issues) {
     const mappingEntries = isRecord(value.mappings) ? Object.entries(value.mappings) : null;
     const mappingsCanonical = Boolean(mappingEntries
         && mappingEntries.length <= EXTERNAL_SETTINGS_MAX_TARGETS
-        && mappingEntries.every(([targetId, mode]) => {
-            const sourceMode = normalizeProviderId(mode);
-            return /^cmr-ext-[a-f0-9]{8}$/.test(targetId)
-                && (sourceMode === EXTERNAL_MAPPING_MANUAL
-                    || sourceMode === EXTERNAL_MAPPING_DISABLED
-                    || isSupportedProvider(sourceMode));
-        }));
+        && (externalSchemaVersion === EXTERNAL_SETTINGS_SCHEMA_VERSION
+            ? mappingEntries.length === 0
+            : mappingEntries.every(([targetId, mode]) => {
+                const sourceMode = normalizeProviderId(mode);
+                return /^cmr-ext-[a-f0-9]{8}$/.test(targetId)
+                    && (sourceMode === EXTERNAL_MAPPING_MANUAL
+                        || sourceMode === EXTERNAL_MAPPING_DISABLED
+                        || isSupportedProvider(sourceMode));
+            })));
     const selectedCanonical = isRecord(value.selectedModels)
         && Object.keys(value.selectedModels).length === Object.keys(normalized.selectedModels).length
         && Object.entries(normalized.selectedModels).every(([targetId, selections]) => (
@@ -524,7 +543,14 @@ function validateExternalIntegrations(value, issues) {
                 value.selectedModels[targetId][providerId] === modelId
             ))
         ));
-    if (!mappingsCanonical || !selectedCanonical) {
+    const excludedCanonical = externalSchemaVersion === 1
+        ? value.excludedTargets === undefined && Object.keys(normalized.excludedTargets).length === 0
+        : isRecord(value.excludedTargets)
+            && Object.keys(value.excludedTargets).length === Object.keys(normalized.excludedTargets).length
+            && Object.entries(normalized.excludedTargets).every(([targetId, excluded]) => (
+                value.excludedTargets[targetId] === excluded
+            ));
+    if (!mappingsCanonical || !selectedCanonical || !excludedCanonical) {
         issues.push(createIssue(
             'error',
             'external_integrations_not_canonical',

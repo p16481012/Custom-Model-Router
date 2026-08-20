@@ -56,10 +56,11 @@ import {
     normalizeAutomaticExternalSettings,
     removeExternalSelectedModel,
     removeExternalTargetSelections,
+    setExternalTargetExcluded,
     setExternalSelectedModel,
 } from './src/external-settings.js';
 
-const EXTENSION_VERSION = '0.6.8';
+const EXTENSION_VERSION = '0.6.9';
 const SETTINGS_KEY = 'customModelRouter';
 const ROUTES_SETTINGS_KEY = 'customModelRouterRouting';
 const EXTERNAL_SETTINGS_KEY = 'customModelRouterExternalIntegrations';
@@ -649,10 +650,6 @@ function renderModelList() {
     }
 }
 
-function getExternalTargetDescription() {
-    return '등록된 모든 제공업체 모델을 직접 표시합니다.';
-}
-
 function renderExternalIntegrations() {
     const list = settingsRoot?.querySelector('#cmr_external_list');
     const count = settingsRoot?.querySelector('#cmr_external_count');
@@ -660,24 +657,58 @@ function renderExternalIntegrations() {
         return;
     }
 
+    const focusedAction = document.activeElement?.closest?.('[data-cmr-external-action]');
+    const focusedTargetId = focusedAction && list.contains(focusedAction)
+        ? String(focusedAction.dataset.targetId ?? '')
+        : '';
+
     const targets = externalIntegrationController?.getTargets?.() ?? [];
-    const actionable = targets.filter(target => target.resolution?.source !== 'risk-blocked');
-    const connectedCount = actionable.filter(target => target.resolution?.source === 'direct').length;
-    count.textContent = `연결 대상 ${actionable.length}개 · 연결 ${connectedCount}개`;
+    const metrics = externalIntegrationController?.getMetrics?.() ?? {
+        observerCount: 0,
+        boundCount: 0,
+        directCount: 0,
+    };
+    const connectedTargets = targets.filter(target => (
+        target.resolution?.source === 'direct' && target.bridge?.status === 'connected'
+    ));
+    const idleTargets = targets.filter(target => (
+        target.resolution?.source === 'direct' && target.bridge?.status === 'idle'
+    ));
+    const failedTargets = targets.filter(target => (
+        target.resolution?.source === 'direct' && target.bridge?.status === 'failed'
+    ));
+    const userExcludedTargets = targets.filter(target => target.resolution?.source === 'user-excluded');
+    const riskBlockedTargets = targets.filter(target => target.resolution?.source === 'risk-blocked');
+    const directTargets = targets.filter(target => target.resolution?.source === 'direct');
+    const runtimeMismatch = Boolean(externalIntegrationController) && (
+        metrics.observerCount !== 1 || metrics.boundCount !== directTargets.length
+    );
+    count.textContent = `연결 ${connectedTargets.length}개 · 제외 ${userExcludedTargets.length + riskBlockedTargets.length}개`;
     list.replaceChildren();
 
-    if (!actionable.length) {
+    if (!targets.length) {
         const empty = document.createElement('li');
         empty.className = 'cmr-empty';
-        empty.textContent = '연결할 수 있는 다른 확장의 Chat Completion 모델 칸을 찾지 못했습니다.';
+        empty.textContent = '현재 화면에서 외부 확장의 모델 칸을 찾지 못했습니다.';
         list.append(empty);
     }
 
-    for (const target of actionable) {
+    const sortedTargets = [...targets].sort((left, right) => {
+        const order = source => ({ direct: 0, 'user-excluded': 1, 'risk-blocked': 2 }[source] ?? 3);
+        return order(left.resolution?.source) - order(right.resolution?.source)
+            || String(left.extensionLabel ?? left.label).localeCompare(String(right.extensionLabel ?? right.label), 'ko');
+    });
+
+    for (const target of sortedTargets) {
+        const source = target.resolution?.source;
+        const bridgeStatus = target.bridge?.status ?? (source === 'direct' ? 'idle' : source);
+        const ownerLabel = target.extensionLabel && target.extensionLabel !== '외부 확장'
+            ? target.extensionLabel
+            : target.label;
+        const controlLabel = ownerLabel === target.label ? '외부 모델 칸' : target.label;
         const row = document.createElement('li');
         row.className = 'cmr-model-row cmr-external-row';
         row.dataset.targetId = target.targetId;
-        row.title = `문제 해결용 대상 식별자: ${target.targetId}`;
 
         const info = document.createElement('div');
         info.className = 'cmr-model-summary';
@@ -685,20 +716,92 @@ function renderExternalIntegrations() {
         text.className = 'cmr-external-heading';
         const name = document.createElement('strong');
         name.className = 'cmr-external-name';
-        name.textContent = target.label;
-        const description = document.createElement('small');
-        description.className = 'cmr-sentence-text';
-        description.textContent = getExternalTargetDescription();
-        text.append(name, document.createElement('br'), description);
+        name.textContent = ownerLabel;
+        const control = document.createElement('small');
+        control.className = 'cmr-external-control';
+        control.textContent = controlLabel;
+        const meta = document.createElement('span');
+        meta.className = 'cmr-external-meta';
+        const state = document.createElement('span');
+        state.className = 'cmr-external-state';
+        const verification = document.createElement('span');
+        verification.className = 'cmr-external-verification';
+
+        if (source === 'user-excluded') {
+            state.dataset.state = 'excluded';
+            state.textContent = '연결 제외';
+            verification.textContent = 'CMR 선택지를 표시하지 않음';
+        } else if (source === 'risk-blocked') {
+            state.dataset.state = 'excluded';
+            state.textContent = '안전상 제외';
+            verification.textContent = '자동 연결 대상이 아님';
+        } else if (bridgeStatus === 'failed') {
+            state.dataset.state = 'failed';
+            state.textContent = '선택지 연결 실패';
+            verification.textContent = '고급 진단 확인 필요';
+        } else if (bridgeStatus === 'idle') {
+            state.dataset.state = 'idle';
+            state.textContent = '등록 모델 없음';
+            verification.textContent = '모델을 등록하면 선택지를 표시함';
+        } else {
+            state.dataset.state = 'connected';
+            state.textContent = '선택지 연결됨';
+            verification.textContent = '실제 요청 확인 필요';
+        }
+        meta.append(state, verification);
+        text.append(name, control, meta);
         info.append(text);
-        row.append(info);
+
+        const actions = document.createElement('div');
+        actions.className = 'cmr-external-actions';
+        if (source === 'direct' || source === 'user-excluded') {
+            const action = document.createElement('button');
+            const shouldRestore = source === 'user-excluded';
+            const actionTargetLabel = ownerLabel === target.label
+                ? ownerLabel
+                : `${ownerLabel} · ${controlLabel}`;
+            action.type = 'button';
+            action.className = 'menu_button cmr-icon-button';
+            action.dataset.cmrExternalAction = shouldRestore ? 'restore' : 'exclude';
+            action.dataset.targetId = target.targetId;
+            action.title = shouldRestore ? '다시 연결' : '이 대상 연결 제외';
+            action.setAttribute('aria-label', `${actionTargetLabel} ${shouldRestore ? '다시 연결' : '연결에서 제외'}`);
+            const icon = document.createElement('i');
+            icon.className = shouldRestore ? 'fa-solid fa-rotate-left' : 'fa-solid fa-eye-slash';
+            icon.setAttribute('aria-hidden', 'true');
+            action.append(icon);
+            actions.append(action);
+        }
+        row.append(info, actions);
         list.append(row);
     }
 
     const status = settingsRoot.querySelector('#cmr_external_status');
     if (status) {
-        status.dataset.state = 'ok';
-        status.textContent = `${connectedCount}개 모델 칸에 등록 모델을 직접 연결했습니다.`;
+        status.dataset.state = failedTargets.length || runtimeMismatch ? 'error' : 'ok';
+        status.textContent = failedTargets.length
+            ? `${failedTargets.length}개 대상의 선택지 연결을 확인해야 합니다.`
+            : runtimeMismatch
+                ? '외부 연결 감시 자원을 확인해야 합니다.'
+                : `${connectedTargets.length}개 연결 · ${idleTargets.length}개 대기 · ${userExcludedTargets.length}개 사용자 제외`;
+    }
+
+    const warning = settingsRoot.querySelector('#cmr_external_warning');
+    const warningText = settingsRoot.querySelector('#cmr_external_warning_text');
+    if (warning) {
+        const hasProblem = failedTargets.length > 0 || runtimeMismatch;
+        warning.hidden = !hasProblem;
+        if (hasProblem && warningText) {
+            warningText.textContent = failedTargets.length
+                ? `${failedTargets.length}개 모델 칸에 선택지를 표시하지 못했습니다.`
+                : '외부 연결 감시 자원 상태가 예상과 다릅니다.';
+        }
+    }
+
+    if (focusedTargetId) {
+        const replacementAction = [...list.querySelectorAll('[data-cmr-external-action]')]
+            .find(action => action.dataset.targetId === focusedTargetId);
+        replacementAction?.focus();
     }
 }
 
@@ -903,6 +1006,19 @@ function connectObserver() {
     observer.observe(observedContainer, { childList: true, subtree: true });
 }
 
+function synchronizeExternalIntegrations() {
+    if (!externalIntegrationController) {
+        return;
+    }
+    const desired = Object.keys(externalSettings?.excludedTargets ?? {}).sort();
+    const current = (externalIntegrationController.getExcludedTargetIds?.() ?? []).sort();
+    if (JSON.stringify(desired) !== JSON.stringify(current)) {
+        externalIntegrationController.setExcludedTargetIds?.(desired);
+        return;
+    }
+    externalIntegrationController.sync?.();
+}
+
 function synchronize() {
     if (!context || !settings) {
         return;
@@ -912,7 +1028,7 @@ function synchronize() {
     for (const provider of getProviders()) {
         synchronizeProvider(provider);
     }
-    externalIntegrationController?.sync?.();
+    synchronizeExternalIntegrations();
     renderUi();
     connectObserver();
 }
@@ -1126,15 +1242,23 @@ function recoverExternalTargetCapacity(value, targetId) {
     const detectedTargetIds = new Set(
         (externalIntegrationController?.getTargets?.() ?? []).map(target => target.targetId),
     );
-    const staleTargetId = Object.keys(normalized.selectedModels).find(candidateTargetId => (
+    const selectedTargetIds = Object.keys(normalized.selectedModels);
+    const excludedTargetIds = Object.keys(normalized.excludedTargets ?? {});
+    const exclusionSet = new Set(excludedTargetIds);
+    const staleTargetId = [
+        ...selectedTargetIds.filter(candidateTargetId => !exclusionSet.has(candidateTargetId)),
+        ...excludedTargetIds,
+    ].find(candidateTargetId => (
         candidateTargetId !== targetId && !detectedTargetIds.has(candidateTargetId)
     ));
     if (!staleTargetId) {
         return null;
     }
     const selectedModels = { ...normalized.selectedModels };
+    const excludedTargets = { ...(normalized.excludedTargets ?? {}) };
     delete selectedModels[staleTargetId];
-    return { ...normalized, selectedModels };
+    delete excludedTargets[staleTargetId];
+    return { ...normalized, selectedModels, excludedTargets };
 }
 
 function withExternalTargetCapacityRecovery(value, targetId, operation) {
@@ -1204,6 +1328,57 @@ function onExternalSelectionInvalidated({ targetId, providerId, modelId, reason 
     renderExternalIntegrations();
 }
 
+function onExternalListClick(event) {
+    const button = event.target?.closest?.('[data-cmr-external-action]');
+    if (!button || !settingsRoot?.contains(button) || !context || !externalSettings) {
+        return;
+    }
+    const targetId = String(button.dataset.targetId ?? '');
+    const action = button.dataset.cmrExternalAction;
+    const target = (externalIntegrationController?.getTargets?.() ?? [])
+        .find(candidate => candidate.targetId === targetId);
+    const actionMatchesState = (action === 'exclude' && target?.resolution?.source === 'direct')
+        || (action === 'restore' && target?.resolution?.source === 'user-excluded');
+    if (!target || !actionMatchesState) {
+        announce('외부 연결 대상을 찾지 못했습니다.', 'error');
+        return;
+    }
+
+    try {
+        const excluded = action === 'exclude';
+        const next = withExternalTargetCapacityRecovery(externalSettings, targetId, candidate => (
+            setExternalTargetExcluded(candidate, targetId, excluded)
+        ));
+        externalSettings = next;
+        context.extensionSettings[EXTERNAL_SETTINGS_KEY] = externalSettings;
+        acceptedExternalSnapshot = normalizeAutomaticExternalSettings(externalSettings);
+        context.saveSettingsDebounced();
+        externalIntegrationController?.setExcludedTargetIds?.(
+            Object.keys(externalSettings.excludedTargets ?? {}),
+        );
+        renderExternalIntegrations();
+        announce(excluded
+            ? `${target.extensionLabel ?? target.label} 모델 칸을 CMR 연결에서 제외했습니다.`
+            : `${target.extensionLabel ?? target.label} 모델 칸을 다시 연결했습니다.`);
+    } catch (error) {
+        console.error('[Custom Model Router] 외부 연결 제외 설정을 저장하지 못했습니다.', error);
+        announce('외부 연결 제외 설정을 저장하지 못했습니다.', 'error');
+    }
+}
+
+function onOpenExternalManager() {
+    const operations = settingsRoot?.querySelector('#cmr_operations_section');
+    const advanced = settingsRoot?.querySelector('#cmr_external_advanced');
+    if (operations) {
+        operations.open = true;
+    }
+    if (advanced) {
+        advanced.open = true;
+        advanced.querySelector?.('summary')?.focus?.();
+        advanced.scrollIntoView?.({ block: 'nearest' });
+    }
+}
+
 function createDiagnosticReport() {
     const compatibility = diagnoseCompatibility({
         context,
@@ -1219,6 +1394,10 @@ function createDiagnosticReport() {
         targetCount: 0,
         boundCount: 0,
         directCount: 0,
+        userExcludedCount: 0,
+        connectedCount: 0,
+        idleCount: 0,
+        failedCount: 0,
         listenerCount: 0,
     };
     const externalTargets = externalIntegrationController?.getTargets?.() ?? [];
@@ -1286,7 +1465,7 @@ function renderDiagnosticReport() {
 }
 
 function onRunDiagnostics() {
-    externalIntegrationController?.sync?.();
+    synchronizeExternalIntegrations();
     lastDiagnosticReport = createDiagnosticReport();
     renderDiagnosticReport();
 }
@@ -1420,6 +1599,8 @@ function createSettingsPanel() {
     settingsRoot.querySelector('#cmr_provider')?.addEventListener('change', onProviderChange);
     settingsRoot.querySelector('#cmr_add_form')?.addEventListener('submit', onAddModel);
     settingsRoot.querySelector('#cmr_model_list')?.addEventListener('click', onModelListClick);
+    settingsRoot.querySelector('#cmr_external_list')?.addEventListener('click', onExternalListClick);
+    settingsRoot.querySelector('#cmr_external_warning_open')?.addEventListener('click', onOpenExternalManager);
     settingsRoot.querySelector('#cmr_run_diagnostics')?.addEventListener('click', onRunDiagnostics);
     settingsRoot.querySelector('#cmr_copy_diagnostics')?.addEventListener('click', onCopyDiagnostics);
     settingsRoot.querySelector('#cmr_export_backup')?.addEventListener('click', onExportBackup);
@@ -1698,6 +1879,7 @@ async function initialize(generation) {
             }
             return false;
         },
+        excludedTargetIds: Object.keys(externalSettings.excludedTargets ?? {}),
         getModels: providerId => getEnabledModels(settings, providerId),
         getPreferredModels: targetId => ({
             ...(externalSettings?.selectedModels?.[targetId] ?? {}),

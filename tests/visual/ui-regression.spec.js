@@ -49,9 +49,11 @@ async function expectNoHorizontalOverflow(page) {
             '.cmr-list-region',
             '#cmr_model_list',
             '.cmr-model-row',
+            '#cmr_external_warning',
             '.cmr-tool-section',
             '.cmr-tool-body',
             '.cmr-operation-actions',
+            '#cmr_external_advanced',
             '#cmr_external_list',
             '.cmr-scope-note',
         ];
@@ -126,6 +128,9 @@ async function expectButtonsAligned(page, expectedColumns) {
         expect(button.writingMode).toBe('horizontal-tb');
         expect(button.scrollWidth).toBeLessThanOrEqual(button.clientWidth + 1);
         expect(button.scrollHeight).toBeLessThanOrEqual(button.clientHeight + 1);
+    }
+    expect(Math.abs(metrics.add.width - metrics.add.height)).toBeLessThanOrEqual(1);
+    for (const button of metrics.operation) {
         expect(button.width).toBeGreaterThan(button.height);
     }
 
@@ -176,12 +181,14 @@ for (const viewport of VIEWPORTS) {
     test.describe(`${viewport.width}x${viewport.height}`, () => {
         test.use({ viewport });
 
-        test('실제 Popup CSS에서 패널 배치와 단일 직접 연결 UI를 유지한다', async ({ page }, testInfo) => {
+        test('실제 Popup CSS에서 패널 배치와 고급 외부 연결 관리를 유지한다', async ({ page }, testInfo) => {
             await openScenario(page, {
                 modelCount: 7,
                 externalCount: 12,
+                externalExcludedCount: 2,
                 diagnosticCount: 20,
                 openDetails: true,
+                openAdvanced: true,
             });
 
             const dialog = page.locator('#cmr_manager_dialog');
@@ -204,7 +211,15 @@ for (const viewport of VIEWPORTS) {
             });
 
             const addButton = page.locator('.cmr-add-button');
-            await expect(addButton).toContainText('추가');
+            await expect(addButton).toHaveText('');
+            await expect(addButton).toHaveAttribute('title', '모델 등록');
+            await expect(addButton).toHaveAttribute('aria-label', '입력한 모델 ID 등록');
+            await expect(addButton.locator('.fa-plus')).toHaveCount(1);
+            const addButtonSize = await addButton.evaluate(element => {
+                const rect = element.getBoundingClientRect();
+                return { width: rect.width, height: rect.height };
+            });
+            expect(Math.abs(addButtonSize.width - addButtonSize.height)).toBeLessThanOrEqual(1);
             const deleteButtonSize = await page.locator('.cmr-delete-button').first().evaluate(element => {
                 const rect = element.getBoundingClientRect();
                 return { width: rect.width, height: rect.height };
@@ -212,10 +227,22 @@ for (const viewport of VIEWPORTS) {
             expect(deleteButtonSize.width).toBeLessThanOrEqual(30);
             expect(Math.abs(deleteButtonSize.width - deleteButtonSize.height)).toBeLessThanOrEqual(1);
 
-            const external = page.locator('#cmr_external_section');
+            await expect(page.locator('#cmr_external_section')).toHaveCount(0);
+            await expect(page.locator('#cmr_external_warning')).toBeHidden();
+            const external = page.locator('#cmr_operations_section #cmr_external_advanced');
+            await expect(external).toHaveCount(1);
             await expect(external.locator('.cmr-external-row')).toHaveCount(12);
-            await expect(external).toContainText('직접 연결했습니다');
-            await expect(external.locator('select, button, [data-cmr-external-mode]')).toHaveCount(0);
+            await expect(external.locator('.cmr-external-state[data-state="connected"]')).toHaveCount(10);
+            await expect(external.locator('.cmr-external-state[data-state="excluded"]')).toHaveCount(2);
+            await expect(external).toContainText('선택지 연결됨');
+            await expect(external).toContainText('실제 요청 확인 필요');
+            await expect(external).toContainText('연결 제외');
+            await expect(external.locator('[data-cmr-external-action="exclude"]')).toHaveCount(10);
+            await expect(external.locator('[data-cmr-external-action="restore"]')).toHaveCount(2);
+            expect(await external.locator('[data-cmr-external-action]').allTextContents()).toEqual(
+                Array.from({ length: 12 }, () => ''),
+            );
+            await expect(external.locator('select, [data-cmr-external-mode]')).toHaveCount(0);
             await expect(external).not.toContainText('자동 연결');
             await expect(external).not.toContainText('연결 안 함');
             await expect(external).not.toContainText('모델 새로고침');
@@ -234,7 +261,7 @@ for (const viewport of VIEWPORTS) {
             expect(externalEllipsis.scrollWidth).toBeGreaterThan(externalEllipsis.clientWidth);
 
             const detailsSpacing = await page.evaluate(() => {
-                const summaryTitle = document.querySelector('#cmr_external_section summary > span:first-child');
+                const summaryTitle = document.querySelector('#cmr_external_advanced summary > span:first-child');
                 const summaryCount = document.getElementById('cmr_external_count');
                 const titleRect = summaryTitle.getBoundingClientRect();
                 const countRect = summaryCount.getBoundingClientRect();
@@ -274,6 +301,73 @@ for (const viewport of VIEWPORTS) {
         });
     });
 }
+
+test.describe('외부 연결 문제 경고', () => {
+    test.use({ viewport: { width: 420, height: 800 } });
+
+    test('평상시 관리 UI를 숨기고 문제 경고에서 고급 관리로 이동한다', async ({ page }, testInfo) => {
+        await openScenario(page, {
+            modelCount: 3,
+            externalCount: 4,
+            externalProblemCount: 1,
+        });
+
+        const warning = page.locator('#cmr_external_warning');
+        const operations = page.locator('#cmr_operations_section');
+        const advanced = page.locator('#cmr_external_advanced');
+        await expect(page.locator('#cmr_external_section')).toHaveCount(0);
+        await expect(warning).toBeVisible();
+        await expect(warning).toContainText('1개 모델 칸에 선택지를 표시하지 못했습니다.');
+        await expect(operations).not.toHaveAttribute('open', '');
+        await expect(advanced).not.toHaveAttribute('open', '');
+        await attachViewportScreenshot(page, testInfo, 'external-warning');
+
+        await page.locator('#cmr_external_warning_open').click();
+        await expect(operations).toHaveAttribute('open', '');
+        await expect(advanced).toHaveAttribute('open', '');
+        await expect(advanced.locator('summary')).toBeFocused();
+        await expect(advanced.locator('.cmr-external-state[data-state="failed"]')).toHaveCount(1);
+        await expect(advanced).toContainText('선택지 연결 실패');
+        const failedRow = advanced.locator('.cmr-external-row').filter({
+            has: page.locator('.cmr-external-state[data-state="failed"]'),
+        });
+        const targetId = await failedRow.getAttribute('data-target-id');
+        const excludeButton = failedRow.locator('[data-cmr-external-action="exclude"]');
+        await expect(excludeButton).toHaveAttribute(
+            'aria-label',
+            /외부 확장 4 · Chat Completion 모델 칸 4 연결에서 제외/,
+        );
+        await excludeButton.focus();
+        await excludeButton.click();
+        await expect(warning).toBeHidden();
+        const targetRow = advanced.locator(`[data-target-id="${targetId}"]`);
+        await expect(targetRow.locator('.cmr-external-state')).toHaveText('연결 제외');
+        const restoreButton = targetRow.locator('[data-cmr-external-action="restore"]');
+        await expect(restoreButton).toBeFocused();
+
+        await restoreButton.click();
+        await expect(warning).toBeVisible();
+        await expect(targetRow.locator('.cmr-external-state')).toHaveText('선택지 연결 실패');
+        await expect(targetRow.locator('[data-cmr-external-action="exclude"]')).toBeFocused();
+        await expectNoHorizontalOverflow(page);
+        await attachViewportScreenshot(page, testInfo, 'external-warning-advanced');
+    });
+
+    test('런타임 감시 문제를 임의의 대상 문제로 표현하지 않는다', async ({ page }) => {
+        await openScenario(page, {
+            externalCount: 3,
+            externalRuntimeProblem: true,
+        });
+
+        const warning = page.locator('#cmr_external_warning');
+        await expect(warning).toBeVisible();
+        await expect(warning).toContainText('외부 연결 감시 자원 상태가 예상과 다릅니다.');
+        await page.locator('#cmr_external_warning_open').click();
+        const status = page.locator('#cmr_external_status');
+        await expect(status).toHaveText('외부 연결 감시 자원을 확인해야 합니다.');
+        await expect(status).not.toContainText('1개 대상');
+    });
+});
 
 test.describe('모델 목록 스크롤 경계', () => {
     test.use({ viewport: { width: 420, height: 800 } });

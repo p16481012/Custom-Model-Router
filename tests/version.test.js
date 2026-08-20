@@ -90,6 +90,7 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
     assert.match(roadmap, /## v0\.6\.6 — 외부 연결 단일화와 진단·버튼 수정/);
     assert.match(roadmap, /## v0\.6\.7 — 실제 UI 회귀 검사 자동화/);
     assert.match(roadmap, /## v0\.6\.8 — 외부 target 식별 안정화와 진단 정합성/);
+    assert.match(roadmap, /## v0\.6\.9 — 외부 연결 예외 중심 UI와 schema v2/);
     assert.match(entrypoint, /new context\.Popup/);
     assert.match(entrypoint, /#cmr_open_manager/);
     assert.doesNotMatch(entrypoint, /#extensions_settings2|#extensions_settings/);
@@ -104,7 +105,10 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
     assert.match(settingsHtml, /cmr_run_diagnostics/);
     assert.match(settingsHtml, /cmr_export_backup/);
     assert.match(settingsHtml, /호환성 진단 및 CMR 설정 백업/);
-    assert.match(settingsHtml, /cmr_external_(?:section|list|status|count)/);
+    assert.doesNotMatch(settingsHtml, /id="cmr_external_section"/);
+    assert.match(settingsHtml, /id="cmr_external_warning"[^>]*hidden/);
+    assert.match(settingsHtml, /id="cmr_external_advanced"/);
+    assert.match(settingsHtml, /cmr_external_(?:list|status|count)/);
     assert.doesNotMatch(settingsHtml, /cmr_external_refresh|data-cmr-external-mode/);
     assert.doesNotMatch(settingsHtml, /cmr_rout(?:ing_section|e_(?:form|purpose|model|profile|clear|test|status))/);
     assert.match(portableSettings, /PORTABLE_SETTINGS_SCHEMA_VERSION = 2/);
@@ -117,10 +121,14 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
     assert.match(apiDocument, /Portable backup schema v2/);
     assert.match(apiDocument, /v0\.6\.7의 Playwright UI 회귀 검사 인프라/);
     assert.match(apiDocument, /모두 새 객체로 만들고 순서까지 뒤집으면/);
+    assert.match(apiDocument, /DOM 브리지 내부 저장 schema v2/);
+    assert.match(apiDocument, /excludedTargets/);
+    assert.match(apiDocument, /disabled.*사용자 제외로 되살리지 않습니다/);
     assert.match(readme, /select\/input\/datalist/);
     assert.match(roadmap, /fetch.*XMLHttpRequest.*monkey patch/);
     for (const document of [readme, roadmap, checklist]) {
-        assert.match(document, /Playwright Chromium UI 회귀 검사 6개/);
+        assert.match(document, /Playwright Chromium UI 회귀 검사 8개/);
+        assert.doesNotMatch(document, /(?:UI 회귀|상호작용) 검사 7개 통과/);
         assert.match(document, /전체 SillyTavern.*런타임/);
     }
 
@@ -136,7 +144,11 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
     assert.match(uiRegressionSpec, /#cmr_external_list/);
     assert.match(uiRegressionSpec, /#cmr_diagnostic_list/);
     assert.match(uiRegressionSpec, /expectHiddenScrollbarCanScroll/);
-    assert.match(uiRegressionSpec, /직접 연결했습니다/);
+    assert.match(uiRegressionSpec, /선택지 연결됨/);
+    assert.match(uiRegressionSpec, /실제 요청 확인 필요/);
+    assert.match(uiRegressionSpec, /#cmr_external_warning_open/);
+    assert.match(uiRegressionSpec, /#cmr_external_advanced/);
+    assert.match(uiRegressionSpec, /\.fa-plus/);
     assert.match(uiRegressionServer, /REQUIRED_ST_VERSION = '1\.18\.0'/);
     assert.match(uiRegressionServer, /readFile\(resolve\(REPOSITORY_ROOT, 'settings\.html'\)/);
     assert.match(uiRegressionServer, /public', 'style\.css'/);
@@ -205,8 +217,12 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
         (total, source) => total + Array.from(source.matchAll(/^test\(/gm)).length,
         0,
     );
+    for (const document of [readme, roadmap, checklist]) {
+        assert.doesNotMatch(document, /__TEST_COUNT__/, '최종 문서에는 테스트 개수 자리표시자가 남으면 안 된다');
+    }
     assert.match(readme, new RegExp(`현재 자동 검사 ${testCount}개`));
     assert.match(roadmap, new RegExp(`검사 ${testCount}개 통과`));
+    assert.match(checklist, new RegExp(`Node 자동 검사 ${testCount}개`));
 
     const checklistIds = Array.from(
         checklist.matchAll(/\*\*\[(?:필수|조건부|권장|선택)\]\[([A-Z0-9-]+)\]/g),

@@ -18,6 +18,7 @@ const EXTERNAL_DATALIST_ATTRIBUTE = 'data-cmr-external-datalist';
 const EXTERNAL_DATALIST_PREVIOUS_LIST_ATTRIBUTE = 'data-cmr-previous-list';
 const EXTERNAL_DATALIST_HAD_LIST_ATTRIBUTE = 'data-cmr-had-list';
 const EXTERNAL_DIRECT_PROVIDER_MARKER = 'direct';
+const EXTERNAL_USER_EXCLUDED_REASON = 'user-excluded';
 // 동일 페이지에서 controller가 destroy/recreate되어도 살아 있는 외부 DOM control의
 // target ID를 유지한다. WeakMap이므로 제거된 외부 DOM을 수명 이상 붙잡지 않는다.
 const STABLE_EXTERNAL_TARGET_IDENTITIES = new WeakMap();
@@ -121,6 +122,70 @@ function hasAttribute(element, name) {
 
 function normalizeText(value) {
     return String(value ?? '').trim().replace(/\s+/g, ' ');
+}
+
+function humanizeExtensionHint(value) {
+    const normalized = normalizeText(value)
+        .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+        .replace(/[\\/:._-]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    if (!normalized) {
+        return null;
+    }
+    const lower = normalized.toLowerCase();
+    if (/^(?:extensions?|settings?|panels?|containers?|drawers?|forms?|extensions? settings\s*\d*)$/.test(lower)) {
+        return null;
+    }
+    if (/(?:^|\s)caption(?:\s|$)/i.test(normalized)) {
+        return 'Caption';
+    }
+    const meaningfulWords = normalized.split(' ').filter(word => (
+        !/^(?:extension|settings|panel|container|drawer|form)$/i.test(word)
+    ));
+    if (!meaningfulWords.length) {
+        return null;
+    }
+    return meaningfulWords.map(word => (
+        /^[A-Z0-9]{2,}$/.test(word)
+            ? word
+            : `${word.charAt(0).toUpperCase()}${word.slice(1)}`
+    )).join(' ').slice(0, 80);
+}
+
+function getExternalExtensionLabel(control) {
+    let ancestor = control?.parentElement;
+    for (let depth = 0; ancestor && depth < 8; depth += 1, ancestor = ancestor.parentElement) {
+        const explicitCandidates = [
+            getAttribute(ancestor, 'data-extension-name'),
+            getAttribute(ancestor, 'data-name'),
+            getAttribute(ancestor, 'data-extension-id'),
+        ];
+        for (const candidate of explicitCandidates) {
+            const normalized = normalizeText(candidate);
+            if (!normalized || /^(?:extensions?[_-]?settings\d*|extensions?|settings|panel|container|drawer|form)$/i.test(normalized)) {
+                continue;
+            }
+            const label = humanizeExtensionHint(normalized);
+            if (label) {
+                return label;
+            }
+        }
+        const ancestorId = normalizeText(ancestor.id ?? getAttribute(ancestor, 'id'));
+        const isNamedBoundary = /(?:^|[_-])(extension|settings|panel|container|drawer|form)(?:$|[_-])/i.test(ancestorId)
+            || ['SECTION', 'FIELDSET', 'FORM', 'DIALOG'].includes(tagName(ancestor));
+        if (isNamedBoundary
+            && !/^(?:extensions?[_-]?settings|extensions?|settings|panel|container|drawer|form)$/i.test(ancestorId)) {
+            const label = humanizeExtensionHint(ancestorId);
+            if (label) {
+                return label;
+            }
+        }
+        if (['BODY', 'HTML'].includes(tagName(ancestor)) || ancestor.nodeType === 9) {
+            break;
+        }
+    }
+    return '외부 확장';
 }
 
 function searchableText(value) {
@@ -668,6 +733,7 @@ function describeControl(control, root, documentRef, options) {
             || normalizeText(effectiveControl.name)
             || normalizeText(effectiveControl.id)
             || '외부 모델 입력란',
+        extensionLabel: getExternalExtensionLabel(effectiveControl),
         inference,
         risk,
         providerControl,
@@ -735,14 +801,14 @@ export function discoverExternalModelTargets(root, options = {}) {
 }
 
 export function normalizeExternalMappings(value) {
-    // v0.6.0~v0.6.5 호출부의 호환용 함수다. 단일 직접 연결에서는 대상별 mode가 없다.
+    // 과거 disabled를 다시 적용하면 모델이 사라지던 회귀가 되살아난다.
+    // v0.6.0~v0.6.5 mapping은 mode에 관계없이 모두 폐기한다.
     void value;
     return {};
 }
 
 export function resolveExternalTargetProvider(target, mappings, options = {}) {
     void mappings;
-    void options;
     const isRiskBlocked = target?.risk?.level === 'blocked';
     if (isRiskBlocked) {
         return {
@@ -753,11 +819,68 @@ export function resolveExternalTargetProvider(target, mappings, options = {}) {
         };
     }
 
+    let isUserExcluded = false;
+    if (typeof options.isTargetExcluded === 'function') {
+        try {
+            isUserExcluded = options.isTargetExcluded(target?.targetId, target) === true;
+        } catch {
+            isUserExcluded = false;
+        }
+    }
+    if (!isUserExcluded) {
+        const exclusions = options.excludedTargetIds;
+        if (Array.isArray(exclusions) || exclusions instanceof Set) {
+            isUserExcluded = [...exclusions].some(candidate => (
+                normalizeText(candidate).toLowerCase() === target?.targetId
+            ));
+        } else if (exclusions && typeof exclusions === 'object') {
+            try {
+                isUserExcluded = exclusions[target?.targetId] === true;
+            } catch {
+                isUserExcluded = false;
+            }
+        }
+    }
+    if (isUserExcluded) {
+        return {
+            providerId: null,
+            confidence: target?.inference?.confidence ?? 0,
+            source: 'user-excluded',
+            excludedReason: EXTERNAL_USER_EXCLUDED_REASON,
+        };
+    }
+
     return {
         providerId: null,
         confidence: 1,
         source: 'direct',
     };
+}
+
+function normalizeExcludedTargetIdSet(value) {
+    const normalized = new Set();
+    let candidates = [];
+    if (Array.isArray(value) || value instanceof Set) {
+        candidates = [...value];
+    } else if (value && typeof value === 'object') {
+        try {
+            candidates = Object.entries(value)
+                .filter(([, excluded]) => excluded === true)
+                .map(([targetId]) => targetId);
+        } catch {
+            candidates = [];
+        }
+    }
+    for (const candidate of candidates) {
+        if (normalized.size >= EXTERNAL_TARGET_LIMIT) {
+            break;
+        }
+        const targetId = normalizeText(candidate).toLowerCase();
+        if (SAFE_TARGET_ID_PATTERN.test(targetId)) {
+            normalized.add(targetId);
+        }
+    }
+    return normalized;
 }
 
 function isManagedGroup(element) {
@@ -1209,6 +1332,9 @@ export function createExternalIntegrationController(options = {}) {
     let active = false;
     let targets = [];
     let generation = 0;
+    let excludedTargetIds = normalizeExcludedTargetIdSet(
+        options.excludedTargetIds ?? options.excludedTargets,
+    );
     const managedTargets = new Map();
     const bindings = new Map();
 
@@ -1338,7 +1464,11 @@ export function createExternalIntegrationController(options = {}) {
             return removed;
         }
         selectNativeFallbackAndNotify(target);
-        notifySelectionInvalidated(target, removedSelection, reason);
+        // 명시적 제외는 외부 확장의 현재 값만 native로 복구하고,
+        // 다시 연결했을 때 쓸 CMR 모델 선호 설정은 보존한다.
+        if (cleanupOptions.preservePreference !== true) {
+            notifySelectionInvalidated(target, removedSelection, reason);
+        }
         return removed;
     }
 
@@ -1526,25 +1656,96 @@ export function createExternalIntegrationController(options = {}) {
         }
 
         for (const target of nextTargets) {
-            const resolution = resolveExternalTargetProvider(target, null, options);
-            const previous = managedTargets.get(target.control);
-            if (previous?.optionHost && previous.optionHost !== target.optionHost) {
-                // 외부 확장이 plain input의 list를 자기 datalist로 바꾼 경우 이전 CMR host를 남기지 않는다.
-                removeExternalTargetModels(previous, null, { removeOwnedHost: true });
-            }
-            target.resolution = resolution;
-            if (resolution.source === 'direct') {
-                syncManagedTarget(target, () => (
-                    syncExternalTargetProviders(target, getProviderEntries(), options)
-                ));
-                managedTargets.set(target.control, target);
-                bindTarget(target);
-                target.restoredModelId = restorePreferredModel(target);
-            } else {
-                removeManagedModelsAndNotify(target, { removeOwnedHost: true }, resolution.source);
+            try {
+                const resolution = resolveExternalTargetProvider(target, null, {
+                    ...options,
+                    excludedTargetIds,
+                    isTargetExcluded: targetId => excludedTargetIds.has(targetId),
+                });
+                const previous = managedTargets.get(target.control);
+                if (previous?.optionHost && previous.optionHost !== target.optionHost) {
+                    // 외부 확장이 plain input의 list를 자기 datalist로 바꾼 경우 이전 CMR host를 남기지 않는다.
+                    removeExternalTargetModels(previous, null, { removeOwnedHost: true });
+                }
+                target.resolution = resolution;
+                if (resolution.source === 'direct') {
+                    const providerEntries = getProviderEntries();
+                    const registryModelCount = providerEntries.reduce((total, entry) => (
+                        total + enabledModelIds(entry.providerId, entry.models).length
+                    ), 0);
+                    const syncResult = syncManagedTarget(target, () => (
+                        syncExternalTargetProviders(target, providerEntries, options)
+                    ));
+                    const expectedModelKeys = new Set(providerEntries.flatMap(entry => (
+                        enabledModelIds(entry.providerId, entry.models)
+                            .map(modelId => `${entry.providerId}\u001f${modelId}`)
+                    )));
+                    const actualManagedModels = getOptions(target.optionHost)
+                        .filter(option => isManagedOption(option))
+                        .map(option => ({
+                            providerId: normalizeProviderId(getAttribute(option, 'data-cmr-provider')),
+                            modelId: String(option.value),
+                        }));
+                    const representedModelKeys = new Set([
+                        ...(Array.isArray(syncResult?.nativeModels) ? syncResult.nativeModels : []),
+                        ...actualManagedModels,
+                    ].map(model => `${model.providerId}\u001f${model.modelId}`));
+                    const missingModelCount = [...expectedModelKeys]
+                        .filter(modelKey => !representedModelKeys.has(modelKey)).length;
+                    const injectedCount = actualManagedModels.length;
+                    const bridgeIssue = registryModelCount === 0
+                        ? null
+                        : (syncResult?.reason ?? (missingModelCount > 0 ? 'models-not-injected' : null));
+                    target.bridge = {
+                        status: registryModelCount === 0
+                            ? 'idle'
+                            : (bridgeIssue ? 'failed' : 'connected'),
+                        issueCode: registryModelCount === 0 ? 'registry-empty' : bridgeIssue,
+                        injectedCount: bridgeIssue ? 0 : injectedCount,
+                    };
+                    if (bridgeIssue) {
+                        removeExternalTargetModels(target, null, { removeOwnedHost: true });
+                        managedTargets.delete(target.control);
+                    } else {
+                        managedTargets.set(target.control, target);
+                    }
+                    bindTarget(target);
+                    target.restoredModelId = bridgeIssue ? null : restorePreferredModel(target);
+                } else {
+                    removeManagedModelsAndNotify(target, {
+                        removeOwnedHost: true,
+                        preservePreference: resolution.source === 'user-excluded',
+                    }, resolution.source);
+                    managedTargets.delete(target.control);
+                    target.bridge = {
+                        status: 'idle',
+                        issueCode: resolution.excludedReason ?? resolution.source,
+                        injectedCount: 0,
+                    };
+                    // 현재 provider가 비어 있거나 안전상 제외되어도 provider 변경은 계속 감지한다.
+                    bindTarget(target);
+                }
+            } catch {
+                // 한 확장의 비표준 DOM이 예외를 내더라도 다른 target 연결은 계속한다.
+                try {
+                    removeManagedModelsAndNotify(target, {
+                        removeOwnedHost: true,
+                        preservePreference: true,
+                    }, 'bridge-failed');
+                } catch {
+                    // 정리까지 거부하는 외부 DOM은 상태만 기록한다.
+                }
                 managedTargets.delete(target.control);
-                // 현재 provider가 비어 있거나 안전상 제외되어도 provider 변경은 계속 감지한다.
-                bindTarget(target);
+                target.resolution ??= {
+                    providerId: null,
+                    confidence: 0,
+                    source: 'direct',
+                };
+                target.bridge = {
+                    status: 'failed',
+                    issueCode: 'sync-failed',
+                    injectedCount: 0,
+                };
             }
         }
         targets = nextTargets;
@@ -1622,13 +1823,59 @@ export function createExternalIntegrationController(options = {}) {
 
     function getMetrics() {
         const directCount = targets.filter(target => target.resolution?.source === 'direct').length;
+        const userExcludedCount = targets.filter(target => target.resolution?.source === 'user-excluded').length;
         return {
             observerCount: active && observer ? 1 : 0,
             targetCount: targets.length,
             boundCount: managedTargets.size,
             directCount,
+            userExcludedCount,
+            connectedCount: targets.filter(target => (
+                target.resolution?.source === 'direct' && target.bridge?.status === 'connected'
+            )).length,
+            idleCount: targets.filter(target => (
+                target.resolution?.source === 'direct' && target.bridge?.status === 'idle'
+            )).length,
+            failedCount: targets.filter(target => (
+                target.resolution?.source === 'direct' && target.bridge?.status === 'failed'
+            )).length,
             listenerCount: [...bindings.values()].reduce((total, entries) => total + entries.length, 0),
         };
+    }
+
+    function getTargetDetails() {
+        return targets.map(target => ({
+            targetId: target.targetId,
+            extensionLabel: target.extensionLabel,
+            label: target.label,
+            controlType: target.controlType,
+            status: target.bridge?.status ?? 'idle',
+            resolutionSource: target.resolution?.source ?? null,
+            excludedReason: target.resolution?.excludedReason ?? null,
+            bridge: { ...target.bridge },
+        }));
+    }
+
+    function setExcludedTargetIds(value) {
+        excludedTargetIds = normalizeExcludedTargetIdSet(value);
+        return active ? scanAndSync() : [];
+    }
+
+    function setTargetExcluded(targetId, excluded = true) {
+        const normalizedTargetId = normalizeText(targetId).toLowerCase();
+        if (!SAFE_TARGET_ID_PATTERN.test(normalizedTargetId)) {
+            throw new TypeError('외부 모델 컨트롤 대상 ID 형식이 올바르지 않습니다.');
+        }
+        if (excluded === true) {
+            if (!excludedTargetIds.has(normalizedTargetId)
+                && excludedTargetIds.size >= EXTERNAL_TARGET_LIMIT) {
+                throw new RangeError(`외부 모델 컨트롤 제외는 최대 ${EXTERNAL_TARGET_LIMIT}개까지 적용할 수 있습니다.`);
+            }
+            excludedTargetIds.add(normalizedTargetId);
+        } else {
+            excludedTargetIds.delete(normalizedTargetId);
+        }
+        return active ? scanAndSync() : [];
     }
 
     return Object.freeze({
@@ -1640,12 +1887,16 @@ export function createExternalIntegrationController(options = {}) {
         sync: scanAndSync,
         requestSync,
         getTargets: () => [...targets],
+        getTargetDetails,
+        getExcludedTargetIds: () => [...excludedTargetIds],
         getMappings: () => ({}),
         getMetrics,
+        setExcludedTargetIds,
+        setTargetExcluded,
         setMappings(value) {
-            // v0.6.5 이하 호출부와의 호환용 no-op이다.
+            // legacy mapping은 현재 제외 설정을 덮어쓰지 않는 no-op이다.
             normalizeExternalMappings(value);
-            return scanAndSync();
+            return active ? scanAndSync() : [];
         },
     });
 }

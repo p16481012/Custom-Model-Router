@@ -158,27 +158,80 @@ function fixtureScript() {
                 }
             }
 
-            function renderExternal(total) {
+            let externalScenario = {
+                total: 0,
+                excludedTargets: new Set(),
+                failedTargets: new Set(),
+                failureProneTargets: new Set(),
+                runtimeProblem: false,
+            };
+
+            function configureExternal(total, excludedTotal = 0, problemTotal = 0, runtimeProblem = false) {
+                const safeTotal = Math.max(0, Number(total) || 0);
+                const safeProblems = Math.min(safeTotal, Math.max(0, Number(problemTotal) || 0));
+                const safeExcluded = Math.min(
+                    safeTotal - safeProblems,
+                    Math.max(0, Number(excludedTotal) || 0),
+                );
+                const connectedTotal = safeTotal - safeExcluded - safeProblems;
+                const excludedTargets = new Set();
+                const failedTargets = new Set();
+                for (let index = connectedTotal; index < connectedTotal + safeExcluded; index += 1) {
+                    excludedTargets.add('fixture-target-' + index);
+                }
+                for (let index = connectedTotal + safeExcluded; index < safeTotal; index += 1) {
+                    failedTargets.add('fixture-target-' + index);
+                }
+                externalScenario = {
+                    total: safeTotal,
+                    excludedTargets,
+                    failedTargets,
+                    failureProneTargets: new Set(failedTargets),
+                    runtimeProblem: Boolean(runtimeProblem),
+                };
+                renderExternal();
+            }
+
+            function renderExternal() {
                 const list = document.getElementById('cmr_external_list');
                 const count = document.getElementById('cmr_external_count');
                 const status = document.getElementById('cmr_external_status');
-                count.textContent = '연결 대상 ' + total + '개 · 연결 ' + total + '개';
-                status.dataset.state = 'ok';
-                status.textContent = total + '개 모델 칸에 등록 모델을 직접 연결했습니다.';
+                const warning = document.getElementById('cmr_external_warning');
+                const warningText = document.getElementById('cmr_external_warning_text');
+                const failedTotal = externalScenario.failedTargets.size;
+                const excludedTotal = externalScenario.excludedTargets.size;
+                const connectedTotal = externalScenario.total - failedTotal - excludedTotal;
+                const hasProblem = failedTotal > 0 || externalScenario.runtimeProblem;
+                count.textContent = '연결 ' + connectedTotal + '개 · 제외 ' + excludedTotal + '개';
+                status.dataset.state = hasProblem ? 'error' : 'ok';
+                status.textContent = failedTotal
+                    ? failedTotal + '개 대상의 선택지 연결을 확인해야 합니다.'
+                    : externalScenario.runtimeProblem
+                        ? '외부 연결 감시 자원을 확인해야 합니다.'
+                        : connectedTotal + '개 연결 · 0개 대기 · ' + excludedTotal + '개 사용자 제외';
+                warning.hidden = !hasProblem;
+                warningText.textContent = failedTotal
+                    ? failedTotal + '개 모델 칸에 선택지를 표시하지 못했습니다.'
+                    : externalScenario.runtimeProblem
+                        ? '외부 연결 감시 자원 상태가 예상과 다릅니다.'
+                        : '';
                 list.replaceChildren();
 
-                if (total === 0) {
+                if (externalScenario.total === 0) {
                     const empty = document.createElement('li');
                     empty.className = 'cmr-empty';
-                    empty.textContent = '연결할 수 있는 다른 확장의 Chat Completion 모델 칸을 찾지 못했습니다.';
+                    empty.textContent = '현재 화면에서 외부 확장의 모델 칸을 찾지 못했습니다.';
                     list.append(empty);
                     return;
                 }
 
-                for (let index = 0; index < total; index += 1) {
+                for (let index = 0; index < externalScenario.total; index += 1) {
+                    const targetId = 'fixture-target-' + index;
+                    const isExcluded = externalScenario.excludedTargets.has(targetId);
+                    const isFailed = externalScenario.failedTargets.has(targetId);
                     const row = document.createElement('li');
                     row.className = 'cmr-model-row cmr-external-row';
-                    row.dataset.targetId = 'fixture-target-' + index;
+                    row.dataset.targetId = targetId;
                     const summary = document.createElement('div');
                     summary.className = 'cmr-model-summary';
                     const heading = document.createElement('span');
@@ -187,16 +240,76 @@ function fixtureScript() {
                     name.className = 'cmr-external-name';
                     name.textContent = index === 0
                         ? '공백없이아주긴외부확장모델선택기이름'.repeat(8)
-                        : '외부 확장 Chat Completion 모델 ' + (index + 1);
-                    const description = document.createElement('small');
-                    description.className = 'cmr-sentence-text';
-                    description.textContent = '등록된 모든 제공업체 모델을 직접 표시합니다.';
-                    heading.append(name, document.createElement('br'), description);
+                        : '외부 확장 ' + (index + 1);
+                    const control = document.createElement('small');
+                    control.className = 'cmr-external-control';
+                    control.textContent = 'Chat Completion 모델 칸 ' + (index + 1);
+                    const meta = document.createElement('span');
+                    meta.className = 'cmr-external-meta';
+                    const state = document.createElement('span');
+                    state.className = 'cmr-external-state';
+                    const verification = document.createElement('span');
+                    verification.className = 'cmr-external-verification';
+                    if (isFailed) {
+                        state.dataset.state = 'failed';
+                        state.textContent = '선택지 연결 실패';
+                        verification.textContent = '고급 진단 확인 필요';
+                    } else if (isExcluded) {
+                        state.dataset.state = 'excluded';
+                        state.textContent = '연결 제외';
+                        verification.textContent = 'CMR 선택지를 표시하지 않음';
+                    } else {
+                        state.dataset.state = 'connected';
+                        state.textContent = '선택지 연결됨';
+                        verification.textContent = '실제 요청 확인 필요';
+                    }
+                    meta.append(state, verification);
+                    heading.append(name, control, meta);
                     summary.append(heading);
-                    row.append(summary);
+
+                    const actions = document.createElement('div');
+                    actions.className = 'cmr-external-actions';
+                    const action = document.createElement('button');
+                    action.type = 'button';
+                    action.className = 'menu_button cmr-icon-button';
+                    action.dataset.cmrExternalAction = isExcluded ? 'restore' : 'exclude';
+                    action.dataset.targetId = row.dataset.targetId;
+                    action.title = isExcluded ? '다시 연결' : '이 대상 연결 제외';
+                    action.setAttribute(
+                        'aria-label',
+                        name.textContent + ' · ' + control.textContent
+                            + (isExcluded ? ' 다시 연결' : ' 연결에서 제외'),
+                    );
+                    const icon = document.createElement('i');
+                    icon.className = isExcluded
+                        ? 'fa-solid fa-rotate-left'
+                        : 'fa-solid fa-eye-slash';
+                    icon.setAttribute('aria-hidden', 'true');
+                    action.append(icon);
+                    actions.append(action);
+                    row.append(summary, actions);
                     list.append(row);
                 }
             }
+
+            document.getElementById('cmr_external_list').addEventListener('click', event => {
+                const action = event.target.closest('[data-cmr-external-action]');
+                if (!action) return;
+                const targetId = action.dataset.targetId;
+                if (action.dataset.cmrExternalAction === 'exclude') {
+                    externalScenario.excludedTargets.add(targetId);
+                    externalScenario.failedTargets.delete(targetId);
+                } else {
+                    externalScenario.excludedTargets.delete(targetId);
+                    if (externalScenario.failureProneTargets.has(targetId)) {
+                        externalScenario.failedTargets.add(targetId);
+                    }
+                }
+                renderExternal();
+                [...document.querySelectorAll('[data-cmr-external-action]')]
+                    .find(candidate => candidate.dataset.targetId === targetId)
+                    ?.focus();
+            });
 
             function renderDiagnostics(total) {
                 const list = document.getElementById('cmr_diagnostic_list');
@@ -218,16 +331,34 @@ function fixtureScript() {
             globalThis.setUiRegressionState = ({
                 modelCount = 0,
                 externalCount = 0,
+                externalExcludedCount = 0,
+                externalProblemCount = 0,
+                externalRuntimeProblem = false,
                 diagnosticCount = 0,
                 openDetails = false,
+                openAdvanced = openDetails,
             } = {}) => {
                 renderModels(modelCount);
-                renderExternal(externalCount);
+                configureExternal(
+                    externalCount,
+                    externalExcludedCount,
+                    externalProblemCount,
+                    externalRuntimeProblem,
+                );
                 renderDiagnostics(diagnosticCount);
                 for (const details of document.querySelectorAll('#cmr_settings details')) {
                     details.open = openDetails;
                 }
+                document.getElementById('cmr_external_advanced').open = openAdvanced;
             };
+
+            document.getElementById('cmr_external_warning_open').addEventListener('click', () => {
+                const operations = document.getElementById('cmr_operations_section');
+                const advanced = document.getElementById('cmr_external_advanced');
+                operations.open = true;
+                advanced.open = true;
+                advanced.querySelector('summary').focus();
+            });
 
             const dialog = document.getElementById('cmr_manager_dialog');
             const close = dialog.querySelector('.popup-button-close');

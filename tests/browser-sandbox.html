@@ -67,7 +67,7 @@
         </section>
 
         <section id="unknown_panel" data-extension-name="unknown helper">
-            <h2>제공업체 선택기가 없어도 직접 연결할 대상</h2>
+            <h2>제공업체 선택기가 없어도 안전하게 자동 연결할 대상</h2>
             <label for="helper_model">Model</label>
             <select id="helper_model">
                 <option value="native-default">native-default</option>
@@ -87,7 +87,7 @@
     <script type="module">
         import {
             createExternalIntegrationController,
-        } from '../src/external-integrations.js?browser-sandbox=0.6.8';
+        } from '../src/external-integrations.js?browser-sandbox=0.6.9';
 
         const models = {
             openai: [{ provider: 'openai', id: 'gpt-5.9-preview', enabled: true }],
