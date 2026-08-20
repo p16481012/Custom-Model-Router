@@ -84,7 +84,7 @@ test('브라우저 샌드박스는 안전 대상 자동 연결·provider metadat
     assert.match(html, /staleOption\.dataset\.cmrExternalModel\s*=\s*'true'/);
     assert.match(html, /controller\.rescan\(\)/);
     assert.match(html, /data-extension-name="unknown helper"/);
-    assert.match(html, /browser-sandbox=0\.6\.13/);
+    assert.match(html, /browser-sandbox=0\.6\.14/);
     assert.match(html, /제공업체 선택기가 없어도 안전하게 자동 연결/);
 });
 

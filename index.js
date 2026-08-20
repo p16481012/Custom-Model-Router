@@ -33,6 +33,11 @@ import {
 } from './src/purpose-router.js';
 import { createSillyTavernConnectionProfileAdapter } from './src/connection-profile-adapter.js';
 import {
+    announceProviderIntegrationApi,
+    createProviderIntegrationController,
+    diagnoseProviderIntegrations,
+} from './src/provider-integrations.js';
+import {
     createStabilityMonitor,
     diagnoseCompatibility,
     diagnoseExternalRuntimeResources,
@@ -70,7 +75,7 @@ import {
     shouldShowModelSearch,
 } from './src/model-management.js';
 
-const EXTENSION_VERSION = '0.6.13';
+const EXTENSION_VERSION = '0.6.14';
 const SETTINGS_KEY = 'customModelRouter';
 const ROUTES_SETTINGS_KEY = 'customModelRouterRouting';
 const EXTERNAL_SETTINGS_KEY = 'customModelRouterExternalIntegrations';
@@ -152,6 +157,7 @@ let uninstallRegistryApi = null;
 let routingSettings = null;
 let externalSettings = null;
 let externalIntegrationController = null;
+let providerIntegrationController = null;
 let purposeRouter = null;
 let unregisterConnectionProfileAdapter = null;
 let stabilityMonitor = null;
@@ -286,6 +292,7 @@ function persistRoutingSettings(nextRoutes) {
 
 function getRuntimeMetrics(phase = 'active') {
     const externalMetrics = externalIntegrationController?.getMetrics?.() ?? {};
+    const providerIntegrationMetrics = providerIntegrationController?.getMetrics?.() ?? {};
     const coreModelGroupCount = Array.from(
         document.querySelectorAll?.('optgroup[data-cmr-provider]') ?? [],
     ).filter(group => group?.dataset?.cmrExternalGroup !== 'true').length;
@@ -301,7 +308,15 @@ function getRuntimeMetrics(phase = 'active') {
         externalListenerCount: externalMetrics.listenerCount ?? 0,
         externalTargetCount: externalMetrics.targetCount ?? 0,
         externalDirectCount: externalMetrics.directCount ?? 0,
-        pendingTaskCount: pendingRestores.size + pendingNativeChecks.size + (syncScheduled ? 1 : 0),
+        providerIntegrationConsumerCount: providerIntegrationMetrics.consumerCount ?? 0,
+        providerIntegrationPendingCount: providerIntegrationMetrics.pendingCount ?? 0,
+        providerIntegrationReadyCount: providerIntegrationMetrics.readyCount ?? 0,
+        providerIntegrationFailedCount: providerIntegrationMetrics.failedCount ?? 0,
+        providerIntegrationPublishedModelCount: providerIntegrationMetrics.publishedModelCount ?? 0,
+        pendingTaskCount: pendingRestores.size
+            + pendingNativeChecks.size
+            + (syncScheduled ? 1 : 0)
+            + (providerIntegrationMetrics.pendingCount ?? 0),
     };
 }
 
@@ -1189,6 +1204,24 @@ function synchronizeExternalIntegrations() {
     externalIntegrationController.sync?.();
 }
 
+function synchronizeProviderIntegrations() {
+    const controller = providerIntegrationController;
+    if (!controller) {
+        return;
+    }
+    try {
+        void controller.sync().catch(error => {
+            if (providerIntegrationController === controller) {
+                console.warn('[Custom Model Router] 공용 provider integration 동기화에 실패했습니다.', error);
+            }
+        });
+    } catch (error) {
+        if (providerIntegrationController === controller) {
+            console.warn('[Custom Model Router] 공용 provider integration 동기화를 시작하지 못했습니다.', error);
+        }
+    }
+}
+
 function synchronize() {
     if (!context || !settings) {
         return;
@@ -1198,6 +1231,7 @@ function synchronize() {
     for (const provider of getProviders()) {
         synchronizeProvider(provider);
     }
+    synchronizeProviderIntegrations();
     synchronizeExternalIntegrations();
     renderUi();
     connectObserver();
@@ -1363,7 +1397,10 @@ function subscribeToSillyTavernEvents() {
         [context.eventTypes.CHATCOMPLETION_MODEL_CHANGED, onModelChanged],
         [context.eventTypes.MAIN_API_CHANGED, scheduleSync],
         [context.eventTypes.OAI_PRESET_CHANGED_AFTER, onConnectionStateChanged],
+        [context.eventTypes.CONNECTION_PROFILE_CREATED, onConnectionStateChanged],
         [context.eventTypes.CONNECTION_PROFILE_LOADED, onConnectionStateChanged],
+        [context.eventTypes.CONNECTION_PROFILE_UPDATED, onConnectionStateChanged],
+        [context.eventTypes.CONNECTION_PROFILE_DELETED, onConnectionStateChanged],
     ];
     const seen = new Set();
     for (const [eventName, handler] of bindings) {
@@ -1597,6 +1634,9 @@ function createDiagnosticReport() {
     };
     const externalTargets = externalIntegrationController?.getTargets?.() ?? [];
     const externalCheck = diagnoseExternalRuntimeResources(externalMetrics, externalTargets);
+    const providerIntegrationCheck = diagnoseProviderIntegrations(
+        providerIntegrationController?.getMetrics?.() ?? {},
+    );
     const stability = stabilityMonitor?.analyze() ?? null;
     const stabilityCheck = stability?.evaluated ? {
         id: 'runtime-stability',
@@ -1614,6 +1654,7 @@ function createDiagnosticReport() {
     const checks = [
         ...compatibility.checks,
         externalCheck,
+        providerIntegrationCheck,
         ...(repairCheck ? [repairCheck] : []),
         ...(stabilityCheck ? [stabilityCheck] : []),
     ];
@@ -1626,6 +1667,7 @@ function createDiagnosticReport() {
         summary: diagnosticSummary.summary,
         extensionVersion: EXTENSION_VERSION,
         externalIntegrations: externalCheck.details,
+        providerIntegrations: providerIntegrationCheck.details,
         stability,
         repair: lastRepairReport,
     };
@@ -2221,10 +2263,12 @@ function onModelListClick(event) {
     }
 }
 
-function teardownRuntime({ applyNativeFallback = false } = {}) {
+async function teardownRuntime({ applyNativeFallback = false } = {}) {
     observer?.disconnect();
     observer = null;
     observedContainer = null;
+    const providerIntegrationCleanup = providerIntegrationController?.destroy?.();
+    providerIntegrationController = null;
     externalIntegrationController?.destroy?.();
     externalIntegrationController = null;
 
@@ -2296,6 +2340,11 @@ function teardownRuntime({ applyNativeFallback = false } = {}) {
     settings = null;
     syncScheduled = false;
     initialized = false;
+    try {
+        await providerIntegrationCleanup;
+    } catch (error) {
+        console.warn('[Custom Model Router] 공용 provider integration 정리에 실패했습니다.', error);
+    }
 }
 
 async function initialize(generation) {
@@ -2336,16 +2385,23 @@ async function initialize(generation) {
     unregisterConnectionProfileAdapter = purposeRouter.registerAdapter(
         createSillyTavernConnectionProfileAdapter(() => getLiveContext()),
     );
+    providerIntegrationController = createProviderIntegrationController({
+        readRegistrySettings: () => settings,
+        getContext: () => getLiveContext(),
+        onError: error => {
+            console.warn('[Custom Model Router] 공용 provider integration 처리 실패', error);
+        },
+    });
     registryApiController = createRegistryApi({
         extensionVersion: EXTENSION_VERSION,
         readSettings: () => settings,
         writeSettings: writeRegistryApiSettings,
         routingApi: createPurposeRoutingApi(purposeRouter),
+        integrationsApi: providerIntegrationController.api,
         onSubscriberError: error => {
             console.error('[Custom Model Router] Registry API 구독자 처리 실패', error);
         },
     });
-    uninstallRegistryApi = installRegistryApi(globalThis, registryApiController.api);
     externalIntegrationController = createExternalIntegrationController({
         root: document,
         documentRef: document,
@@ -2381,6 +2437,8 @@ async function initialize(generation) {
         context.extensionSettings[ROUTES_SETTINGS_KEY] = routingSettings;
         context.extensionSettings[EXTERNAL_SETTINGS_KEY] = externalSettings;
     }
+    uninstallRegistryApi = installRegistryApi(globalThis, registryApiController.api);
+    announceProviderIntegrationApi(document, providerIntegrationController.api);
     initialized = true;
     console.info(`[Custom Model Router] v${EXTENSION_VERSION} 초기화 완료`);
 }
@@ -2396,9 +2454,9 @@ export function init() {
         return initializationPromise;
     }
     const generation = ++lifecycleGeneration;
-    const runPromise = initialize(generation).catch(error => {
+    const runPromise = initialize(generation).catch(async error => {
         if (generation === lifecycleGeneration) {
-            teardownRuntime({ applyNativeFallback: true });
+            await teardownRuntime({ applyNativeFallback: true });
         }
         throw error;
     });
@@ -2426,7 +2484,7 @@ export function destroy() {
                 console.warn('[Custom Model Router] 모델 관리 패널을 닫는 중 오류가 발생했습니다.', error);
             }
         }
-        teardownRuntime({ applyNativeFallback: true });
+        await teardownRuntime({ applyNativeFallback: true });
     });
     const trackedPromise = runPromise.finally(() => {
         if (destructionPromise === trackedPromise) {

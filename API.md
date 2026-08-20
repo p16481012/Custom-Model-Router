@@ -1,15 +1,19 @@
-# 공개 Registry API
+# 공개 Registry 및 Provider Integration API
 
-Custom Model Router v0.6.13은 다른 SillyTavern 확장이 내부 파일 경로에 의존하지 않고 등록 모델과 용도별 라우팅을 사용할 수 있도록 `globalThis.CustomModelRouter`를 제공합니다. Registry API 계약 버전은 `1.1.0`, Routing API 계약 버전은 `1.0.0`이며 v0.5.0과 동일합니다.
+Custom Model Router v0.6.14는 다른 SillyTavern 확장이 내부 파일 경로에 의존하지 않고 등록 모델, 공용 provider 연동과 용도별 라우팅을 사용할 수 있도록 `globalThis.CustomModelRouter`를 제공합니다. Registry API 계약 버전은 `1.2.0`, `CustomModelRouter.integrations`의 Provider Integration API 계약 버전은 `1.0.0`, Routing API 계약 버전은 `1.0.0`입니다. Registry `1.2.0`은 Integration API를 추가한 하위 호환 minor 갱신이며 Routing API는 v0.5.0의 `1.0.0` 계약을 유지합니다.
 
-v0.6.0의 범용 DOM 모델 브리지, 호환성 진단과 설정 백업·복구, v0.6.7의 Playwright UI 회귀 검사 인프라는 이 전역 API 계약에 포함되지 않습니다. v0.6.10의 조건부 모델 검색·일괄 등록·삭제 실행 취소·백업 미리보기와 예외 중심 외부 관리 UI, v0.6.11의 단일·여러 줄 공용 모델 등록 UI, v0.6.12의 런처 숫자 배지 제거와 정보 popover 중심 문구 정리, v0.6.13의 외부 provider/source 선택기 오탐 차단도 공개 Registry/Routing API 버전을 바꾸지 않습니다. 대상별 제외·복구와 UI 주입 상태는 진단 섹션의 고급 외부 연결 관리에 있고, 실제 요청 반영은 별도로 확인해야 합니다. 외부 저장 schema v2 역시 공개 API 호출 계약과 별개입니다. Routing API는 개발자 또는 연동 확장이 명시적으로 사용하는 opt-in 계약이며 일반 라우팅 UI는 없습니다. 용도별 경로에는 Connection Profile ID만 저장되고 프로필 본문·API 키·endpoint는 복제되지 않습니다.
+v0.6.0의 범용 DOM 모델 브리지, 호환성 진단과 설정 백업·복구, v0.6.7의 Playwright UI 회귀 검사 인프라는 Registry/Routing 호출 계약에 포함되지 않습니다. v0.6.14의 Provider Integration API는 공개 hook을 명시적으로 등록한 소비 확장에만 적용됩니다. 대상별 제외·복구와 기존 UI 선택지 주입 상태는 진단 섹션의 고급 외부 연결 관리에 있고, 실제 요청 반영은 별도로 확인해야 합니다. 외부 저장 schema v2 역시 공개 API 호출 계약과 별개입니다. Routing API는 개발자 또는 연동 확장이 명시적으로 사용하는 opt-in 계약이며 일반 라우팅 UI는 없습니다. 용도별 경로에는 Connection Profile ID만 저장되고 프로필 본문·API 키·endpoint는 복제되지 않습니다.
 
 ## 호환성 확인
 
 ```js
 const registry = globalThis.CustomModelRouter;
-if (!registry?.isCompatible('1.1.0')) {
-    throw new Error('Custom Model Router Registry API 1.1.0 이상이 필요합니다.');
+if (!registry?.isCompatible('1.2.0')) {
+    throw new Error('Custom Model Router Registry API 1.2.0 이상이 필요합니다.');
+}
+
+if (!registry.integrations?.isCompatible('1.0.0')) {
+    throw new Error('Custom Model Router Provider Integration API 1.0.0이 필요합니다.');
 }
 ```
 
@@ -51,6 +55,133 @@ if (!registry?.isCompatible('1.1.0')) {
 ## 생명주기
 
 확장이 비활성화되면 전역 API가 제거되고 기존 참조는 `destroyed` 오류를 냅니다. 소비 확장은 API 참조를 영구 캐시하지 말고, 자신의 활성화 시점에 존재 여부와 호환성을 다시 확인해야 합니다.
+
+## Provider Integration API 1.0.0
+
+`CustomModelRouter.integrations`는 외부 확장이 공개 provider registry 또는 hook을 제공할 때 사용하는 opt-in 계약입니다. CMR은 외부 확장의 비공개 provider 배열, 요청 함수, 전역 `fetch` 또는 `XMLHttpRequest`를 추측해 patch하지 않습니다. 공개 hook이 없거나 계약이 맞지 않는 확장의 provider UI는 변경하지 않습니다.
+
+### 세 가지 공용 연동 경계
+
+1. **선택된 SillyTavern 연결 상속** (`sillytavern-inherited`): 현재 선택된 Connection Manager 프로필이 Chat Completion 프로필이고 source가 CMR Registry provider와 일치할 때, 해당 비-Custom provider의 활성 Registry 모델과 요청 handler를 준비합니다.
+2. **선택된 Custom OpenAI-compatible 특화** (`openai-compatible`): 현재 선택된 Connection Manager 프로필 source가 `Custom`일 때만 `custom` Registry 모델과 OpenAI-compatible 요청 handler를 준비합니다.
+3. **버전이 명시된 공개 provider registry/hook**: 외부 확장이 Integration API `1.0.0`의 descriptor와 `installHandler`·`publishModels` hook을 등록해 위 handler와 모델을 자신의 provider UI·요청 경로에 수용합니다.
+
+앞의 두 항목은 공개 hook 소비 확장에 제공하는 공용 backend 전략입니다. CMR이 hookless 확장 화면에 자동으로 provider를 삽입한다는 의미가 아닙니다. 기존 v0.6 DOM 모델 브리지는 별도 계층으로 계속 동작하므로 hookless 확장이라도 안전하게 감지된 표준 모델 `select`·텍스트 `input`·`datalist`에는 기존 선택지가 표시될 수 있습니다.
+
+### 검색과 capability
+
+CMR 초기화가 끝난 뒤 전역 API를 확인합니다. CMR보다 먼저 로드되는 소비 확장은 `document`의 `custom-model-router:provider-integrations-ready` 이벤트 `detail`에서 같은 Integration API 객체를 받을 수 있습니다.
+
+`integrations.capabilities`에는 다음 경계를 선언합니다.
+
+- `strategies`: `sillytavern-inherited`, `openai-compatible`
+- `inputSchema`: `cmr.chat-completion/1`
+- `atomicHandlerBeforeModels: true`
+- `selectedConnectionProfileOnly: true`
+- `credentials: 'connection-manager-owned'`
+- `mainChatMutation: false`
+- `unknownConsumersUntouched: true`
+- `ownedControlAttribute: 'data-cmr-provider-hook-owned'`
+- `consumerRequirements`: 소비 확장이 정확히 선언해야 하는 `1.0.0` capability 집합
+
+Connection Profile ID, 프로필 본문, API 키와 endpoint는 provider·model descriptor, Integration 이벤트와 진단에 포함되지 않습니다. CMR은 선택된 Connection Manager 프로필을 불투명한 참조로 사용하며 endpoint override를 받지 않습니다.
+
+### 소비 확장 등록
+
+소비 확장은 자신의 provider slot과 지원 전략을 선언하고 두 hook을 함께 등록합니다.
+
+```js
+const integrations = globalThis.CustomModelRouter?.integrations;
+if (!integrations?.isCompatible('1.0.0')) {
+    throw new Error('Provider Integration API 1.0.0이 필요합니다.');
+}
+
+const registration = integrations.registerConsumer({
+    consumerId: 'example-extension',
+    label: 'Example Extension',
+    contractVersion: '1.0.0',
+    capabilities: { ...integrations.capabilities.consumerRequirements },
+    slots: [{
+        slotId: 'chat',
+        strategies: ['sillytavern-inherited', 'openai-compatible'],
+    }],
+}, {
+    async installHandler({ slotId, strategy, provider, capabilities, execute, signal }) {
+        const handlerToken = installIntoPublicProviderRegistry({
+            slotId,
+            strategy,
+            provider,
+            execute,
+            signal,
+        });
+        return {
+            requestHandlerBound: true,
+            handlerToken,
+            dispose: () => removeHandler(handlerToken),
+        };
+    },
+    async publishModels({ handlerToken, provider, models, signal }) {
+        const publicationToken = publishProviderAndModels({
+            handlerToken,
+            provider,
+            models,
+            signal,
+        });
+        return {
+            modelsPublished: true,
+            publicationToken,
+            updateModels: nextModels => updatePublishedModels(publicationToken, nextModels),
+            dispose: () => removePublishedModels(publicationToken),
+        };
+    },
+});
+
+const state = await registration.ready;
+// 소비 확장 종료 시 registration.dispose()
+```
+
+descriptor 요구사항은 다음과 같습니다.
+
+- `consumerId`: 다른 소비 확장과 충돌하지 않는 소문자 ID
+- `contractVersion`: `1.0.0`과 같은 major의 호환 버전
+- `capabilities`: `integrations.capabilities.consumerRequirements`와 키·값이 정확히 일치해야 함
+- `slots`: 1~16개의 고유 `slotId`와 하나 이상의 지원 `strategies`
+- hook: `installHandler`와 `publishModels`를 모두 제공
+
+`consumerRequirements`는 input schema, handler-before-model-publish, provider 단위 모델, AbortSignal·streaming, 불투명 자격 증명 참조, endpoint override 금지, 메인 채팅 무변경, silent fallback 금지와 명시적 dispose를 요구합니다. 일부만 지원하거나 추가 capability로 계약을 모호하게 만드는 소비 확장은 fail closed로 등록을 거부합니다.
+
+### handler 설치와 모델 게시 순서
+
+binding은 다음 순서를 모두 통과해야만 `ready`가 됩니다.
+
+1. CMR이 `installHandler()`에 동결된 provider descriptor, 안전 capability, `execute`와 binding `signal`을 전달합니다.
+2. 소비 확장이 `requestHandlerBound: true`, 고유 `handlerToken`, `dispose()`가 있는 영수증을 반환합니다.
+3. CMR이 그 `handlerToken`과 현재 provider의 활성 Registry 모델을 `publishModels()`에 전달합니다.
+4. 소비 확장이 `modelsPublished: true`, 고유 `publicationToken`, `updateModels()`, `dispose()`가 있는 영수증을 반환합니다.
+5. 두 영수증이 유효하고 binding이 아직 활성일 때만 상태와 모델 수가 `ready`로 공개됩니다.
+
+handler 설치가 확인되기 전에는 `publishModels()`를 호출하지 않습니다. 모델 게시가 실패하면 handler도 정리하고 provider UI를 준비 상태로 남기지 않습니다. Registry 모델이 바뀌면 게시 영수증의 `updateModels()`가 `true`를 반환해야 계속 유지합니다. 소비 확장 해제, profile 변경, CMR 비활성화, AbortSignal 또는 늦게 도착한 영수증에서도 확보한 게시·handler 자원을 각각 한 번만 정리합니다.
+
+각 hook은 성공 영수증을 반환하기 전에 만든 자체 side effect가 있다면 reject 또는 throw 전에 스스로 원복해야 합니다. CMR은 실제로 전달받은 영수증의 `dispose()`만 호출할 수 있으며, 반환되지 않은 token이나 소비 확장 내부 UI를 추측해 정리하지 않습니다. 영수증 `dispose()`가 응답하지 않더라도 CMR 비활성화·재초기화가 무기한 멈추지는 않습니다.
+
+소비 확장이 provider/model DOM을 만들면 그 소유 루트에 `data-cmr-provider-hook-owned="true"`를 지정해야 합니다. 기존 DOM 모델 브리지는 이 표식이 있는 하위 컨트롤을 건너뛰어 같은 CMR 모델을 중복 주입하지 않습니다.
+
+### 공용 요청 schema
+
+설치 hook에 전달된 `execute(request, { signal? })`는 binding이 `ready`인 동안에만 사용할 수 있습니다. request는 다음 값만 허용합니다.
+
+- `modelId`: 게시된 provider의 현재 활성 Registry 모델 ID
+- `prompt` 문자열 또는 `messages` 배열 중 정확히 하나
+- `maxTokens`: 1 이상의 정수
+- 선택 `stream`, `extractData`: boolean
+
+임의 endpoint, API 키, header, profile ID, preset·instruct override와 알 수 없는 필드는 거부합니다. 실행 직전에도 선택된 Connection Profile과 provider가 binding 생성 시점과 같은지 다시 확인합니다. profile이 바뀌었거나 모델이 비활성화되면 명시적으로 실패하며 다른 provider·모델 또는 메인 채팅 요청으로 대체하지 않습니다.
+
+`stream: false`이거나 생략한 요청은 `execute()`의 Promise가 일반 응답 값을 반환합니다. `stream: true` 요청은 Promise가 **한 번만 호출할 수 있는 `() => AsyncIterator` factory**를 반환합니다. 소비 확장은 factory를 호출한 뒤 `for await...of`로 끝까지 읽거나, 조기 종료할 때 iterator의 `return()`을 호출해야 합니다. `for await...of`의 `break`는 이 정리를 자동으로 수행합니다.
+
+stream factory를 아직 호출하지 않았거나 반복 중이더라도 소비 확장 해제, CMR 비활성화 또는 전달한 `AbortSignal` 취소가 발생하면 이후 factory·`next()`는 고정된 `AbortError`로 실패합니다. profile 변경은 재조정 전에 감지되면 `backend_stale`, binding이 이미 해제 중이면 `AbortError`로 중단됩니다. factory 재사용, 올바르지 않은 iterator, factory·반복기 내부 예외도 비식별 고정 오류로 바뀌며 외부 backend의 원문 오류를 전달하지 않습니다.
+
+`getConsumers()`는 소비 확장별 slot·strategy의 `pending`, `ready`, `failed` 상태와 공개 provider ID·모델 개수만 반환합니다. `refresh()`는 실패 binding 재시도와 현재 선택 profile·Registry 모델 재조정을 요청합니다. `subscribe(listener)`는 비밀정보 없는 수명주기 이벤트를 제공하고 반환 함수로 해제합니다.
 
 ## 용도별 Routing API
 
@@ -117,7 +248,7 @@ DOM 브리지는 전역 `fetch` 또는 `XMLHttpRequest`를 monkey patch하지 �
 - React 등 자체 위젯만 있는 확장, iframe 내부, 닫힌 Shadow DOM
 - 모델 컨트롤 없이 직접 요청하는 확장
 
-자체 위젯, iframe, 닫힌 Shadow DOM 또는 모델 컨트롤 없는 요청은 DOM 브리지로 연결할 수 없으며 이 문서의 Registry 또는 Routing API를 사용하는 전용 opt-in 연동이 필요합니다. 비대상 판별도 DOM의 이름·레이블·속성·상위 확장 표식에 의존하는 best-effort입니다.
+자체 위젯, iframe, 닫힌 Shadow DOM 또는 모델 컨트롤 없는 요청은 DOM 브리지로 연결할 수 없으며 이 문서의 Registry, Provider Integration 또는 Routing API를 사용하는 opt-in 연동이 필요합니다. 공개 hook을 제공하지 않는 임의 확장에는 provider handler나 provider UI를 강제로 추가하지 않습니다. 비대상 판별도 DOM의 이름·레이블·속성·상위 확장 표식에 의존하는 best-effort입니다.
 
 ## 외부 연결 저장 계약
 

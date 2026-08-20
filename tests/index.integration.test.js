@@ -35,6 +35,13 @@ class FakeEvent {
     }
 }
 
+class FakeCustomEvent extends FakeEvent {
+    constructor(type, options = {}) {
+        super(type, options);
+        this.detail = options.detail;
+    }
+}
+
 class FakeElement {
     constructor(tagName, ownerDocument) {
         this.tagName = String(tagName).toUpperCase();
@@ -327,10 +334,31 @@ class FakeTemplate extends FakeElement {
 class FakeDocument {
     constructor() {
         this.nodeType = 9;
-        this.defaultView = { Event: FakeEvent };
+        this.defaultView = { Event: FakeEvent, CustomEvent: FakeCustomEvent };
         this.body = new FakeElement('body', this);
         this.documentElement = this.body;
         this.activeElement = null;
+        this.listeners = new Map();
+    }
+
+    addEventListener(type, listener) {
+        if (!this.listeners.has(type)) {
+            this.listeners.set(type, new Set());
+        }
+        this.listeners.get(type).add(listener);
+    }
+
+    removeEventListener(type, listener) {
+        this.listeners.get(type)?.delete(listener);
+    }
+
+    dispatchEvent(event) {
+        event.target = this;
+        event.currentTarget = this;
+        for (const listener of [...(this.listeners.get(event.type) ?? [])]) {
+            listener.call(this, event);
+        }
+        return !event.defaultPrevented;
     }
 
     createElement(tagName) {
@@ -555,6 +583,26 @@ function createModelRecord(providerId, id) {
     return { id, provider: provider.id, protocol: provider.protocol, enabled: true };
 }
 
+function createProviderConsumerDescriptor(consumerId, strategies = ['sillytavern-inherited']) {
+    return {
+        consumerId,
+        contractVersion: '1.0.0',
+        capabilities: {
+            inputSchema: 'cmr.chat-completion/1',
+            handlerInstall: 'before-model-publish',
+            providerScopedModels: true,
+            abortSignal: true,
+            streaming: true,
+            credentialMode: 'opaque-reference',
+            endpointOverride: false,
+            mainChatMutation: false,
+            silentFallback: false,
+            dispose: true,
+        },
+        slots: [{ slotId: 'chat', strategies }],
+    };
+}
+
 function createPortableBackup(modelId) {
     return JSON.stringify({
         format: 'custom-model-router-portable-settings',
@@ -684,7 +732,10 @@ function createHarness({
         CHATCOMPLETION_MODEL_CHANGED: 'model_changed',
         MAIN_API_CHANGED: 'main_api_changed',
         OAI_PRESET_CHANGED_AFTER: 'preset_changed',
+        CONNECTION_PROFILE_CREATED: 'profile_created',
         CONNECTION_PROFILE_LOADED: 'profile_loaded',
+        CONNECTION_PROFILE_UPDATED: 'profile_updated',
+        CONNECTION_PROFILE_DELETED: 'profile_deleted',
     };
     const popupInstances = [];
     const routingCalls = [];
@@ -1081,13 +1132,13 @@ test('init은 24개 제공업체를 연결하고 API Connections Popup을 한 �
         assert.equal(launcher.querySelector('.cmr-launcher-count'), null);
         assert.equal(harness.documentRef.querySelector('#cmr_settings'), null);
         assert.equal(harness.fetchCallCount, 1);
-        assert.equal(harness.eventSource.onCalls.length, 7);
-        assert.equal(harness.eventSource.listenerCount, 7);
+        assert.equal(harness.eventSource.onCalls.length, 10);
+        assert.equal(harness.eventSource.listenerCount, 10);
         assert.equal(harness.observers.length, 2);
         assert.ok(harness.observers.some(observer => observer.target === harness.observerRoot));
         assert.ok(harness.observers.some(observer => observer.target === harness.documentRef.body));
-        assert.equal(globalThis.CustomModelRouter.apiVersion, '1.1.0');
-        assert.equal(globalThis.CustomModelRouter.extensionVersion, '0.6.13');
+        assert.equal(globalThis.CustomModelRouter.apiVersion, '1.2.0');
+        assert.equal(globalThis.CustomModelRouter.extensionVersion, '0.6.14');
         assert.equal(globalThis.CustomModelRouter.routing.apiVersion, '1.0.0');
         assert.equal(globalThis.CustomModelRouter.getSnapshot().models.length, 1);
 
@@ -1157,14 +1208,14 @@ test('init은 24개 제공업체를 연결하고 API Connections Popup을 한 �
         await Promise.all([overlappingDestroy, overlappingInit]);
         assert.ok(globalThis.CustomModelRouter);
         assert.ok(harness.documentRef.querySelector('#cmr_open_manager'));
-        assert.equal(harness.eventSource.listenerCount, 7);
+        assert.equal(harness.eventSource.listenerCount, 10);
         assert.ok(getCustomGroup(vertexSelect, 'vertexai'));
 
         await destroy();
         assert.equal(globalThis.CustomModelRouter, undefined);
         assert.equal(getCustomGroup(vertexSelect, 'vertexai'), null);
         assert.equal(harness.documentRef.querySelector('#cmr_open_manager'), null);
-        assert.equal(harness.eventSource.removeCalls.length, 14);
+        assert.equal(harness.eventSource.removeCalls.length, 20);
         assert.equal(harness.eventSource.listenerCount, 0);
         assert.ok(harness.observers.every(observer => observer.target === null));
         for (const provider of getProviders()) {
@@ -2443,8 +2494,8 @@ test('미래 외부 연결 스키마는 초기화를 원자적으로 중단하�
             selectedModels: {},
         };
         await init();
-        assert.equal(globalThis.CustomModelRouter.apiVersion, '1.1.0');
-        assert.equal(harness.eventSource.listenerCount, 7);
+        assert.equal(globalThis.CustomModelRouter.apiVersion, '1.2.0');
+        assert.equal(harness.eventSource.listenerCount, 10);
         assert.equal(harness.observers.filter(candidate => candidate.target).length, 2);
         assert.deepEqual(harness.context.extensionSettings.customModelRouterExternalIntegrations, {
             schemaVersion: 2,
@@ -3066,8 +3117,9 @@ test('설정 UI fetch 지연 중 destroy해도 런처와 provider 옵션이 되�
     try {
         initPromise = init();
         assert.equal(harness.fetchCallCount, 1);
+        assert.equal(globalThis.CustomModelRouter, undefined);
         assert.ok(getCustomGroup(harness.controls.get('vertexai'), 'vertexai'));
-        assert.equal(harness.eventSource.listenerCount, 7);
+        assert.equal(harness.eventSource.listenerCount, 10);
         const launcher = harness.documentRef.querySelector('#cmr_open_manager');
         assert.equal(launcher.disabled, true);
         launcher.dispatchEvent(new FakeEvent('click'));
@@ -3087,6 +3139,267 @@ test('설정 UI fetch 지연 중 destroy해도 런처와 provider 옵션이 되�
     } finally {
         deferredResponse.resolve(createResponse());
         await initPromise?.catch(() => undefined);
+        await destroy();
+        restoreGlobals();
+    }
+});
+
+test('공용 provider integration API는 최종 초기화 뒤 공개되고 동기화·진단·종료를 원자적으로 처리한다', async () => {
+    const harness = createHarness();
+    harness.context.extensionSettings.connectionManager.selectedProfile = 'profile-vertex';
+    const restoreGlobals = installBrowserGlobals(harness);
+    const navigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+    let copiedDiagnostics = '';
+    Object.defineProperty(globalThis, 'navigator', {
+        configurable: true,
+        value: {
+            clipboard: {
+                async writeText(value) {
+                    copiedDiagnostics = value;
+                },
+            },
+        },
+    });
+    let readyEventCount = 0;
+    let announcedApi = null;
+    harness.documentRef.addEventListener('custom-model-router:provider-integrations-ready', event => {
+        readyEventCount += 1;
+        announcedApi = event.detail;
+    });
+    const phases = [];
+    const publishedModels = [];
+    const modelUpdates = [];
+    let boundExecute = null;
+    let handlerDisposeCount = 0;
+    let publicationDisposeCount = 0;
+    try {
+        await init();
+        const integrations = globalThis.CustomModelRouter.integrations;
+        assert.ok(integrations);
+        assert.equal(integrations.apiVersion, '1.0.0');
+        assert.equal(readyEventCount, 1);
+        assert.equal(announcedApi, integrations);
+        assert.equal(integrations.capabilities.selectedConnectionProfileOnly, true);
+        assert.equal(integrations.capabilities.credentials, 'connection-manager-owned');
+        assert.equal(integrations.capabilities.mainChatMutation, false);
+
+        const registration = integrations.registerConsumer(
+            createProviderConsumerDescriptor('index.integration.success'),
+            {
+                async installHandler(binding) {
+                    phases.push('handler');
+                    boundExecute = binding.execute;
+                    assert.equal(binding.provider.id, 'cmr.sillytavern.vertexai');
+                    assert.equal(binding.signal.aborted, false);
+                    return {
+                        requestHandlerBound: true,
+                        handlerToken: 'handler-private-token',
+                        async dispose() {
+                            handlerDisposeCount += 1;
+                        },
+                    };
+                },
+                async publishModels(publication) {
+                    phases.push('models');
+                    publishedModels.push(...publication.models.map(model => model.id));
+                    return {
+                        modelsPublished: true,
+                        publicationToken: 'publication-private-token',
+                        async updateModels(models) {
+                            modelUpdates.push(models.map(model => model.id));
+                            return true;
+                        },
+                        async dispose() {
+                            publicationDisposeCount += 1;
+                        },
+                    };
+                },
+            },
+        );
+        const ready = await registration.ready;
+        assert.deepEqual(phases, ['handler', 'models']);
+        assert.deepEqual(publishedModels, [VERTEX_MODEL_ID]);
+        assert.equal(ready.bindings.length, 1);
+        assert.equal(ready.bindings[0].status, 'ready');
+        assert.equal(ready.bindings[0].providerId, 'cmr.sillytavern.vertexai');
+        assert.equal(ready.bindings[0].modelCount, 1);
+
+        const result = await boundExecute({
+            modelId: VERTEX_MODEL_ID,
+            prompt: 'provider integration request',
+            maxTokens: 32,
+        });
+        assert.deepEqual(result, { content: 'CMR_OK' });
+        assert.equal(harness.routingCalls.length, 1);
+        assert.equal(harness.routingCalls[0][0], 'profile-vertex');
+        assert.equal(harness.routingCalls[0][4].model, VERTEX_MODEL_ID);
+
+        const additionalModelId = 'gemini-provider-integration-sync';
+        globalThis.CustomModelRouter.registerModel('vertexai', additionalModelId);
+        await flushMicrotasks(8);
+        await integrations.refresh();
+        assert.ok(modelUpdates.length >= 1);
+        assert.deepEqual(modelUpdates.at(-1), [VERTEX_MODEL_ID, additionalModelId]);
+
+        const panel = openPanel(harness);
+        panel.querySelector('#cmr_copy_diagnostics').dispatchEvent(new FakeEvent('click'));
+        await flushMicrotasks(8);
+        const report = JSON.parse(copiedDiagnostics);
+        const integrationCheck = report.checks.find(check => (
+            check.id === 'external-provider-integrations'
+        ));
+        assert.deepEqual(report.providerIntegrations, {
+            consumerCount: 1,
+            pendingCount: 0,
+            readyCount: 1,
+            failedCount: 0,
+            publishedModelCount: 2,
+        });
+        assert.deepEqual(integrationCheck.details, report.providerIntegrations);
+        assert.equal(integrationCheck.status, 'passed');
+        assert.doesNotMatch(copiedDiagnostics, /profile-vertex|handler-private-token|publication-private-token/);
+
+        const lateInstall = createDeferred();
+        let lateSignal = null;
+        let latePublishCount = 0;
+        let lateHandlerDisposeCount = 0;
+        const lateRegistration = integrations.registerConsumer(
+            createProviderConsumerDescriptor('index.integration.late'),
+            {
+                installHandler(binding) {
+                    lateSignal = binding.signal;
+                    return lateInstall.promise;
+                },
+                async publishModels() {
+                    latePublishCount += 1;
+                    throw new Error('종료 뒤에는 모델 게시에 도달하면 안 됩니다.');
+                },
+            },
+        );
+        await flushMicrotasks(8);
+        assert.equal(lateSignal?.aborted, false);
+
+        await destroy();
+        assert.equal(globalThis.CustomModelRouter, undefined);
+        assert.equal(lateSignal.aborted, true);
+        assert.equal(handlerDisposeCount, 1);
+        assert.equal(publicationDisposeCount, 1);
+        lateInstall.resolve({
+            requestHandlerBound: true,
+            handlerToken: 'late-private-token',
+            async dispose() {
+                lateHandlerDisposeCount += 1;
+            },
+        });
+        await lateRegistration.ready;
+        assert.equal(latePublishCount, 0);
+        assert.equal(lateHandlerDisposeCount, 1);
+        await assert.rejects(
+            boundExecute({ modelId: VERTEX_MODEL_ID, prompt: 'late', maxTokens: 8 }),
+            error => error?.code === 'binding_not_ready',
+        );
+    } finally {
+        if (navigatorDescriptor) {
+            Object.defineProperty(globalThis, 'navigator', navigatorDescriptor);
+        } else {
+            delete globalThis.navigator;
+        }
+        await destroy();
+        restoreGlobals();
+    }
+});
+
+test('provider integration 전역 API는 초기화 최종 단계가 실패하면 공개되지 않고 런타임을 롤백한다', async () => {
+    const harness = createHarness({
+        fetchImplementation: async () => ({ ok: false, status: 503 }),
+    });
+    harness.context.extensionSettings.connectionManager.selectedProfile = 'profile-vertex';
+    const restoreGlobals = installBrowserGlobals(harness);
+    let readyEventCount = 0;
+    harness.documentRef.addEventListener('custom-model-router:provider-integrations-ready', () => {
+        readyEventCount += 1;
+    });
+    try {
+        await assert.rejects(init(), /HTTP 503/);
+        assert.equal(globalThis.CustomModelRouter, undefined);
+        assert.equal(readyEventCount, 0);
+        assert.equal(harness.eventSource.listenerCount, 0);
+        assert.equal(harness.documentRef.querySelector('#cmr_open_manager'), null);
+        assert.ok(harness.observers.every(observer => observer.target === null));
+    } finally {
+        await destroy();
+        restoreGlobals();
+    }
+});
+
+test('Connection Profile 생성·갱신·삭제 이벤트는 공용 provider binding을 즉시 해제하고 복구한다', async () => {
+    const harness = createHarness();
+    harness.context.extensionSettings.connectionManager.selectedProfile = 'profile-vertex';
+    const restoreGlobals = installBrowserGlobals(harness);
+    let installCount = 0;
+    let publishCount = 0;
+    let handlerDisposeCount = 0;
+    let publicationDisposeCount = 0;
+    try {
+        await init();
+        const integrations = globalThis.CustomModelRouter.integrations;
+        const registration = integrations.registerConsumer(
+            createProviderConsumerDescriptor('index.integration.profile-events'),
+            {
+                async installHandler() {
+                    installCount += 1;
+                    return Object.freeze({
+                        requestHandlerBound: true,
+                        handlerToken: `handler-${installCount}`,
+                        async dispose() {
+                            handlerDisposeCount += 1;
+                        },
+                    });
+                },
+                async publishModels() {
+                    publishCount += 1;
+                    return Object.freeze({
+                        modelsPublished: true,
+                        publicationToken: `publication-${publishCount}`,
+                        async updateModels() {
+                            return true;
+                        },
+                        async dispose() {
+                            publicationDisposeCount += 1;
+                        },
+                    });
+                },
+            },
+        );
+        await registration.ready;
+        assert.equal(integrations.getConsumers()[0].bindings[0].status, 'ready');
+        assert.equal(installCount, 1);
+
+        const profile = harness.context.extensionSettings.connectionManager.profiles[0];
+        profile.api = 'unsupported';
+        harness.eventSource.emit(harness.context.eventTypes.CONNECTION_PROFILE_UPDATED);
+        await flushMicrotasks(8);
+        await integrations.refresh();
+        assert.equal(integrations.getConsumers()[0].bindings.length, 0);
+        assert.equal(handlerDisposeCount, 1);
+        assert.equal(publicationDisposeCount, 1);
+
+        profile.api = 'vertexai';
+        harness.eventSource.emit(harness.context.eventTypes.CONNECTION_PROFILE_CREATED);
+        await flushMicrotasks(8);
+        await integrations.refresh();
+        assert.equal(integrations.getConsumers()[0].bindings[0].status, 'ready');
+        assert.equal(installCount, 2);
+        assert.equal(publishCount, 2);
+
+        harness.context.extensionSettings.connectionManager.profiles.splice(0, 1);
+        harness.eventSource.emit(harness.context.eventTypes.CONNECTION_PROFILE_DELETED);
+        await flushMicrotasks(8);
+        await integrations.refresh();
+        assert.equal(integrations.getConsumers()[0].bindings.length, 0);
+        assert.equal(handlerDisposeCount, 2);
+        assert.equal(publicationDisposeCount, 2);
+    } finally {
         await destroy();
         restoreGlobals();
     }
@@ -3979,7 +4292,7 @@ test('unknown target도 직접 연결하고 비대상과 수명주기를 안전�
         assert.ok(!panel.querySelector('#cmr_external_section'));
         assert.equal(panel.querySelector('#cmr_external_warning').hidden, true);
         assert.ok(panel.querySelector('#cmr_external_advanced'));
-        assert.equal(harness.eventSource.listenerCount, 7);
+        assert.equal(harness.eventSource.listenerCount, 10);
         assert.equal(harness.observers.filter(candidate => candidate.target).length, 2);
 
         await destroy();
@@ -4033,7 +4346,7 @@ test('unknown target도 직접 연결하고 비대상과 수명주기를 안전�
         );
         assert.equal(panel.querySelector('#cmr_external_count').textContent, '설정 없음');
         assert.equal(globalThis.pwned, undefined);
-        assert.equal(harness.eventSource.listenerCount, 7);
+        assert.equal(harness.eventSource.listenerCount, 10);
         assert.equal(harness.observers.filter(candidate => candidate.target).length, 2);
         assert.equal(autoTarget.select.listeners.get('change').length, 2);
         assert.ok(autoTarget.select.querySelector('[data-cmr-external-group="true"]'));

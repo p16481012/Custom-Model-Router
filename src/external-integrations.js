@@ -12,6 +12,7 @@ export const EXTERNAL_MAPPING_DISABLED = 'disabled';
 export const EXTERNAL_GROUP_LABEL = '사용자 모델';
 export const EXTERNAL_MODEL_SELECTOR = '[data-cmr-external-model="true"]';
 export const EXTERNAL_GROUP_SELECTOR = '[data-cmr-external-group="true"]';
+export const EXTERNAL_PROVIDER_HOOK_OWNED_ATTRIBUTE = 'data-cmr-provider-hook-owned';
 export const EXTERNAL_TARGET_LIMIT = 512;
 export const EXTERNAL_INJECTED_OPTION_LIMIT = 512;
 // 한 target의 512개 hard cap을 최대 4개 direct target까지 허용한다.
@@ -273,6 +274,7 @@ function hasOwnMarker(element) {
         || Boolean(getAttribute(element, 'data-cmr-provider'))
         || getAttribute(element, 'data-cmr-model') === 'true'
         || getAttribute(element, 'data-cmr-owned') === 'true'
+        || getAttribute(element, EXTERNAL_PROVIDER_HOOK_OWNED_ATTRIBUTE) === 'true'
         || String(element.className ?? '').split(/\s+/).some(name => name === 'cmr-panel');
 }
 
@@ -1484,6 +1486,12 @@ export function mutationNeedsExternalRescan(records, options = {}) {
     const knownControls = options.knownControls instanceof Set ? options.knownControls : new Set();
     return (Array.isArray(records) ? records : Array.from(records ?? []))
         .some(record => {
+            // 공개 provider hook이 소유권을 획득하거나 반납하면 기존 bridge가
+            // 즉시 주입을 정리하거나 다시 탐색할 수 있어야 한다.
+            if (record?.type === 'attributes'
+                && record?.attributeName === EXTERNAL_PROVIDER_HOOK_OWNED_ATTRIBUTE) {
+                return true;
+            }
             if (mutationOnlyTouchesManagedNodes(record) || mutationOnlyTouchesCmrUi(record)) {
                 return false;
             }
@@ -1832,7 +1840,8 @@ export function createExternalIntegrationController(options = {}) {
         // 구버전이 Model Provider 같은 provider 선택기를 model target으로 오인해
         // 넣어 둔 CMR option도 첫 scan에서 즉시 제거하고 native provider로 복구한다.
         for (const providerControl of getAll(root, 'select').filter(control => (
-            isLikelyProviderControl(control, { root, documentRef: options.documentRef })
+            !isExcludedControl(control, options)
+            && isLikelyProviderControl(control, { root, documentRef: options.documentRef })
         ))) {
             const providerTargetId = createExternalTargetId(providerControl, {
                 documentRef: options.documentRef,
@@ -2050,6 +2059,7 @@ export function createExternalIntegrationController(options = {}) {
                 'data-role', 'data-control', 'data-field', 'data-provider', 'data-api-provider',
                 'data-model-provider', 'data-source', 'data-type', 'data-provider-select', 'data-source-select',
                 'data-extension-id', 'data-extension-name', 'data-name',
+                EXTERNAL_PROVIDER_HOOK_OWNED_ATTRIBUTE,
             ],
         });
         return [...targets];

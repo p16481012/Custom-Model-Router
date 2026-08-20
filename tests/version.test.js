@@ -23,6 +23,9 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
         apiDocument,
         portableSettings,
         compatibility,
+        registryApi,
+        providerIntegrations,
+        providerIntegrationSandbox,
         playwrightConfig,
         uiRegressionSpec,
         uiRegressionServer,
@@ -40,6 +43,9 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
         readText('API.md'),
         readText('src/portable-settings.js'),
         readText('src/compatibility.js'),
+        readText('src/registry-api.js'),
+        readText('src/provider-integrations.js'),
+        readText('tests/provider-integration-sandbox.html'),
         readText('playwright.config.js'),
         readText('tests/visual/ui-regression.spec.js'),
         readText('tests/visual/server.js'),
@@ -64,6 +70,7 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
     assert.match(packageJson.scripts.check, /src\/registry-api\.js/);
     assert.match(packageJson.scripts.check, /src\/purpose-router\.js/);
     assert.match(packageJson.scripts.check, /src\/connection-profile-adapter\.js/);
+    assert.match(packageJson.scripts.check, /src\/provider-integrations\.js/);
     assert.match(packageJson.scripts.check, /src\/compatibility\.js/);
     assert.match(packageJson.scripts.check, /src\/portable-settings\.js/);
     assert.match(packageJson.scripts.check, /src\/external-integrations\.js/);
@@ -97,6 +104,7 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
     assert.match(roadmap, /## v0\.6\.11 — 단일·여러 줄 모델 등록 UI 통합/);
     assert.match(roadmap, /## v0\.6\.12 — 런처 배지 제거와 설명 정보 구조 정리/);
     assert.match(roadmap, /## v0\.6\.13 — 외부 provider\/source 선택기 오탐 차단/);
+    assert.match(roadmap, /## v0\.6\.14 — 선택된 Connection Profile 기반 공용 provider 연동/);
     assert.match(settingsHtml, /<textarea[\s\S]*?id="cmr_model_id"/);
     assert.match(settingsHtml, /id="cmr_add_form"/);
     assert.doesNotMatch(settingsHtml, /cmr_bulk_/);
@@ -112,6 +120,8 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
     assert.match(entrypoint, /installRegistryApi\(globalThis/);
     assert.match(entrypoint, /createPurposeRoutingApi/);
     assert.match(entrypoint, /createSillyTavernConnectionProfileAdapter/);
+    assert.match(entrypoint, /createProviderIntegrationController/);
+    assert.match(entrypoint, /announceProviderIntegrationApi/);
     assert.match(entrypoint, /diagnoseCompatibility/);
     assert.match(entrypoint, /stringifyPortableSettings/);
     assert.match(entrypoint, /createExternalIntegrationController/);
@@ -150,22 +160,46 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
     assert.match(portableSettings, /PORTABLE_SETTINGS_SCHEMA_VERSION = 2/);
     assert.match(portableSettings, /externalIntegrations/);
     assert.match(compatibility, /DIAGNOSTIC_SCHEMA_VERSION = 2/);
+    assert.match(registryApi, /REGISTRY_API_VERSION = '1\.2\.0'/);
+    assert.match(registryApi, /providerIntegrations: Boolean\(options\.integrationsApi\)/);
+    assert.match(registryApi, /integrations: options\.integrationsApi \?\? null/);
+    assert.match(providerIntegrations, /PROVIDER_INTEGRATION_API_VERSION = '1\.0\.0'/);
+    assert.match(providerIntegrations, /PROVIDER_INTEGRATION_INPUT_SCHEMA = 'cmr\.chat-completion\/1'/);
+    assert.match(providerIntegrations, /SILLYTAVERN_INHERITED: 'sillytavern-inherited'/);
+    assert.match(providerIntegrations, /OPENAI_COMPATIBLE: 'openai-compatible'/);
+    assert.match(providerIntegrations, /PROVIDER_INTEGRATION_OWNED_ATTRIBUTE = 'data-cmr-provider-hook-owned'/);
+    assert.match(providerIntegrations, /installHandler/);
+    assert.match(providerIntegrations, /publishModels/);
+    assert.match(providerIntegrationSandbox, /src\/provider-integrations\.js\?provider-sandbox=0\.6\.14/);
+    assert.match(providerIntegrationSandbox, /ConnectionManagerRequestService/);
+    assert.match(providerIntegrationSandbox, /provider-integrations\/echo/);
+    assert.match(providerIntegrationSandbox, /data-cmr-provider-hook-owned="true"/);
     assert.match(readme, /진단 JSON schema v2/);
     assert.match(roadmap, /진단 JSON schema v2/);
     assert.match(checklist, /진단 schema v2/);
     assert.match(apiDocument, /v0\.6 범용 DOM 모델 브리지/);
     assert.match(apiDocument, /Portable backup schema v2/);
-    assert.match(apiDocument, /v0\.6\.7의 Playwright UI 회귀 검사 인프라/);
-    assert.match(apiDocument, /v0\.6\.12의 런처 숫자 배지 제거와 정보 popover 중심 문구 정리/);
-    assert.match(apiDocument, /v0\.6\.13의 외부 provider\/source 선택기 오탐 차단/);
+    assert.match(apiDocument, /Provider Integration API 1\.0\.0/);
     assert.match(apiDocument, /모두 새 객체로 만들고 순서까지 뒤집으면/);
     assert.match(apiDocument, /DOM 브리지 내부 저장 schema v2/);
     assert.match(apiDocument, /excludedTargets/);
     assert.match(apiDocument, /disabled.*사용자 제외로 되살리지 않습니다/);
     assert.match(readme, /select\/input\/datalist/);
     assert.match(roadmap, /fetch.*XMLHttpRequest.*monkey patch/);
+    for (const document of [readme, roadmap, checklist, apiDocument]) {
+        assert.match(document, /Registry API[^\n]*1\.2\.0|1\.2\.0[^\n]*Registry API/);
+        assert.match(document, /(?:Provider )?Integration API[^\n]*1\.0\.0|1\.0\.0[^\n]*(?:Provider )?Integration API/);
+        assert.match(document, /Routing API[^\n]*1\.0\.0|1\.0\.0[^\n]*Routing API/);
+        assert.match(document, /선택된.*Connection Manager.*프로필/s);
+        assert.match(document, /Custom.*OpenAI-compatible|OpenAI-compatible.*Custom/s);
+        assert.match(document, /공개 provider.*hook|provider registry\/hook/s);
+        assert.match(document, /handler.*(?:설치|영수증).*모델.*게시/s);
+        assert.match(document, /hook.*없|hookless/s);
+        assert.match(document, /DOM 모델 브리지.*(?:유지|계속)/s);
+        assert.match(document, /Connection Manager.*(?:소유|프로필).*API 키.*endpoint|API 키.*endpoint.*Connection Manager/s);
+    }
     for (const document of [readme, roadmap, checklist]) {
-        assert.match(document, /Playwright Chromium UI 회귀 검사 (?:__UI_TEST_COUNT__|\d+)개/);
+        assert.match(document, /Playwright Chromium UI 회귀 검사 \d+개/);
         assert.match(document, /전체 SillyTavern.*런타임/);
         assert.match(document, /12개/);
         assert.match(document, /200/);
@@ -217,6 +251,10 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
     assert.match(uiRegressionServer, /readFile\(resolve\(REPOSITORY_ROOT, 'settings\.html'\)/);
     assert.match(uiRegressionServer, /public', 'style\.css'/);
     assert.match(uiRegressionServer, /public', 'css', 'popup\.css'/);
+    assert.match(uiRegressionServer, /tests', 'provider-integration-sandbox\.html'/);
+    assert.match(uiRegressionServer, /providerIntegrationSandboxUrl/);
+    assert.match(uiRegressionSpec, /fixtureServer\.providerIntegrationSandboxUrl/);
+    assert.match(uiRegressionSpec, /provider-integrations\/echo/);
     assert.match(uiRegressionWorkflow, /ref: 51ad27fb86d39a3daca3adaa970375c9670c12df/);
     assert.doesNotMatch(uiRegressionWorkflow, /uses:\s*actions\/(?:checkout|setup-node|upload-artifact)@v\d+/);
     for (const actionCommit of [
@@ -297,7 +335,7 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
         return Number(match[1]);
     });
     assert.equal(new Set(documentedUiCounts).size, 1, '세 문서의 Playwright UI 검사 개수가 같아야 한다');
-    assert.equal(documentedUiCounts[0], 11, 'v0.6.13 Playwright UI 검사 개수는 11개여야 한다');
+    assert.equal(documentedUiCounts[0], 14, 'v0.6.14 Playwright UI 검사 개수는 14개여야 한다');
 
     const checklistIds = Array.from(
         checklist.matchAll(/\*\*\[(?:필수|조건부|권장|선택)\]\[([A-Z0-9-]+)\]/g),

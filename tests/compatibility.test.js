@@ -28,7 +28,10 @@ function createContext(overrides = {}) {
         CHATCOMPLETION_MODEL_CHANGED: 'chatcompletion_model_changed',
         MAIN_API_CHANGED: 'main_api_changed',
         OAI_PRESET_CHANGED_AFTER: 'oai_preset_changed_after',
+        CONNECTION_PROFILE_CREATED: 'connection_profile_created',
         CONNECTION_PROFILE_LOADED: 'connection_profile_loaded',
+        CONNECTION_PROFILE_UPDATED: 'connection_profile_updated',
+        CONNECTION_PROFILE_DELETED: 'connection_profile_deleted',
     };
     return {
         extensionSettings: {},
@@ -113,7 +116,7 @@ test('SillyTavern 1.18 공개 context·DOM·요청 계약을 구조화된 한국
         runtimeState: {
             phase: 'active',
             observerCount: 1,
-            listenerCount: 7,
+            listenerCount: 10,
             boundControlCount: 24,
             pendingTaskCount: 0,
         },
@@ -266,7 +269,7 @@ test('100회 동일 자원 표본과 표본 수 제한을 안정 상태로 판�
             launcherCount: 1,
             panelCount: 0,
             observerCount: 1,
-            listenerCount: 7,
+            listenerCount: 10,
             boundControlCount: 24,
             modelGroupCount: 24,
             pendingTaskCount: 0,
@@ -279,7 +282,7 @@ test('100회 동일 자원 표본과 표본 수 제한을 안정 상태로 판�
 
     const capped = createStabilityMonitor({ sampleLimit: 4 });
     for (let index = 0; index < 8; index += 1) {
-        capped.record('프로필 전환', { launcherCount: 1, observerCount: 1, listenerCount: 7 });
+        capped.record('프로필 전환', { launcherCount: 1, observerCount: 1, listenerCount: 10 });
     }
     assert.equal(capped.size, 4);
     assert.equal(capped.getSamples()[0].sequence, 5);
@@ -300,7 +303,7 @@ test('정상 패널 열림·닫힘과 초기 자원 구성 및 일시 작업을 
         launcherCount: 1,
         panelCount: 0,
         observerCount: 1,
-        listenerCount: 7,
+        listenerCount: 10,
         boundControlCount: 12,
         modelGroupCount: 12,
         pendingTaskCount: 3,
@@ -309,7 +312,7 @@ test('정상 패널 열림·닫힘과 초기 자원 구성 및 일시 작업을 
         launcherCount: 1,
         panelCount: 1,
         observerCount: 1,
-        listenerCount: 7,
+        listenerCount: 10,
         boundControlCount: 24,
         modelGroupCount: 24,
         pendingTaskCount: 1,
@@ -318,7 +321,7 @@ test('정상 패널 열림·닫힘과 초기 자원 구성 및 일시 작업을 
         launcherCount: 1,
         panelCount: 0,
         observerCount: 1,
-        listenerCount: 7,
+        listenerCount: 10,
         boundControlCount: 24,
         modelGroupCount: 24,
         pendingTaskCount: 0,
@@ -335,21 +338,21 @@ test('실제 리스너·옵저버·바인딩·모델 그룹 누적은 오류로 
     leaking.record('시작', {
         launcherCount: 1,
         observerCount: 1,
-        listenerCount: 7,
+        listenerCount: 10,
         boundControlCount: 24,
         modelGroupCount: 24,
     });
     leaking.record('누적 1회', {
         launcherCount: 1,
         observerCount: 2,
-        listenerCount: 8,
+        listenerCount: 11,
         boundControlCount: 25,
         modelGroupCount: 25,
     });
     leaking.record('누적 2회', {
         launcherCount: 1,
         observerCount: 3,
-        listenerCount: 9,
+        listenerCount: 12,
         boundControlCount: 26,
         modelGroupCount: 26,
     });

@@ -2,9 +2,9 @@
 
 마지막 업데이트: **2026-08-20**
 
-현재 릴리스: **v0.6.13**
+현재 릴리스: **v0.6.14**
 
-현재 단계: **v0.6.13의 외부 provider/source 선택기 오탐 차단과 native 상태 보존을 구현하고 자동 검사를 마친 뒤 실제 사용자 환경 검증 대기 중**
+현재 단계: **v0.6.14의 선택된 Connection Manager 프로필 기반 공용 provider 연동과 공개 hook 계약을 구현하고 자동 검사를 마친 뒤 실제 사용자 환경 검증 대기 중**
 
 ## 상태 범례
 
@@ -24,15 +24,16 @@
 | SillyTavern 1.18.0 계약 조사 | ✅ 완료 | 활성 Chat Completion source 25개 중 등록 가능한 24개와 구조적 제외를 확인 |
 | 다중 provider Registry | ✅ 완료 | `(provider, model ID)` 복합키, 제공업체별 선택, v1 Vertex 이관 |
 | 관리 팝업과 기본 컨트롤 | ✅ 완료 | 숫자 배지 없는 단일 런처, 24개 제공업체 모델 등록·삭제, 단일·여러 줄 공용 textarea와 아이콘 버튼 하나, 핵심 한 줄 안내와 native popover 도움말 5곳, 전체 provider 목록, 12개 초과 조건부 검색, 최대 200줄 원자 등록, 삭제 실행 취소와 6개 초과 숨은 스크롤 |
-| 공개 Registry API | ✅ 완료 | API `1.1.0`, 불변 스냅샷·mutation·이벤트·수명주기, 현재 custom-only 모델 삭제 보호 |
+| 공개 Registry API | ✅ 완료 | API `1.2.0`, 불변 스냅샷·mutation·이벤트·수명주기, Provider Integration API 노출, 현재 custom-only 모델 삭제 보호 |
+| 공용 provider 연동 | ✅ 완료 | Integration API `1.0.0`, 선택된 일반·Custom Connection Profile 전략, 공개 hook의 handler 설치→모델 게시 2단계 준비 계약 |
 | 용도별 라우팅 | ✅ 완료 | 일반 UI 없이 Routing API `1.0.0`, Connection Profile 어댑터, route·backup 보존 |
 | 호환성 진단 | ✅ 완료 | ST·context·provider·런타임 진단, 복구 상세와 target별 native 중복 제외 후보 512개·전체 예상/실제 option 합계 2,048개 주의 |
 | 범용 외부 확장 브리지 | ✅ 완료 | 표준 select/input/datalist 모델 target 탐지, provider/source 선택기 비대상 판별·metadata 감시, 안전 대상 자동 주입, 실패·사용자 제외 기본 목록, 정상 대상 명시적 제외 선택기, 위험 대상 진단 집계 |
 | 설정 백업·복구 | ✅ 완료 | Registry·route·외부 선택·사용자 제외 portable schema v2, 적용 전 추가·충돌·삭제 미리보기, legacy 이관·미래 schema 거부 |
 | 안정성 계측 | ✅ 완료 | source·profile 전환 표본의 core 자원과 외부 observer 제한 판정; 외부 target·binding·listener는 현재 진단 스냅샷에서 교차 확인 |
-| 자동 검사 | ✅ 완료 | 단위·통합·수명주기·보안 경계·버전 일치 검사 209개 통과 |
+| 자동 검사 | ✅ 완료 | 단위·통합·수명주기·보안 경계·버전 일치 검사 232개 통과 |
 | DOM·공개 API 샌드박스 | ✅ 완료 | 기본 24개·native 선택·외부 모델 컨트롤, provider/source 선택기 보존·개발자 route API와 정리 수명주기 확인 |
-| Chromium UI 회귀 검사 | ✅ 완료 | 실제 `settings.html`과 SillyTavern 1.18.0 고정 CSS 및 브라우저 브리지 계약을 확인하는 Playwright Chromium UI 회귀 검사 11개 통과 |
+| Chromium UI 회귀 검사 | ✅ 완료 | 실제 `settings.html`, SillyTavern 1.18.0 고정 CSS, 브라우저 브리지와 공용 provider 연동 fixture를 확인하는 Playwright Chromium UI 회귀 검사 14개 통과 |
 | 사용자 실제 계정 검증 | 🧪 대기 | [통합 체크리스트](./USER_CHECKLIST.md)를 사용하는 연결에서 한 번 수행 |
 
 ## 지원 기준
@@ -43,7 +44,7 @@
 | `1.18.0` 미만 | ❌ 비지원 | manifest 최소 버전과 진단에서 중단 |
 | `1.18.0` 초과 | ⚠️ 최소 버전 충족·미검증 | 진단을 실행하고 실제 요청을 체크리스트로 확인 |
 
-샌드박스와 UI 회귀 검사는 DOM·공개 API 계약, 실제 설정 마크업과 SillyTavern CSS의 배치·상호작용을 확인합니다. 전체 SillyTavern 런타임이나 실제 제공업체 인증·네트워크 요청 성공을 대신하지 않습니다.
+샌드박스와 UI 회귀 검사는 DOM·공개 API 계약, 실제 설정 마크업과 SillyTavern CSS의 배치·상호작용을 확인합니다. v0.6.14 provider fixture는 실제 제품 모듈과 wiring을 사용하지만 Connection Manager 서비스와 네트워크는 가짜 구현입니다. 전체 SillyTavern 런타임, 실제 외부 확장 코드, 제공업체 인증·원격 네트워크 요청 성공을 대신하지 않습니다.
 
 ### 검증 상태별 외부 확장 목록
 
@@ -540,6 +541,37 @@ Connection Profile 도구행의 관리 아이콘 옆 숫자 배지는 기능을 
 - [ ] provider 후보가 여러 개여도 임의 후보의 값이나 option이 변경되지 않음
 - [ ] 진단의 외부 `targetCount`가 provider/source 선택기를 모델 target으로 세지 않음
 
+## v0.6.14 — 선택된 Connection Profile 기반 공용 provider 연동
+
+상태: **✅ 구현·자동 검사 완료, 🧪 공개 hook을 제공하는 실제 외부 확장 검증 대기**
+
+### 수정 배경
+
+기존 DOM 브리지는 외부 확장의 표준 모델 컨트롤에 모델 선택지를 표시할 수 있지만, 그 확장에 없던 provider 요청 handler까지 만들 수는 없습니다. 구조가 알려진 특정 확장의 비공개 배열·handler를 강제로 수정하는 전용 어댑터는 이번 범위에서 제외하고, 여러 확장이 명시적으로 채택할 수 있는 세 가지 공용 경계만 추가합니다.
+
+### 반영 결과
+
+- [x] 공개 Registry API를 하위 호환 `1.2.0`으로 올리고 `CustomModelRouter.integrations`에 Provider Integration API `1.0.0`을 노출
+- [x] **SillyTavern 연결 상속**: 현재 선택된 Connection Manager Chat Completion 프로필의 source가 CMR Registry provider와 일치할 때 비-Custom provider handler와 해당 provider의 활성 모델만 준비
+- [x] **OpenAI-compatible 특화**: 현재 선택된 Connection Manager 프로필이 `Custom` source일 때만 `custom` Registry 모델과 OpenAI-compatible handler를 준비
+- [x] **공개 provider registry/hook**: 외부 확장이 버전·capability·slot과 `installHandler`·`publishModels` hook을 명시적으로 등록하는 공용 계약 제공
+- [x] handler 설치 영수증을 먼저 확인한 뒤 모델 게시를 호출하고, 게시 영수증까지 확인된 경우에만 provider binding을 `ready`로 공개
+- [x] handler 설치·모델 게시·갱신 실패, 소비 확장 해제, CMR 비활성화와 늦은 응답에서 확보한 외부 자원을 한 번씩 정리하고 준비되지 않은 UI를 공개하지 않음
+- [x] 요청 입력을 Registry의 해당 provider 활성 모델과 단순 Chat Completion allowlist로 제한하고 실패 시 다른 provider·모델 또는 메인 채팅으로 자동 대체하지 않음
+- [x] API 키와 endpoint는 CMR에 복제하지 않고 선택된 Connection Manager 프로필이 계속 소유하며 메인 Chat Completion source·모델을 변경하지 않음
+- [x] 공개 hook이 없거나 계약·capability가 맞지 않는 임의 확장의 provider UI에는 provider나 모델을 강제로 삽입하지 않음
+- [x] 기존 v0.6 DOM 모델 브리지는 유지하고, hook 소유 provider UI는 `data-cmr-provider-hook-owned` 표식으로 중복 DOM 주입을 피함
+- [x] Node 자동 검사 232개와 Playwright Chromium UI 회귀 검사 14개로 두 Connection Profile 전략, 2단계 ACK, 실패·취소·종료 정리와 hookless 비변경 경계를 검증
+
+### 사용자 검증 초점
+
+- [ ] 공개 Provider Integration API `1.0.0`에 opt-in한 확장에서 handler 설치 확인 전에는 CMR provider·모델 UI가 나타나지 않음
+- [ ] handler 설치와 모델 게시 확인이 모두 성공하면 선택된 일반 Connection Profile source의 CMR 모델만 나타나고 실제 요청이 그 프로필로 전달됨
+- [ ] 선택된 `Custom` Connection Profile에서는 OpenAI-compatible provider와 `custom` Registry 모델만 나타나고 endpoint·API 키를 CMR에 다시 입력하지 않아도 요청됨
+- [ ] 선택된 Connection Profile을 바꾸거나 없애면 이전 binding·provider UI·진행 중 요청이 정리되고 새 조건이 충족될 때만 다시 준비됨
+- [ ] 공개 hook이 없는 외부 확장의 provider UI는 변경되지 않지만, 기존 DOM 브리지 대상인 표준 모델 컨트롤에는 종전과 같은 CMR 모델 선택지가 유지됨
+- [ ] 진단 JSON에는 consumer·pending·ready·failed·published model 개수만 보이고 profile ID·endpoint·API 키는 나타나지 않음
+
 ## 실제 사용자 검증 게이트
 
 다음 조건은 자동 검사만으로 완료 처리하지 않습니다.
@@ -562,8 +594,11 @@ Connection Profile 도구행의 관리 아이콘 옆 숫자 배지는 기능을 
 16. 관리 런처에는 보이는 숫자 배지가 없고 스크린 리더용 등록 개수는 유지되며, 정보 아이콘 5곳은 키보드·터치·Escape로 조작할 수 있습니다.
 17. GitHub Actions의 UI 회귀 검사 증거와 실제 설치 화면을 비교해 SillyTavern 런타임에서만 생기는 차이가 없는지 확인합니다.
 18. 외부 provider/source 선택기는 이름에 `model`이 포함되어도 모델 target으로 세지 않고 native option·현재 값을 유지하며, 실제 model control의 metadata·변경 감시에만 사용합니다.
+19. 공개 provider hook 소비 확장은 handler 설치와 모델 게시를 모두 확인한 뒤에만 준비 상태를 표시하고, 둘 중 하나라도 실패하면 provider UI를 공개하지 않습니다.
+20. SillyTavern 연결 상속은 선택된 비-Custom Connection Profile과 같은 Registry provider에만, OpenAI-compatible 특화는 선택된 `Custom` 프로필과 `custom` Registry 모델에만 적용됩니다.
+21. hookless 임의 확장 provider UI는 변경되지 않고 기존 DOM 모델 브리지는 계속 독립적으로 동작하며, CMR 설정·진단·이벤트에는 API 키와 endpoint가 복제되지 않습니다.
 
-실제 검증에서 발견되는 v0.6 범위의 후속 결함은 `v0.6.14`, `v0.6.15`, ... 패치 버전으로 수정합니다.
+실제 검증에서 발견되는 v0.6 범위의 후속 결함은 `v0.6.15`, `v0.6.16`, ... 패치 버전으로 수정합니다.
 
 ## 업데이트 규칙
 
@@ -581,7 +616,7 @@ Connection Profile 도구행의 관리 아이콘 옆 숫자 배지는 기능을 
 | v0.1.2 | ✅ 게시 | API Connections 관리 아이콘·공식 팝업·압축 목록 |
 | v0.2.0 | ✅ 게시 | 24개 Chat Completion 연결과 schema v2 |
 | v0.2.1 | ✅ 게시 | 이후 기능 단계를 직접 모델 ID 계약으로 단순화 |
-| v0.3.0 | ✅ 구현 완료 | 공개 Registry API `1.1.0` |
+| v0.3.0 | ✅ 구현 완료 | 공개 Registry API 도입; 현재 계약은 `1.2.0` |
 | v0.4.0 | ✅ 구현 완료 | Connection Profile 어댑터와 용도별 라우팅 |
 | v0.5.0 | ✅ 완료·범위 정정 | 진단·설정 복구·백업·안정성 검증; 기존 외부 확장 자동 연동은 포함하지 않았음 |
 | v0.6.0 | ✅ 구현 완료·🧪 사용자 검증 대기 | 범용 DOM 모델 브리지, 수동 mapping, 외부 연결 portable schema v2 |
@@ -597,4 +632,5 @@ Connection Profile 도구행의 관리 아이콘 옆 숫자 배지는 기능을 
 | v0.6.10 | ✅ 완료·🧪 사용자 검증 대기 | 대량 모델 관리, 삭제 실행 취소, 백업 미리보기·복구 상세, 예외 중심 외부 관리와 DOM option 경고 |
 | v0.6.11 | ✅ 완료·🧪 사용자 검증 대기 | 단일·여러 줄 모델 등록을 공용 textarea와 아이콘 버튼 하나로 통합 |
 | v0.6.12 | ✅ 완료·🧪 사용자 검증 대기 | 런처 숫자 배지 제거, 핵심 한 줄 안내와 native popover 정보 아이콘 5곳, 지원·개인정보 문구 축약 |
-| v0.6.13 | ✅ 현재 릴리스·🧪 사용자 검증 대기 | 외부 provider/source 선택기 오탐 차단, native option·값 보존, 모호한 provider 후보 임의 연결 방지 |
+| v0.6.13 | ✅ 완료·🧪 사용자 검증 대기 | 외부 provider/source 선택기 오탐 차단, native option·값 보존, 모호한 provider 후보 임의 연결 방지 |
+| v0.6.14 | ✅ 현재 릴리스·🧪 사용자 검증 대기 | 선택된 Connection Manager 프로필 기반 일반·Custom 공용 handler, Provider Integration API `1.0.0`, 2단계 준비·정리 계약 |

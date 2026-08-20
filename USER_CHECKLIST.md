@@ -1,6 +1,6 @@
-# v0.6.13 통합 사용자 검증 체크리스트
+# v0.6.14 통합 사용자 검증 체크리스트
 
-대상 버전: **v0.6.13**
+대상 버전: **v0.6.14**
 
 이 문서는 v0.1~v0.6 기능을 한 번에 확인하는 최종 수동 검증 순서입니다. 위에서 아래로 진행하고, 사용하지 않는 제공업체·외부 확장·개발자 API 항목은 `해당 없음`으로 표시하세요.
 
@@ -17,16 +17,16 @@
 
 ## 자동 검사 완료 범위
 
-v0.6.13 저장소에서는 Node 자동 검사 209개와 Playwright Chromium UI 회귀 검사 11개를 별도로 실행합니다. Node 검사는 provider/source 선택기 비대상 판별, native provider option·값 보존과 모호한 provider 후보의 임의 연결 방지를 비롯해 숫자 배지 없는 단일 런처와 스크린 리더용 등록 개수, 12개 초과 조건부 검색, 공용 textarea의 단일·최대 200줄 원자 등록, 삭제 실행 취소, 백업 추가·충돌·삭제 미리보기, 진단 schema v2의 구체적 복구 사유, 예외 중심 외부 관리, target별 native 중복 제외 후보 512개·전체 예상/실제 CMR option 합계 2,048개 경고와 기존 schema·수명주기·보안 계약을 포함합니다. UI 검사는 실제 `settings.html`과 SillyTavern 1.18.0 고정 commit의 core·Popup CSS를 결합한 설정 화면 검사와 브라우저 브리지 회귀를 통해 좁은 화면 배치, 공용 textarea와 아이콘 등록 버튼, native popover 정보 아이콘 5곳, 핵심 힌트·경고의 상시 표시, provider/source 선택기 비오염, 대량 모델 관리, 백업 미리보기, 조건부 문제 카드→고급 관리 이동, 명시적 제외 대상 선택기, 공백 단위 줄바꿈과 숨은 스크롤바 조작을 확인합니다. GitHub Actions의 `ui-regression-evidence-*` artifact에는 성공·실패 PNG와 HTML report가 14일 보관됩니다.
+v0.6.14 저장소에서는 Node 자동 검사 232개와 Playwright Chromium UI 회귀 검사 14개를 별도로 실행합니다. Node 검사는 기존 UI·Registry·Routing·DOM 브리지·진단 schema v2·백업 계약에 더해 Provider Integration API `1.0.0`의 capability 협상, 선택된 일반·Custom Connection Profile 경계, handler 설치→모델 게시 순서, 실패·취소·종료 정리, 요청 allowlist, 메인 채팅 설정 불변, 비밀정보 비노출과 hookless provider UI 비변경을 포함합니다. UI 검사는 실제 `settings.html`과 SillyTavern 1.18.0 고정 commit의 core·Popup CSS를 결합한 설정 화면 검사와 브라우저 브리지 회귀에 더해, 실제 제품 provider integration 모듈·wiring을 가짜 Connection Manager 서비스와 로컬 echo 요청으로 실행합니다. GitHub Actions의 `ui-regression-evidence-*` artifact에는 성공·실패 PNG와 HTML report가 14일 보관됩니다.
 
-이 자동 검사는 전체 SillyTavern JavaScript 런타임이나 실제 외부 확장·API 요청을 실행하지 않습니다. 아래 체크리스트에서 실제 설치 화면, 외부 확장의 선택 저장, Network payload와 제공업체 요청 성공을 계속 확인해야 합니다. API 키나 Service Account를 자동 검사에 제공할 필요는 없습니다.
+provider integration 브라우저 fixture는 실제 제품 모듈과 공개 wiring을 실행하지만 Connection Manager와 네트워크는 더미입니다. 자동 검사는 전체 SillyTavern JavaScript 런타임, 실제 외부 확장 코드, 실제 제공업체 API 요청을 실행하지 않습니다. 아래 체크리스트에서 실제 설치 화면, 외부 확장의 provider/model 게시, Network payload와 제공업체 요청 성공을 계속 확인해야 합니다. API 키나 Service Account를 자동 검사에 제공할 필요는 없습니다.
 
 ## 0. 환경 기록과 사전 준비
 
 ```text
 검증 날짜:
 SillyTavern 버전:
-Custom Model Router 버전: v0.6.13
+Custom Model Router 버전: v0.6.14
 브라우저·OS:
 설치 방식: 신규 / 업데이트
 이전 확장 버전:
@@ -193,17 +193,26 @@ CMR 외부 브리지는 best-effort UI 선택지 주입 기능이며 전역 `fet
 - [ ] **[필수][SPEC-AZURE-01] Azure OpenAI가 등록 대상에 없고 deployment name으로 라우팅된다는 설명을 확인한다.**
 - [ ] **[필수][SPEC-COMET-01] CometAPI가 지원 24개 목록에 없고 ST 1.18.0 코어 비활성으로 문서화되었는지 확인한다.**
 
-## 6. 공개 Registry API 1.1.0
+## 6. 공개 Registry API 1.2.0과 Provider Integration API 1.0.0
 
 브라우저 콘솔을 사용할 수 있을 때 확인합니다.
 
-- [ ] **[선택][API-01] `CustomModelRouter.apiVersion`이 `1.1.0`이고 `isCompatible('1.1.0')`이 true다.**
+- [ ] **[선택][API-01] `CustomModelRouter.apiVersion`이 `1.2.0`이고 `isCompatible('1.2.0')`과 하위 호환 `isCompatible('1.1.0')`이 true다.**
 - [ ] **[선택][API-02] `getProviders()`가 비밀정보 없이 provider metadata만 반환한다.**
 - [ ] **[선택][API-03] `getSnapshot()`과 `listModels()` 반환 객체를 수정할 수 없고 내부 설정도 바뀌지 않는다.**
 - [ ] **[선택][API-04] 같은 model ID를 두 provider에 등록해도 `createModelKey()` 결과가 다르다.**
 - [ ] **[선택][API-05] `subscribe()`가 등록·선택·삭제 이벤트를 revision 순서로 받고 해제 뒤에는 받지 않는다.**
 - [ ] **[선택][API-06] `selectModel()`이 Registry 상태만 바꾸고 현재 메인 source·selector·모델은 바꾸지 않는다.**
 - [ ] **[선택][API-07] SillyTavern `select`에서 현재 사용 중인 custom-only 모델을 `unregisterModel()`로 지우면 `model_in_use`로 거부되고, native 모델로 전환한 뒤에는 등록 해제된다.**
+- [ ] **[선택][INT-01] `CustomModelRouter.integrations.apiVersion`이 `1.0.0`이고 공개 capability에 선택된 Connection Profile 전용, Connection Manager 소유 자격 증명, 메인 채팅 무변경과 handler-before-models 계약이 표시된다.**
+- [ ] **[필수][INT-02] Provider Integration hook을 등록하지 않은 외부 확장의 provider UI에는 CMR provider·model이 강제로 추가되지 않는다. 같은 확장의 안전한 표준 모델 컨트롤은 기존 DOM 브리지 대상이면 종전처럼 모델 선택지만 받을 수 있다.**
+- [ ] **[조건부][INT-03] 공개 hook 소비 확장이 `installHandler`와 `publishModels`를 등록하면 handler 설치 영수증을 반환하기 전에는 모델 게시가 호출되지 않고, 두 영수증이 모두 유효한 뒤에만 binding과 provider UI가 준비 상태가 된다.**
+- [ ] **[조건부][INT-04] 비-Custom Chat Completion Connection Profile을 선택하면 `sillytavern-inherited` slot에는 그 profile source와 같은 provider의 활성 Registry 모델만 게시되고 실제 요청은 선택된 profile을 사용한다.**
+- [ ] **[조건부][INT-05] `Custom` Connection Profile을 선택하면 `openai-compatible` slot에 `custom` Registry 모델만 게시되고 그 프로필의 endpoint·API 키를 CMR에 다시 입력하거나 복제하지 않는다.**
+- [ ] **[조건부][INT-06] 선택된 Connection Profile을 다른 source로 바꾸거나 선택 해제하면 이전 handler·모델 게시·진행 중 요청이 정리되고 새 조건이 충족될 때만 새 binding이 준비된다.**
+- [ ] **[조건부][INT-07] handler 설치 또는 모델 게시가 거부·예외·취소되면 provider UI가 준비 상태로 노출되지 않고 다른 provider·등록 모델·메인 모델로 자동 대체되지 않는다.**
+- [ ] **[조건부][INT-08] 공용 handler 요청 전후 메인 Chat Completion source·모델이 같고, CMR 설정·이벤트·진단에는 Connection Profile ID·API 키·전체 endpoint가 나타나지 않는다.**
+- [ ] **[조건부][INT-09] hook 소유 provider UI 루트가 `data-cmr-provider-hook-owned`로 표시되어 기존 DOM 모델 브리지가 같은 모델을 중복 주입하지 않는다.**
 
 ## 7. 용도별 Routing API 1.0.0
 
@@ -232,6 +241,7 @@ CMR 외부 브리지는 best-effort UI 선택지 주입 기능이며 전역 `fet
 - [ ] **[필수][DIAG-04] 런처·observer·listener·사용자 모델 그룹 중복이 없다고 표시된다. 서로 다른 모델 선택기에 같은 제공업체 그룹이 하나씩 있는 것은 중복으로 오인하지 않는다.**
 - [ ] **[필수][DIAG-04A] 복사 JSON에서 외부 브리지 observer·listener·target 수, 활성 Registry 모델 수, 예상·실제 CMR option 수와 연결 정책·사용자 제외·비채팅·비호환 제외 수를 확인하고 설명 없는 증가가 없다. provider/source 선택기는 모델 `targetCount`에 포함되지 않는다.**
 - [ ] **[필수][DIAG-04B] provider/source 선택기를 제외한 외부 모델 칸 집계가 `후보 = 연결 정책 + 사용자 제외 + 비채팅·비호환 제외` 및 `연결 정책 = 연결됨 + 등록 모델 없음 + 연결 실패`로 일치하며 observer·listener·binding 불일치가 통과로 표시되지 않는다.**
+- [ ] **[조건부][DIAG-04C] 공개 provider hook 소비 확장이 있으면 `providerIntegrations`의 consumer·pending·ready·failed·published model 개수가 실제 binding 상태와 일치하고 profile ID·endpoint·API 키는 포함하지 않는다.**
 - [ ] **[필수][DIAG-05] 경고가 있다면 `진단 복사` JSON의 check ID·코드와 사유를 결과 메모에 기록한다. 화면 목록에 별도 코드가 보이지 않으면 복사 JSON을 기준으로 한다.**
 - [ ] **[필수][DIAG-06] `진단 복사` 결과를 텍스트 편집기에서 열어 API 키·endpoint·project/account ID·Service Account가 없는지 확인한다.**
 - [ ] **[권장][DIAG-07] 1.18.0보다 새 버전에서는 미검증 경고가 표시되고 확장이 무조건 호환이라고 단정하지 않는다.**
@@ -254,7 +264,7 @@ CMR 외부 브리지는 best-effort UI 선택지 주입 기능이며 전역 `fet
 
 ## 10. 확장 전용 백업·복구
 
-- [ ] **[필수][BKP-01] `백업 내보내기`로 `custom-model-router-backup-v0.6.13.json`을 저장한다. 최대 허용 범위인 UTF-8 8,000,000바이트·모델 5,000개·route 256개 안에서 성공한 백업은 다시 가져올 수 있다.**
+- [ ] **[필수][BKP-01] `백업 내보내기`로 `custom-model-router-backup-v0.6.14.json`을 저장한다. 최대 허용 범위인 UTF-8 8,000,000바이트·모델 5,000개·route 256개 안에서 성공한 백업은 다시 가져올 수 있다.**
 - [ ] **[필수][BKP-02] JSON 최상위에 `format`, `schemaVersion`, `createdAt`, `registry`, `purposeRoutes`, `externalIntegrations`만 있고 portable schemaVersion이 `2`인지 확인한다.**
 - [ ] **[필수][BKP-03] Registry에는 provider·model ID·protocol·enabled·선택 상태만 있는지 확인한다.**
 - [ ] **[필수][BKP-04] route에는 provider·model ID·adapter ID·Connection Profile ID만 있는지 확인한다.**
@@ -278,6 +288,7 @@ CMR 외부 브리지는 best-effort UI 선택지 주입 기능이며 전역 `fet
 
 - [ ] **[필수][LIFE-01] 확장을 비활성화하면 런처·팝업·CMR optgroup과 `globalThis.CustomModelRouter`가 제거된다.**
 - [ ] **[필수][LIFE-01A] 비활성화하면 다른 확장의 CMR group/option과 외부 observer/listener가 제거되고 native option·기존 input 값·기존 datalist 연결은 보존된다. 제거된 CMR option을 선택 중이던 `select`는 브라우저 또는 외부 확장의 native 기본값으로 전환될 수 있다.**
+- [ ] **[조건부][LIFE-01B] 공개 provider hook 소비 확장이 있으면 비활성화 시 게시 모델을 먼저, 요청 handler를 다음으로 한 번씩 정리하고 진행 중 실행을 중단하며 hookless 확장 UI는 건드리지 않는다.**
 - [ ] **[필수][LIFE-02] select형 현재 사용자 모델은 가능한 기본 모델로 안전하게 전환되고 인증 설정은 유지된다.**
 - [ ] **[조건부][LIFE-03] Custom 자유 입력값과 endpoint는 비활성화해도 삭제되지 않는다.**
 - [ ] **[필수][LIFE-04] 다시 활성화하면 UI와 API가 하나씩만 생성되고 등록 설정이 복원된다.**
@@ -287,14 +298,15 @@ CMR 외부 브리지는 best-effort UI 선택지 주입 기능이며 전역 `fet
 - [ ] **[필수][SEC-02] 진단 결과와 오류 메시지에 사용자가 입력한 비밀값 자체가 노출되지 않는다.**
 - [ ] **[필수][SEC-03] HTML처럼 보이는 모델 ID가 거부되고 등록 모델 표시는 실행되지 않는 일반 텍스트다.**
 - [ ] **[필수][SEC-04] Azure OpenAI deployment와 CometAPI를 지원한다고 잘못 표시하지 않는다.**
+- [ ] **[필수][SEC-05] Provider Integration API의 공개 provider·model descriptor, 이벤트와 진단에는 Connection Profile ID·API 키·전체 endpoint가 없고 임의 endpoint override 요청은 허용되지 않는다.**
 
 ## 결과 보고 양식
 
 ```text
-제목: [v0.6.13][제공업체 또는 기능][항목 ID] 짧은 증상
+제목: [v0.6.14][제공업체 또는 기능][항목 ID] 짧은 증상
 
 SillyTavern 버전:
-Custom Model Router 버전: v0.6.13
+Custom Model Router 버전: v0.6.14
 OS / 브라우저:
 신규 설치 또는 업데이트:
 이전 CMR 버전:
@@ -302,6 +314,7 @@ OS / 브라우저:
 endpoint 모드 이름(비밀 URL 제외):
 모델 ID:
 Connection Profile 사용 여부와 비밀이 아닌 이름:
+Provider Integration hook/slot/strategy 사용 여부:
 일반 / 스트리밍:
 실패 항목 ID:
 기대 결과:
@@ -320,4 +333,4 @@ Caption /caption-image payload의 model 확인 결과:
 민감정보를 제거한 스크린샷:
 ```
 
-실패 항목이 있어도 데이터 손실·무한 반복·비밀 노출이 아니라면 나머지 독립 항목은 계속 확인해도 됩니다. 결과를 모으면 같은 v0.6 범위의 후속 수정은 `v0.6.14`, `v0.6.15`, ...로 반영합니다.
+실패 항목이 있어도 데이터 손실·무한 반복·비밀 노출이 아니라면 나머지 독립 항목은 계속 확인해도 됩니다. 결과를 모으면 같은 v0.6 범위의 후속 수정은 `v0.6.15`, `v0.6.16`, ...로 반영합니다.

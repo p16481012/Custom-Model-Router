@@ -816,6 +816,129 @@ test.describe('외부 bridge provider 선택기 경계', () => {
     });
 });
 
+test.describe('공용 provider adapter 실제 요청 경계', () => {
+    test.use({ viewport: { width: 720, height: 900 } });
+
+    async function openProviderSandbox(page) {
+        await page.goto(fixtureServer.providerIntegrationSandboxUrl, { waitUntil: 'networkidle' });
+        await expect.poll(() => page.evaluate(() => globalThis.cmrProviderSandboxSnapshot ?? null)).not.toBeNull();
+    }
+
+    test('SillyTavern 연결 상속은 handler 설치 뒤에만 모델을 게시하고 정확한 profile/model로 요청한다', async ({ page }) => {
+        await openProviderSandbox(page);
+        const initial = await page.evaluate(() => globalThis.cmrProviderSandbox.snapshot());
+        expect(initial.metrics).toMatchObject({ consumerCount: 0, readyCount: 0, publishedModelCount: 0 });
+        expect(initial.nativeProviderValues).toEqual(['native']);
+        expect(initial.nativeModelValues).toEqual(['native-model']);
+        expect(initial.hookOwnedCount).toBe(0);
+
+        const ready = await page.evaluate(
+            () => globalThis.cmrProviderSandbox.register('sillytavern-inherited'),
+        );
+        expect(ready.metrics).toMatchObject({ consumerCount: 1, readyCount: 1, failedCount: 0 });
+        expect(ready.hookProviderValues).toEqual(['cmr.sillytavern.openai']);
+        expect(ready.hookModelValues).toEqual(['gpt-hook-model']);
+        expect(ready.lifecycle).toMatchObject({
+            installEnvelopeFrozen: true,
+            providerDescriptorFrozen: true,
+            modelListFrozen: true,
+            abortSignalFrozen: false,
+            publishCount: 1,
+        });
+
+        const requested = await page.evaluate(
+            () => globalThis.cmrProviderSandbox.request('gpt-hook-model', { stream: true }),
+        );
+        expect(requested.calls).toEqual([{
+            profileId: 'profile-inherited',
+            model: 'gpt-hook-model',
+            prompt: [{ role: 'user', content: 'fixture request' }],
+            maxTokens: 64,
+            stream: true,
+        }]);
+        expect(requested.lastRequestResult).toEqual({ content: 'inherited-ok', model: 'gpt-hook-model' });
+        expect(requested.mainChatSettings).toEqual({
+            chat_completion_source: 'xai',
+            xai_model: 'main-chat-model',
+        });
+        expect(requested.secretExposed).toBe(false);
+
+        const disposed = await page.evaluate(() => globalThis.cmrProviderSandbox.dispose());
+        expect(disposed.metrics).toMatchObject({ consumerCount: 0, readyCount: 0, publishedModelCount: 0 });
+        expect(disposed.hookOwnedCount).toBe(0);
+        expect(disposed.lifecycle).toMatchObject({ handlerDisposeCount: 1, publicationDisposeCount: 1 });
+        expect(disposed.nativeProviderValues).toEqual(['native']);
+        expect(disposed.nativeModelValues).toEqual(['native-model']);
+    });
+
+    test('OpenAI-compatible은 Connection Manager가 소유한 endpoint/인증으로 실제 POST하고 CMR 공개 상태에는 노출하지 않는다', async ({ page }) => {
+        let requestEvidence = null;
+        await page.route('**/provider-integrations/echo', async route => {
+            const request = route.request();
+            requestEvidence = {
+                method: request.method(),
+                authorization: request.headers().authorization,
+                body: request.postDataJSON(),
+            };
+            await route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify({ content: 'compatible-ok' }),
+            });
+        });
+        await openProviderSandbox(page);
+
+        const ready = await page.evaluate(
+            () => globalThis.cmrProviderSandbox.register('openai-compatible'),
+        );
+        expect(ready.hookProviderValues).toEqual(['cmr.openai-compatible']);
+        expect(ready.hookModelValues).toEqual(['compatible-hook-model']);
+        const requested = await page.evaluate(
+            () => globalThis.cmrProviderSandbox.request('compatible-hook-model'),
+        );
+        expect(requestEvidence).toEqual({
+            method: 'POST',
+            authorization: 'Bearer browser-fixture-private-secret',
+            body: {
+                model: 'compatible-hook-model',
+                messages: [{ role: 'user', content: 'fixture request' }],
+                max_tokens: 64,
+                stream: false,
+            },
+        });
+        expect(requested.lastRequestResult).toEqual({ content: 'compatible-ok' });
+        expect(requested.secretExposed).toBe(false);
+        expect(JSON.stringify(requested.consumers)).not.toContain('profile-compatible');
+        expect(JSON.stringify(requested.consumers)).not.toContain('provider-integrations/echo');
+        await page.evaluate(() => globalThis.cmrProviderSandbox.dispose());
+    });
+
+    test('호환되지 않는 hook은 native UI를 그대로 두고 성공한 공개 hook도 refresh에서 중복 게시하지 않는다', async ({ page }) => {
+        await openProviderSandbox(page);
+        const rejected = await page.evaluate(() => globalThis.cmrProviderSandbox.registerIncompatible());
+        expect(rejected.code).toBe('consumer_contract_incompatible');
+        expect(rejected.snapshot.metrics).toMatchObject({ consumerCount: 0, readyCount: 0 });
+        expect(rejected.snapshot.hookOwnedCount).toBe(0);
+        expect(rejected.snapshot.nativeProviderValues).toEqual(['native']);
+        expect(rejected.snapshot.nativeProviderValue).toBe('native');
+        expect(rejected.snapshot.nativeModelValues).toEqual(['native-model']);
+        expect(rejected.snapshot.nativeModelValue).toBe('native-model');
+
+        await page.evaluate(() => globalThis.cmrProviderSandbox.register('sillytavern-inherited'));
+        const refreshed = await page.evaluate(async () => {
+            await globalThis.cmrProviderSandbox.controller.api.refresh();
+            return globalThis.cmrProviderSandbox.snapshot();
+        });
+        expect(refreshed.lifecycle.publishCount).toBe(1);
+        expect(refreshed.metrics).toMatchObject({ consumerCount: 1, readyCount: 1, failedCount: 0 });
+        expect(refreshed.hookProviderValues).toEqual(['cmr.sillytavern.openai']);
+        expect(refreshed.hookModelValues).toEqual(['gpt-hook-model']);
+        expect(refreshed.nativeProviderValues).toEqual(['native']);
+        expect(refreshed.nativeModelValues).toEqual(['native-model']);
+        await page.evaluate(() => globalThis.cmrProviderSandbox.dispose());
+    });
+});
+
 test.describe('Popup 닫기 계약', () => {
     test.use({ viewport: { width: 420, height: 800 } });
 

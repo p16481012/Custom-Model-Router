@@ -6,6 +6,7 @@ import {
     EXTERNAL_MANAGED_OPTION_WARNING_THRESHOLD,
     EXTERNAL_MAPPING_DISABLED,
     EXTERNAL_MAPPING_MANUAL,
+    EXTERNAL_PROVIDER_HOOK_OWNED_ATTRIBUTE,
     EXTERNAL_TARGET_LIMIT,
     assessExternalTargetRisk,
     createExternalIntegrationController,
@@ -247,6 +248,29 @@ test('외부 모델 control을 찾되 CMR·SillyTavern core control은 제외한
     assert.equal(targets[0].inference.providerId, 'claude');
     assert.equal(targets[0].risk.level, 'none');
     assert.equal(core.children.length, 0);
+});
+
+test('공개 provider hook 소유 마커가 있는 control과 하위 UI만 legacy bridge에서 제외한다', () => {
+    const documentRef = new FakeDocument();
+    const ownedPanel = documentRef.createElement('section');
+    ownedPanel.setAttribute(EXTERNAL_PROVIDER_HOOK_OWNED_ATTRIBUTE, 'true');
+    const ownedModel = documentRef.createElement('select');
+    ownedModel.id = 'hook_owned_chat_model';
+    ownedModel.setAttribute('aria-label', 'Chat model');
+    ownedPanel.append(ownedModel);
+    documentRef.append(ownedPanel);
+
+    const selfOwned = labeledModelSelect(documentRef, 'self_owned_chat_model', 'Chat model');
+    selfOwned.setAttribute(EXTERNAL_PROVIDER_HOOK_OWNED_ATTRIBUTE, 'true');
+    const unknownModel = labeledModelSelect(documentRef, 'unknown_chat_model', 'Chat model');
+
+    assert.equal(isExternalModelControl(ownedModel, { root: documentRef, documentRef }), false);
+    assert.equal(isExternalModelControl(selfOwned, { root: documentRef, documentRef }), false);
+    assert.equal(isExternalModelControl(unknownModel, { root: documentRef, documentRef }), true);
+    assert.deepEqual(
+        discoverExternalModelTargets(documentRef, { documentRef }).map(target => target.control),
+        [unknownModel],
+    );
 });
 
 test('embedding·이미지 생성·음성 모델은 위험 대상으로 분류하고 자동 연결하지 않는다', () => {
@@ -1285,6 +1309,14 @@ test('무관한 메시지 mutation은 무시하고 외부 control 생성·삭제
     assert.equal(mutationNeedsExternalRescan([{
         type: 'attributes', target: model, attributeName: 'data-provider', addedNodes: [], removedNodes: [],
     }], { root: documentRef, documentRef }), true);
+    model.setAttribute(EXTERNAL_PROVIDER_HOOK_OWNED_ATTRIBUTE, 'true');
+    assert.equal(mutationNeedsExternalRescan([{
+        type: 'attributes',
+        target: model,
+        attributeName: EXTERNAL_PROVIDER_HOOK_OWNED_ATTRIBUTE,
+        addedNodes: [],
+        removedNodes: [],
+    }], { root: documentRef, documentRef }), true);
 });
 
 test('controller observer는 관련 mutation을 한 frame으로 묶고 추론 관련 attribute를 모두 관찰한다', () => {
@@ -1315,10 +1347,61 @@ test('controller observer는 관련 mutation을 한 frame으로 묶고 추론 �
     for (const attribute of [
         'disabled', 'readonly', 'multiple', 'aria-label', 'data-api-provider',
         'data-provider-select', 'data-source-select', 'data-extension-id',
+        EXTERNAL_PROVIDER_HOOK_OWNED_ATTRIBUTE,
     ]) {
         assert.ok(observerOptions.attributeFilter.includes(attribute), attribute);
     }
     scheduled.shift()();
+    controller.destroy();
+});
+
+test('provider hook이 DOM 소유권을 획득·반납하면 legacy 주입을 즉시 정리·복원한다', () => {
+    const documentRef = new FakeDocument();
+    const model = labeledModelSelect(documentRef, 'hook_lifecycle_chat_model', 'Chat model');
+    const panel = model.parentElement;
+    const scheduled = [];
+    let observerCallback;
+    const controller = createExternalIntegrationController({
+        root: documentRef,
+        documentRef,
+        getModels: providerId => providerId === 'openai'
+            ? [{ provider: 'openai', id: 'gpt-next' }]
+            : [],
+        schedule: callback => scheduled.push(callback),
+        observerFactory(callback) {
+            observerCallback = callback;
+            return { observe() {}, disconnect() {} };
+        },
+    });
+
+    controller.start();
+    assert.equal(controller.getTargets().length, 1);
+    assert.equal(model.options.some(item => item.value === 'gpt-next'), true);
+
+    panel.setAttribute(EXTERNAL_PROVIDER_HOOK_OWNED_ATTRIBUTE, 'true');
+    observerCallback([{
+        type: 'attributes',
+        target: panel,
+        attributeName: EXTERNAL_PROVIDER_HOOK_OWNED_ATTRIBUTE,
+        addedNodes: [],
+        removedNodes: [],
+    }]);
+    scheduled.shift()();
+    assert.equal(controller.getTargets().length, 0);
+    assert.equal(model.options.some(item => item.value === 'gpt-next'), false);
+
+    panel.removeAttribute(EXTERNAL_PROVIDER_HOOK_OWNED_ATTRIBUTE);
+    observerCallback([{
+        type: 'attributes',
+        target: panel,
+        attributeName: EXTERNAL_PROVIDER_HOOK_OWNED_ATTRIBUTE,
+        addedNodes: [],
+        removedNodes: [],
+    }]);
+    scheduled.shift()();
+    assert.equal(controller.getTargets().length, 1);
+    assert.equal(model.options.some(item => item.value === 'gpt-next'), true);
+
     controller.destroy();
 });
 

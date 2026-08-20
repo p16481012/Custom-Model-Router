@@ -50,7 +50,9 @@ test('공개 계약 버전과 기능 메타데이터를 불변 객체로 제공�
     assert.equal(api.capabilities.providerSelections, true);
     assert.equal(api.capabilities.selectionScope, 'registry');
     assert.equal(api.capabilities.purposeRouting, false);
+    assert.equal(api.capabilities.providerIntegrations, false);
     assert.equal(api.routing, null);
+    assert.equal(api.integrations, null);
     assert.equal(api.capabilities.immutableSnapshots, true);
     assert.deepEqual(api.capabilities.mutations, ['registerModel', 'unregisterModel', 'selectModel']);
     assert.deepEqual(api.capabilities.events, Object.values(REGISTRY_EVENT_TYPES));
@@ -64,10 +66,33 @@ test('공개 계약 버전과 기능 메타데이터를 불변 객체로 제공�
 test('같은 major의 최소 API 버전만 호환된다고 판정한다', () => {
     assert.equal(isRegistryApiCompatible('1.0.0'), true);
     assert.equal(isRegistryApiCompatible('1.0.1'), true);
-    assert.equal(isRegistryApiCompatible('1.1.1'), false);
+    assert.equal(isRegistryApiCompatible('1.1.1'), true);
+    assert.equal(isRegistryApiCompatible('1.2.0'), true);
+    assert.equal(isRegistryApiCompatible('1.2.1'), false);
+    assert.equal(isRegistryApiCompatible('1.3.0'), false);
     assert.equal(isRegistryApiCompatible('0.9.9'), false);
     assert.equal(isRegistryApiCompatible('2.0.0'), false);
     assert.equal(isRegistryApiCompatible('1'), false);
+});
+
+test('provider integrations API를 추가 계약으로 그대로 노출하고 누락 시 null로 유지한다', () => {
+    const integrationsApi = Object.freeze({
+        apiVersion: '1.0.0',
+        registerConsumer() {},
+    });
+    const { api } = createHarness(undefined, { integrationsApi });
+
+    assert.equal(api.apiVersion, '1.2.0');
+    assert.equal(api.capabilities.providerIntegrations, true);
+    assert.equal(api.integrations, integrationsApi);
+    assert.equal(Object.isFrozen(api.integrations), true);
+    assert.throws(() => {
+        api.integrations = null;
+    });
+
+    const withoutIntegrations = createHarness().api;
+    assert.equal(withoutIntegrations.capabilities.providerIntegrations, false);
+    assert.equal(withoutIntegrations.integrations, null);
 });
 
 test('제공업체와 모델 ID 복합키로 같은 ID를 서로 구분해 조회한다', () => {

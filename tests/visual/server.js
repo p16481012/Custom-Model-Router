@@ -715,6 +715,10 @@ export async function startUiRegressionServer() {
         resolve(REPOSITORY_ROOT, 'tests', 'browser-sandbox.html'),
         'utf8',
     );
+    const providerIntegrationSandboxHtml = await readFile(
+        resolve(REPOSITORY_ROOT, 'tests', 'provider-integration-sandbox.html'),
+        'utf8',
+    );
     const fixtureHtml = buildFixture(settingsHtml);
 
     const server = createServer(async (request, response) => {
@@ -733,6 +737,14 @@ export async function startUiRegressionServer() {
                 'content-type': 'text/html; charset=utf-8',
             });
             response.end(browserSandboxHtml);
+            return;
+        }
+        if (url.pathname === '/provider-integration-sandbox') {
+            response.writeHead(200, {
+                'cache-control': 'no-store',
+                'content-type': 'text/html; charset=utf-8',
+            });
+            response.end(providerIntegrationSandboxHtml);
             return;
         }
         if (url.pathname === '/cmr/style.css') {
@@ -775,6 +787,7 @@ export async function startUiRegressionServer() {
     return Object.freeze({
         url: `${origin}/ui-regression`,
         browserSandboxUrl: `${origin}/browser-sandbox`,
+        providerIntegrationSandboxUrl: `${origin}/provider-integration-sandbox`,
         sillyTavernRoot,
         close: () => new Promise((resolveClose, reject) => {
             server.close(error => error ? reject(error) : resolveClose());

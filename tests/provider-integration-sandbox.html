@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="ko">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Custom Model Router 공용 provider adapter 샌드박스</title>
+</head>
+<body>
+    <main>
+        <section id="external_extension">
+            <h1>외부 확장 공개 provider hook</h1>
+            <label for="native_provider">기존 제공업체</label>
+            <select id="native_provider">
+                <option value="native" selected>Native provider</option>
+            </select>
+            <label for="native_model">기존 모델</label>
+            <select id="native_model">
+                <option value="native-model" selected>native-model</option>
+            </select>
+            <div id="hook_owned_ui" data-cmr-provider-hook-owned="true"></div>
+        </section>
+        <pre id="result">초기화 중</pre>
+    </main>
+
+    <script type="module">
+        import {
+            PROVIDER_INTEGRATION_API_VERSION,
+            PROVIDER_INTEGRATION_INPUT_SCHEMA,
+            PROVIDER_INTEGRATION_STRATEGIES,
+            createProviderIntegrationController,
+        } from '../src/provider-integrations.js?provider-sandbox=0.6.14';
+
+        const PRIVATE_SENTINEL = 'browser-fixture-private-secret';
+        const profiles = Object.freeze({
+            inherited: Object.freeze({ id: 'profile-inherited', source: 'openai' }),
+            compatible: Object.freeze({ id: 'profile-compatible', source: 'custom' }),
+        });
+        const registry = {
+            schemaVersion: 2,
+            models: [
+                { provider: 'openai', id: 'gpt-hook-model', enabled: true },
+                { provider: 'custom', id: 'compatible-hook-model', enabled: true },
+            ],
+            selectedModels: {},
+        };
+        const mainChatSettings = {
+            chat_completion_source: 'xai',
+            xai_model: 'main-chat-model',
+        };
+        const nativeProvider = document.querySelector('#native_provider');
+        const nativeModel = document.querySelector('#native_model');
+        const hookUi = document.querySelector('#hook_owned_ui');
+        const result = document.querySelector('#result');
+        const calls = [];
+        const lifecycle = {
+            handlerDisposeCount: 0,
+            publicationDisposeCount: 0,
+            publishCount: 0,
+            updateCount: 0,
+            installEnvelopeFrozen: false,
+            providerDescriptorFrozen: false,
+            modelListFrozen: false,
+            abortSignalFrozen: false,
+        };
+        let selectedProfile = profiles.inherited.id;
+        let registration = null;
+        let boundExecute = null;
+        let lastRequestResult = null;
+
+        const context = {
+            extensionSettings: {
+                disabledExtensions: [],
+                connectionManager: {
+                    get selectedProfile() {
+                        return selectedProfile;
+                    },
+                },
+            },
+            chatCompletionSettings: mainChatSettings,
+            ConnectionManagerRequestService: {
+                getProfile(profileId) {
+                    const profile = Object.values(profiles).find(item => item.id === profileId);
+                    if (!profile) throw new Error('profile not found');
+                    return profile;
+                },
+                validateProfile(profile) {
+                    return { selected: 'openai', source: profile.source };
+                },
+                async sendRequest(profileId, prompt, maxTokens, custom, overridePayload) {
+                    const profile = Object.values(profiles).find(item => item.id === profileId);
+                    calls.push({
+                        profileId,
+                        model: overridePayload?.model ?? null,
+                        prompt,
+                        maxTokens,
+                        stream: custom?.stream === true,
+                    });
+                    if (profile?.source === 'custom') {
+                        const response = await fetch('/provider-integrations/echo', {
+                            method: 'POST',
+                            headers: {
+                                authorization: `Bearer ${PRIVATE_SENTINEL}`,
+                                'content-type': 'application/json',
+                            },
+                            body: JSON.stringify({
+                                model: overridePayload?.model,
+                                messages: prompt,
+                                max_tokens: maxTokens,
+                                stream: custom?.stream === true,
+                            }),
+                            signal: custom?.signal,
+                        });
+                        return await response.json();
+                    }
+                    const inheritedResult = { content: 'inherited-ok', model: overridePayload?.model };
+                    if (custom?.stream === true) {
+                        // SillyTavern 1.18 sendRequest의 실제 streaming 계약: () => AsyncGenerator.
+                        return async function* inheritedStream() {
+                            yield inheritedResult;
+                        };
+                    }
+                    return inheritedResult;
+                },
+            },
+        };
+
+        const controller = createProviderIntegrationController({
+            readRegistrySettings: () => registry,
+            getContext: () => context,
+        });
+
+        function descriptor(strategy, overrides = {}) {
+            return {
+                consumerId: `fixture.${strategy}`,
+                label: 'Fixture provider consumer',
+                contractVersion: PROVIDER_INTEGRATION_API_VERSION,
+                capabilities: {
+                    inputSchema: PROVIDER_INTEGRATION_INPUT_SCHEMA,
+                    handlerInstall: 'before-model-publish',
+                    providerScopedModels: true,
+                    abortSignal: true,
+                    streaming: true,
+                    credentialMode: 'opaque-reference',
+                    endpointOverride: false,
+                    mainChatMutation: false,
+                    silentFallback: false,
+                    dispose: true,
+                },
+                slots: [{ slotId: 'chat', strategies: [strategy] }],
+                ...overrides,
+            };
+        }
+
+        function clearHookUi() {
+            hookUi.replaceChildren();
+            boundExecute = null;
+        }
+
+        function createHooks() {
+            return {
+                async installHandler(input) {
+                    if (hookUi.childElementCount !== 0) {
+                        throw new Error('provider UI was published before handler installation');
+                    }
+                    boundExecute = input.execute;
+                    lifecycle.installEnvelopeFrozen = Object.isFrozen(input);
+                    lifecycle.providerDescriptorFrozen = Object.isFrozen(input.provider);
+                    lifecycle.abortSignalFrozen = Object.isFrozen(input.signal);
+                    return Object.freeze({
+                        requestHandlerBound: true,
+                        handlerToken: Object.freeze({ id: 'handler-token' }),
+                        async dispose() {
+                            lifecycle.handlerDisposeCount += 1;
+                            boundExecute = null;
+                        },
+                    });
+                },
+                async publishModels(input) {
+                    if (typeof boundExecute !== 'function') {
+                        throw new Error('handler missing before publication');
+                    }
+                    lifecycle.publishCount += 1;
+                    lifecycle.modelListFrozen = Object.isFrozen(input.models);
+                    const provider = document.createElement('option');
+                    provider.dataset.cmrProviderIntegration = 'true';
+                    provider.value = input.provider.id;
+                    provider.textContent = input.provider.label;
+                    const providerSelect = document.createElement('select');
+                    providerSelect.id = 'hook_provider';
+                    providerSelect.append(provider);
+                    const modelSelect = document.createElement('select');
+                    modelSelect.id = 'hook_model';
+                    const applyModels = models => {
+                        modelSelect.replaceChildren(...models.map(model => {
+                            const option = document.createElement('option');
+                            option.value = model.id;
+                            option.textContent = model.id;
+                            return option;
+                        }));
+                    };
+                    applyModels(input.models);
+                    hookUi.replaceChildren(providerSelect, modelSelect);
+                    return Object.freeze({
+                        modelsPublished: true,
+                        publicationToken: Object.freeze({ id: 'publication-token' }),
+                        async updateModels(models) {
+                            lifecycle.updateCount += 1;
+                            applyModels(models);
+                            return true;
+                        },
+                        async dispose() {
+                            lifecycle.publicationDisposeCount += 1;
+                            hookUi.replaceChildren();
+                        },
+                    });
+                },
+            };
+        }
+
+        function snapshot() {
+            const publicState = {
+                metrics: controller.getMetrics(),
+                consumers: (() => {
+                    try { return controller.api.getConsumers(); } catch { return []; }
+                })(),
+                nativeProviderValues: [...nativeProvider.options].map(option => option.value),
+                nativeProviderValue: nativeProvider.value,
+                nativeModelValues: [...nativeModel.options].map(option => option.value),
+                nativeModelValue: nativeModel.value,
+                hookProviderValues: [...document.querySelectorAll('#hook_provider option')].map(option => option.value),
+                hookModelValues: [...document.querySelectorAll('#hook_model option')].map(option => option.value),
+                hookOwnedCount: hookUi.childElementCount,
+                lifecycle: { ...lifecycle },
+                calls: calls.map(call => ({ ...call })),
+                lastRequestResult,
+                mainChatSettings: { ...mainChatSettings },
+            };
+            const serialized = JSON.stringify(publicState);
+            publicState.secretExposed = serialized.includes(PRIVATE_SENTINEL)
+                || document.querySelector('main').innerText.includes(PRIVATE_SENTINEL);
+            result.textContent = JSON.stringify(publicState, null, 2);
+            globalThis.cmrProviderSandboxSnapshot = publicState;
+            return publicState;
+        }
+
+        async function settle() {
+            await Promise.resolve();
+            await controller.sync();
+            await Promise.resolve();
+            return snapshot();
+        }
+
+        globalThis.cmrProviderSandbox = {
+            controller,
+            async register(strategy) {
+                selectedProfile = strategy === PROVIDER_INTEGRATION_STRATEGIES.OPENAI_COMPATIBLE
+                    ? profiles.compatible.id
+                    : profiles.inherited.id;
+                registration = controller.api.registerConsumer(descriptor(strategy), createHooks());
+                await registration.ready;
+                return snapshot();
+            },
+            async registerIncompatible() {
+                try {
+                    controller.api.registerConsumer(
+                        descriptor(PROVIDER_INTEGRATION_STRATEGIES.SILLYTAVERN_INHERITED, {
+                            consumerId: 'fixture.incompatible',
+                            contractVersion: '2.0.0',
+                        }),
+                        createHooks(),
+                    );
+                } catch (error) {
+                    return { code: error?.code ?? null, snapshot: snapshot() };
+                }
+                return { code: null, snapshot: snapshot() };
+            },
+            async request(modelId, { stream = false } = {}) {
+                if (typeof boundExecute !== 'function') throw new Error('handler not installed');
+                const requestResult = await boundExecute({
+                    modelId,
+                    messages: [{ role: 'user', content: 'fixture request' }],
+                    maxTokens: 64,
+                    stream,
+                });
+                if (stream) {
+                    if (typeof requestResult !== 'function') {
+                        throw new Error('stream factory missing');
+                    }
+                    const chunks = [];
+                    for await (const chunk of requestResult()) {
+                        chunks.push(chunk);
+                    }
+                    lastRequestResult = chunks.length === 1 ? chunks[0] : chunks;
+                } else {
+                    lastRequestResult = requestResult;
+                }
+                return snapshot();
+            },
+            async dispose() {
+                registration?.dispose();
+                registration = null;
+                await settle();
+                return snapshot();
+            },
+            snapshot,
+            clearHookUi,
+        };
+        snapshot();
+    </script>
+</body>
+</html>
