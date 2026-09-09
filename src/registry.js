@@ -9,6 +9,7 @@ import {
 } from './providers.js';
 
 export const SETTINGS_SCHEMA_VERSION = 2;
+export const REGISTRY_MODEL_LIMIT = 5_000;
 export const VERTEX_PROVIDER = PROVIDER_IDS.VERTEXAI;
 export const VERTEX_GEMINI_PROTOCOL = 'vertex-gemini';
 export { MODEL_ID_MAX_LENGTH };
@@ -187,6 +188,9 @@ export function addModel(settings, providerOrValue, maybeValue) {
     ))) {
         throw new ModelRegistryError('duplicate', '이 제공업체에 이미 등록된 모델 ID입니다.');
     }
+    if (normalized.models.length >= REGISTRY_MODEL_LIMIT) {
+        throw new ModelRegistryError('too_many_models', `모델은 최대 ${REGISTRY_MODEL_LIMIT.toLocaleString('ko-KR')}개까지 등록할 수 있습니다.`);
+    }
 
     return finalizeSettings(
         [...normalized.models, createModelRecord(providerId, validation.id)],
@@ -211,6 +215,18 @@ export function removeModel(settings, providerOrModelId, maybeModelId) {
         )),
         selectedModels,
     );
+}
+
+export function setModelEnabled(settings, providerId, modelId, enabled) {
+    const normalized = normalizeSettings(settings);
+    const key = createModelKey(providerId, modelId);
+    if (typeof enabled !== 'boolean' || !normalized.models.some(model => createModelKey(model.provider, model.id) === key)) {
+        throw new ModelRegistryError('model_not_registered', '활성 상태를 바꿀 등록 모델을 찾지 못했습니다.');
+    }
+    return normalizeSettings({
+        ...normalized,
+        models: normalized.models.map(model => createModelKey(model.provider, model.id) === key ? { ...model, enabled } : model),
+    });
 }
 
 export function setSelectedModel(settings, providerOrModelId, maybeModelId) {

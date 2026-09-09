@@ -242,6 +242,9 @@ export function createRegistryApi(options) {
     let active = true;
     let revision = 0;
     let lastNotifiedState = createState(options.readSettings());
+    const eventQueue = [];
+    let notifying = false;
+    let commitDepth = 0;
 
     function assertActive() {
         if (!active) {
@@ -274,6 +277,17 @@ export function createRegistryApi(options) {
         }
     }
 
+    function flushEvents() {
+        if (notifying || commitDepth > 0) return;
+        notifying = true;
+        try {
+            while (active && eventQueue.length) notify(eventQueue.shift());
+        } finally {
+            notifying = false;
+            if (!active) eventQueue.length = 0;
+        }
+    }
+
     function publishChanges(previous, next, source) {
         const changes = diffStates(previous, next);
         lastNotifiedState = next;
@@ -282,29 +296,41 @@ export function createRegistryApi(options) {
         }
 
         revision += 1;
-        const snapshot = createSnapshot(next, revision);
+        const batchRevision = revision;
+        const snapshot = createSnapshot(next, batchRevision);
         const publicChanges = changes.map(change => deepFreeze({ ...change }));
 
         for (const change of publicChanges) {
-            notify(deepFreeze({
+            eventQueue.push(deepFreeze({
                 type: change.type,
-                revision,
+                revision: batchRevision,
                 source,
                 detail: change,
                 snapshot,
             }));
         }
-        notify(deepFreeze({
+        eventQueue.push(deepFreeze({
             type: REGISTRY_EVENT_TYPES.REGISTRY_CHANGED,
-            revision,
+            revision: batchRevision,
             source,
             detail: { changes: publicChanges },
             snapshot,
         }));
+        flushEvents();
         return publicChanges.length;
     }
 
     function commit(nextSettings, source) {
+        commitDepth += 1;
+        try {
+            return commitState(nextSettings, source);
+        } finally {
+            commitDepth -= 1;
+            flushEvents();
+        }
+    }
+
+    function commitState(nextSettings, source) {
         const previous = readCurrentState();
         if (createComparableState(lastNotifiedState) !== createComparableState(previous)) {
             publishChanges(lastNotifiedState, previous, 'external');

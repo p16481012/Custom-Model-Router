@@ -1,5 +1,6 @@
 import {
     SETTINGS_SCHEMA_VERSION,
+    REGISTRY_MODEL_LIMIT,
     VERTEX_PROVIDER,
     hasEnabledModel,
     normalizeSettings,
@@ -31,7 +32,7 @@ export const PORTABLE_SETTINGS_SCHEMA_VERSION = 2;
 // bounded margin so every backup successfully created here can be parsed by
 // the same version without weakening the import size guard indefinitely.
 export const PORTABLE_SETTINGS_MAX_LENGTH = 8_000_000;
-export const PORTABLE_SETTINGS_MAX_MODELS = 5_000;
+export const PORTABLE_SETTINGS_MAX_MODELS = REGISTRY_MODEL_LIMIT;
 export const PORTABLE_SETTINGS_MAX_ROUTES = 256;
 export const SETTINGS_IMPORT_PREVIEW_SCHEMA_VERSION = 1;
 export const SETTINGS_REPAIR_DETAILS_SCHEMA_VERSION = 1;
@@ -620,7 +621,7 @@ export function inspectPortableSettings(input) {
     let purposeRoutes = null;
     let externalIntegrations = null;
 
-    if (source) {
+    if (!issues.some(issue => issue.severity === 'error')) {
         if (!isRecord(source)) {
             issues.push(createIssue('error', 'backup_root_invalid', '$', '백업 최상위 값은 객체여야 합니다.'));
         } else {

@@ -1138,7 +1138,7 @@ test('init은 24개 제공업체를 연결하고 API Connections Popup을 한 �
         assert.ok(harness.observers.some(observer => observer.target === harness.observerRoot));
         assert.ok(harness.observers.some(observer => observer.target === harness.documentRef.body));
         assert.equal(globalThis.CustomModelRouter.apiVersion, '1.2.0');
-        assert.equal(globalThis.CustomModelRouter.extensionVersion, '0.6.16');
+        assert.equal(globalThis.CustomModelRouter.extensionVersion, '0.6.17');
         assert.equal(globalThis.CustomModelRouter.routing.apiVersion, '1.0.0');
         assert.equal(globalThis.CustomModelRouter.getSnapshot().models.length, 1);
 
@@ -3185,7 +3185,7 @@ test('공용 provider integration API는 최종 초기화 뒤 공개되고 동�
         await init();
         const integrations = globalThis.CustomModelRouter.integrations;
         assert.ok(integrations);
-        assert.equal(integrations.apiVersion, '1.0.0');
+        assert.equal(integrations.apiVersion, '1.1.0');
         assert.equal(readyEventCount, 1);
         assert.equal(announcedApi, integrations);
         assert.equal(integrations.capabilities.selectedConnectionProfileOnly, true);
@@ -3301,6 +3301,7 @@ test('공용 provider integration API는 최종 초기화 뒤 공개되고 동�
             },
         });
         await lateRegistration.ready;
+        await flushMicrotasks(8);
         assert.equal(latePublishCount, 0);
         assert.equal(lateHandlerDisposeCount, 1);
         await assert.rejects(
@@ -3439,8 +3440,9 @@ test('모델 100개는 런처에 숫자 배지 없이 안내하고 Popup의 prov
         assert.equal(rows.length, 100);
         assert.ok(rows.every(row => {
             const actions = row.querySelector('.cmr-model-actions');
-            return actions?.children.length === 1
-                && actions.children[0].dataset.cmrAction === 'delete';
+            return actions?.children.length === 2
+                && actions.children[0].dataset.cmrAction === 'toggle-enabled'
+                && actions.children[1].dataset.cmrAction === 'delete';
         }));
         assert.equal(modelList.dataset.scrollable, 'true');
         assert.equal(modelList.getAttribute('tabindex'), '0');

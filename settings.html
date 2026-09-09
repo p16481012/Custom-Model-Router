@@ -170,6 +170,17 @@
             </div>
             <section id="cmr_import_preview" class="cmr-import-preview" aria-labelledby="cmr_import_preview_title" hidden>
                 <h3 id="cmr_import_preview_title">백업 가져오기 미리보기</h3>
+                <label id="cmr_import_mode_label" for="cmr_import_mode">가져오기 방식
+                    <select id="cmr_import_mode" class="text_pole">
+                        <option value="replace">전체 교체</option>
+                        <option value="merge">모델만 병합 · 기존 설정 유지</option>
+                    </select>
+                </label>
+                <details id="cmr_import_choices" hidden>
+                    <summary>모델별 선택</summary>
+                    <p class="cmr-tool-description">체크한 항목만 반영합니다. 충돌 항목은 기본적으로 현재 값을 유지합니다.</p>
+                    <ul id="cmr_import_choices_list" class="cmr-change-list" aria-label="적용할 모델 선택" tabindex="0"></ul>
+                </details>
                 <div id="cmr_import_preview_summary" class="cmr-feedback" role="status" aria-live="polite" aria-atomic="true"></div>
                 <ul id="cmr_import_preview_list" class="cmr-change-list" aria-label="백업 변경 내역" tabindex="0"></ul>
                 <div class="cmr-import-preview-actions">
@@ -179,6 +190,14 @@
             </section>
             <div id="cmr_diagnostic_summary" class="cmr-feedback" role="status" aria-live="polite" aria-atomic="true"></div>
             <ul id="cmr_diagnostic_list" class="cmr-diagnostic-list" aria-label="호환성 진단 결과" tabindex="0"></ul>
+            <details class="cmr-advanced-section">
+                <summary>모델 정리 및 복구</summary>
+                <div class="cmr-tool-body">
+                    <button id="cmr_cleanup_native" type="button" class="menu_button">기본 모델 중복 정리</button>
+                    <button id="cmr_undo_settings" type="button" class="menu_button" hidden>최근 설정 변경 되돌리기</button>
+                    <small>백업 적용·일괄 정리 직전 상태를 이번 실행 동안 한 번 보관합니다. 변경 전 미리보기를 표시합니다.</small>
+                </div>
+            </details>
 
             <details id="cmr_external_advanced" class="cmr-advanced-section">
                 <summary>
@@ -186,6 +205,10 @@
                     <span id="cmr_external_count" class="cmr-list-count">연결 0개</span>
                 </summary>
                 <div class="cmr-advanced-body">
+                    <section id="cmr_provider_connections" hidden>
+                        <h3>공용 연동</h3>
+                        <ul id="cmr_provider_connections_list" class="cmr-external-list" aria-label="공용 연동 상태"></ul>
+                    </section>
                     <div class="cmr-context-row">
                         <p class="cmr-tool-description">실제 요청 적용은 외부 기능에서 직접 확인하세요.</p>
                         <button

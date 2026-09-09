@@ -1,5 +1,6 @@
 import {
     ModelRegistryError,
+    createModelKey,
     getEnabledModels,
     getSelectedModel,
     hasEnabledModel,
@@ -7,6 +8,7 @@ import {
     normalizeSettings,
     removeModel,
     setSelectedModel,
+    setModelEnabled,
 } from './src/registry.js';
 import {
     PROVIDER_IDS,
@@ -75,8 +77,14 @@ import {
     restoreModelDeletion,
     shouldShowModelSearch,
 } from './src/model-management.js';
+import {
+    snapshotSettingsBundle,
+    mergeRegistryModels,
+    findNativeRegisteredModels,
+    removeNativeRegistrations,
+} from './src/settings-operations.js';
 
-const EXTENSION_VERSION = '0.6.16';
+const EXTENSION_VERSION = '0.6.17';
 const SETTINGS_KEY = 'customModelRouter';
 const ROUTES_SETTINGS_KEY = 'customModelRouterRouting';
 const EXTERNAL_SETTINGS_KEY = 'customModelRouterExternalIntegrations';
@@ -167,6 +175,8 @@ let lastRepairReport = null;
 let modelSearchQuery = '';
 let pendingModelDeletionUndo = null;
 let pendingImportPreview = null;
+let lastSettingsUndo = null;
+let unsubscribeProviderIntegrations = null;
 let importOperationSequence = 0;
 let acceptedSettingsSnapshot = null;
 let acceptedRoutingSnapshot = null;
@@ -768,6 +778,20 @@ function renderModelList() {
 
             const actions = document.createElement('div');
             actions.className = 'cmr-model-actions';
+            const toggleButton = document.createElement('button');
+            toggleButton.type = 'button';
+            toggleButton.className = 'menu_button cmr-icon-button';
+            toggleButton.dataset.cmrAction = 'toggle-enabled';
+            toggleButton.dataset.provider = provider.id;
+            toggleButton.dataset.modelId = model.id;
+            toggleButton.title = model.enabled ? '모델 비활성화' : '모델 활성화';
+            toggleButton.setAttribute('aria-label', `${provider.label} ${model.id} ${toggleButton.title}`);
+            toggleButton.setAttribute('aria-pressed', String(model.enabled));
+            const toggleIcon = document.createElement('i');
+            toggleIcon.className = model.enabled ? 'fa-solid fa-toggle-on' : 'fa-solid fa-toggle-off';
+            toggleIcon.setAttribute('aria-hidden', 'true');
+            toggleButton.append(toggleIcon);
+            actions.append(toggleButton);
             const deleteButton = document.createElement('button');
             deleteButton.type = 'button';
             deleteButton.className = 'menu_button cmr-icon-button cmr-delete-button';
@@ -924,6 +948,7 @@ function renderExternalIntegrations() {
     };
     const directTargets = targets.filter(target => target.resolution?.source === 'direct');
     const failedTargets = directTargets.filter(target => target.bridge?.status === 'failed');
+    const failedHooks = providerIntegrationController?.getMetrics().failedCount ?? 0;
     const userExcludedTargets = targets.filter(target => target.resolution?.source === 'user-excluded');
     const selectableTargets = directTargets.filter(target => target.bridge?.status !== 'failed');
     const runtimeMismatch = Boolean(externalIntegrationController) && (
@@ -980,7 +1005,7 @@ function renderExternalIntegrations() {
     const warning = settingsRoot.querySelector('#cmr_external_warning');
     const warningText = settingsRoot.querySelector('#cmr_external_warning_text');
     if (warning) {
-        const hasProblem = failedTargets.length > 0 || runtimeMismatch || hasManagedOptionWarning;
+        const hasProblem = failedTargets.length > 0 || runtimeMismatch || hasManagedOptionWarning || failedHooks > 0;
         warning.hidden = !hasProblem;
         if (warningText) {
             warningText.textContent = !hasProblem
@@ -989,6 +1014,7 @@ function renderExternalIntegrations() {
                     ? `${failedTargets.length}개 모델 칸에 선택지를 표시하지 못했습니다.`
                     : runtimeMismatch
                         ? '외부 연결 감시 자원 상태가 예상과 다릅니다.'
+                        : failedHooks ? `공용 연동 ${failedHooks}개가 실패했습니다. 고급 관리에서 다시 시도할 수 있습니다.`
                         : managedOptionWarnings);
         }
     }
@@ -1008,6 +1034,57 @@ function renderUi() {
     renderModelDeletionUndo();
     renderExternalIntegrations();
     renderDiagnosticReport();
+    renderConvenienceTools();
+}
+
+function renderConvenienceTools() {
+    const undo = settingsRoot?.querySelector('#cmr_undo_settings');
+    if (undo) undo.hidden = !lastSettingsUndo;
+    const region = settingsRoot?.querySelector('#cmr_provider_connections');
+    const list = settingsRoot?.querySelector('#cmr_provider_connections_list');
+    if (!region || !list) return;
+    const consumers = providerIntegrationController?.api.getConsumers() ?? [];
+    region.hidden = consumers.length === 0;
+    list.replaceChildren();
+    const statuses = { ready: '준비됨', pending: '연결 중', failed: '실패', draining: '정리 중' };
+    for (const consumer of consumers) {
+        const row = document.createElement('li');
+        row.className = 'cmr-external-row';
+        const label = document.createElement('span');
+        label.textContent = `${consumer.label} · ${consumer.bindings.length
+            ? consumer.bindings.map(binding => `${statuses[binding.status] ?? '대기'}${binding.code ? ` (${binding.code})` : ''}`).join(' / ')
+            : '사용 가능한 Connection Profile 없음'}`;
+        row.append(label);
+        const retry = document.createElement('button');
+        retry.type = 'button';
+        retry.className = 'menu_button cmr-icon-button';
+        retry.dataset.consumerId = consumer.consumerId;
+        retry.title = '이 연동 다시 시도';
+        retry.setAttribute('aria-label', `${consumer.label} 다시 시도`);
+        retry.disabled = consumer.bindings.some(binding => binding.status === 'pending');
+        const icon = document.createElement('i');
+        icon.className = 'fa-solid fa-rotate-right';
+        icon.setAttribute('aria-hidden', 'true');
+        retry.append(icon);
+        row.append(retry);
+        list.append(row);
+    }
+}
+
+async function onRetryProviderIntegration(event) {
+    const button = event.target?.closest?.('[data-consumer-id]');
+    if (!button || !settingsRoot?.contains(button)) return;
+    const controller = providerIntegrationController;
+    button.disabled = true;
+    try {
+        await controller.api.refresh(button.dataset.consumerId);
+        if (controller === providerIntegrationController) {
+            renderConvenienceTools();
+            announce('연동 상태를 갱신했습니다. 공용 연동 목록에서 결과를 확인하세요.');
+        }
+    } catch {
+        if (controller === providerIntegrationController) announce('연동을 다시 시도하지 못했습니다.', 'error');
+    }
 }
 
 function isWithin(node, ancestor) {
@@ -1782,6 +1859,89 @@ function createImportSettingsFingerprint() {
     });
 }
 
+function currentSettingsBundle() {
+    return { registrySettings: settings, purposeRoutes: routingSettings, externalSettings };
+}
+
+function isNativeRegistration(providerId, modelId) {
+    const provider = getProvider(providerId);
+    const control = provider && getProviderControl(provider);
+    return provider?.controlType === 'select' && Boolean(control) && isNativeModelOption(control, modelId);
+}
+
+function evaluatePendingImport(pending) {
+    try {
+        const parsed = pending.kind === 'cleanup'
+            ? removeNativeRegistrations(currentSettingsBundle(), pending.selectedKeys, isNativeRegistration)
+            : pending.mode === 'merge'
+                ? mergeRegistryModels(currentSettingsBundle(), pending.original, pending.selectedKeys)
+                : pending.original ?? pending.parsed;
+        const preview = createCurrentImportPreview(parsed);
+        const safety = getImportRegistrySafety(parsed);
+        return { parsed, preview, ...safety, signature: createImportPreviewSignature(preview, safety.blocker) };
+    } catch (error) {
+        const blocker = {
+            code: error instanceof PortableSettingsError ? error.code : 'settings_change_invalid',
+            message: error instanceof PortableSettingsError ? error.message : '설정 변경을 안전하게 준비하지 못했습니다.',
+        };
+        return { ...pending, blocker, signature: createImportPreviewSignature(pending.preview, blocker) };
+    }
+}
+
+function refreshImportChoices() {
+    if (!pendingImportPreview) return;
+    pendingImportPreview = {
+        ...pendingImportPreview,
+        ...evaluatePendingImport(pendingImportPreview),
+        settingsFingerprint: createImportSettingsFingerprint(),
+    };
+    renderImportPreview();
+}
+
+function onImportModeChanged(event) {
+    if (!pendingImportPreview || pendingImportPreview.kind !== 'import') return;
+    pendingImportPreview.mode = event.currentTarget.value === 'merge' ? 'merge' : 'replace';
+    refreshImportChoices();
+}
+
+function onImportChoiceChanged(event) {
+    const checkbox = event.target?.closest?.('[data-import-model]');
+    if (!checkbox || !pendingImportPreview) return;
+    const key = checkbox.dataset.importModel;
+    if (checkbox.checked) pendingImportPreview.selectedKeys.add(key);
+    else pendingImportPreview.selectedKeys.delete(key);
+    refreshImportChoices();
+    [...(settingsRoot?.querySelectorAll('[data-import-model]') ?? [])]
+        .find(input => input.dataset.importModel === key)?.focus?.();
+}
+
+function openSettingsChangePreview(kind) {
+    try {
+        const original = kind === 'undo' ? lastSettingsUndo : snapshotSettingsBundle(currentSettingsBundle());
+        if (!original) { announce('되돌릴 설정 변경이 없습니다.', 'error'); return; }
+        const candidates = kind === 'cleanup' ? findNativeRegisteredModels(settings, isNativeRegistration) : [];
+        if (kind === 'cleanup' && !candidates.length) {
+            announce('기본 목록과 중복된 등록 모델이 없습니다.');
+            return;
+        }
+        pendingImportPreview = {
+            kind, original, parsed: original, mode: 'replace', candidates,
+            selectedKeys: new Set(candidates.map(model => createModelKey(model.provider, model.id))),
+            preview: createCurrentImportPreview(original),
+            operation: {
+                sequence: ++importOperationSequence, generation: lifecycleGeneration,
+                context, purposeRouter, input: settingsRoot?.querySelector('#cmr_import_backup'),
+            },
+        };
+        refreshImportChoices();
+        settingsRoot?.querySelector('#cmr_import_preview')?.scrollIntoView?.({ block: 'nearest' });
+        settingsRoot?.querySelector('#cmr_import_preview_cancel')?.focus?.();
+        announce('변경 내역을 확인한 뒤 적용하거나 취소해 주세요.');
+    } catch {
+        announce('현재 설정의 안전한 복사본을 만들지 못해 변경을 중단했습니다.', 'error');
+    }
+}
+
 function createCurrentImportPreview(parsed) {
     return createSettingsImportPreview({
         currentRegistrySettings: settings,
@@ -1828,7 +1988,7 @@ function collectImportPreviewItems(preview) {
         add('addition', `모델 추가 · ${describePreviewModel(model)}`);
     }
     for (const model of preview.registry.models.conflicts) {
-        add('conflict', `모델 설정 변경 · ${describePreviewModel(model)} · ${model.changedKeys.join(', ')}`);
+        add('conflict', `모델 설정 변경 · ${describePreviewModel(model)} · ${model.changedKeys.map(key => key === 'enabled' ? '활성 상태' : key === 'protocol' ? '연결 방식' : key).join(', ')}`);
     }
     for (const model of preview.registry.models.deletions) {
         add('deletion', `모델 삭제 · ${describePreviewModel(model)}`);
@@ -1888,6 +2048,41 @@ function renderImportPreview() {
     }
 
     const { preview, blocker } = pendingImportPreview;
+    const pending = pendingImportPreview;
+    const title = settingsRoot.querySelector('#cmr_import_preview_title');
+    if (title) title.textContent = pending.kind === 'undo' ? '설정 되돌리기 미리보기'
+        : pending.kind === 'cleanup' ? '기본 모델 중복 정리 미리보기' : '백업 가져오기 미리보기';
+    const modeLabel = settingsRoot.querySelector('#cmr_import_mode_label');
+    const modeSelect = settingsRoot.querySelector('#cmr_import_mode');
+    if (modeLabel) modeLabel.hidden = pending.kind !== 'import';
+    if (modeSelect) modeSelect.value = pending.mode ?? 'replace';
+    const choicesRegion = settingsRoot.querySelector('#cmr_import_choices');
+    const choicesList = settingsRoot.querySelector('#cmr_import_choices_list');
+    const showChoices = pending.kind === 'cleanup' || pending.mode === 'merge';
+    if (choicesRegion) choicesRegion.hidden = !showChoices;
+    if (choicesList) {
+        choicesList.replaceChildren();
+        if (showChoices) {
+            const current = new Map(normalizeSettings(settings).models.map(model => [createModelKey(model.provider, model.id), model]));
+            for (const model of pending.kind === 'cleanup' ? pending.candidates : pending.original.registrySettings.models) {
+                const key = createModelKey(model.provider, model.id);
+                const previous = current.get(key);
+                if (pending.kind !== 'cleanup' && previous && previous.enabled === model.enabled) continue;
+                const row = document.createElement('li');
+                const label = document.createElement('label');
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.dataset.importModel = key;
+                checkbox.checked = pending.selectedKeys.has(key);
+                const text = document.createElement('span');
+                text.textContent = `${getProvider(model.provider)?.label} · ${model.id}${pending.kind === 'cleanup' ? ' · 등록만 삭제'
+                    : previous ? ` · 충돌: 백업의 ${model.enabled ? '활성' : '비활성'} 상태 사용` : ' · 추가'}`;
+                label.append(checkbox, text);
+                row.append(label);
+                choicesList.append(row);
+            }
+        }
+    }
     applyButton.disabled = Boolean(blocker) || !preview.hasChanges;
     summary.dataset.state = blocker ? 'error' : (preview.hasChanges ? 'warning' : 'ok');
     summary.textContent = blocker
@@ -1931,6 +2126,15 @@ function onCancelImportPreview() {
 }
 
 function onApplyImportPreview() {
+    try {
+        applyImportPreview();
+    } catch (error) {
+        announce(error instanceof PortableSettingsError || error instanceof ModelRegistryError
+            ? error.message : '설정 변경을 적용하지 못했습니다.', 'error');
+    }
+}
+
+function applyImportPreview() {
     const pending = pendingImportPreview;
     if (!pending || !isCurrentImportOperation(pending.operation)) {
         closeImportPreview();
@@ -1938,13 +2142,15 @@ function onApplyImportPreview() {
         return;
     }
 
-    const preview = createCurrentImportPreview(pending.parsed);
-    const safety = getImportRegistrySafety(pending.parsed);
+    const evaluated = evaluatePendingImport(pending);
+    const { preview } = evaluated;
+    const safety = evaluated;
     const signature = createImportPreviewSignature(preview, safety.blocker);
     const settingsFingerprint = createImportSettingsFingerprint();
     if (settingsFingerprint !== pending.settingsFingerprint || signature !== pending.signature) {
         pendingImportPreview = {
             ...pending,
+            ...evaluated,
             preview,
             blocker: safety.blocker,
             registrySettings: safety.registrySettings,
@@ -1960,17 +2166,24 @@ function onApplyImportPreview() {
         return;
     }
 
+    const undoSnapshot = pending.kind === 'undo' ? null : snapshotSettingsBundle(currentSettingsBundle());
+    // Validate and snapshot before making any mutation. Publish the Registry
+    // change only after the whole bundle has been installed.
+    pending.operation.purposeRouter.replaceRoutes(evaluated.parsed.purposeRoutes);
     settings = safety.registrySettings;
-    externalSettings = normalizeAutomaticExternalSettings(pending.parsed.externalSettings);
+    externalSettings = normalizeAutomaticExternalSettings(evaluated.parsed.externalSettings);
     pending.operation.context.extensionSettings[SETTINGS_KEY] = settings;
     pending.operation.context.extensionSettings[EXTERNAL_SETTINGS_KEY] = externalSettings;
-    pending.operation.purposeRouter.replaceRoutes(pending.parsed.purposeRoutes);
     acceptedExternalSnapshot = normalizeAutomaticExternalSettings(externalSettings);
     pendingModelDeletionUndo = null;
+    lastSettingsUndo = undoSnapshot;
     closeImportPreview();
     persistSettings('backup-import');
     synchronize();
-    announce(pending.parsed.report.status === 'warning'
+    announce(pending.kind === 'undo' ? '직전 설정을 복구했습니다.'
+        : pending.kind === 'cleanup' ? '확인한 중복 등록을 정리했습니다. 기본 모델과 연결 설정은 유지됩니다.'
+        : pending.mode === 'merge' ? '선택한 모델을 병합했습니다. 기존 경로와 외부 설정은 유지됩니다.'
+        : pending.parsed.report.status === 'warning'
         ? `백업을 가져왔습니다. ${pending.parsed.report.summary}`
         : '미리보기에서 확인한 Registry, 용도별 경로와 외부 확장 연결 변경을 적용했습니다.');
     settingsRoot?.querySelector('#cmr_import_backup_button')?.focus?.();
@@ -2008,7 +2221,11 @@ async function onImportBackup(event) {
         const parsed = parsePortableSettings(content);
         const preview = createCurrentImportPreview(parsed);
         const safety = getImportRegistrySafety(parsed);
+        const existingModelKeys = new Set(settings.models.map(model => createModelKey(model.provider, model.id)));
         pendingImportPreview = {
+            kind: 'import', mode: 'replace', original: parsed,
+            selectedKeys: new Set(parsed.registrySettings.models.filter(model => !existingModelKeys.has(createModelKey(model.provider, model.id)))
+                .map(model => createModelKey(model.provider, model.id))),
             operation,
             parsed,
             preview,
@@ -2068,6 +2285,11 @@ function createSettingsPanel() {
     settingsRoot.querySelector('#cmr_import_backup')?.addEventListener('change', onImportBackup);
     settingsRoot.querySelector('#cmr_import_preview_apply')?.addEventListener('click', onApplyImportPreview);
     settingsRoot.querySelector('#cmr_import_preview_cancel')?.addEventListener('click', onCancelImportPreview);
+    settingsRoot.querySelector('#cmr_import_mode')?.addEventListener('change', onImportModeChanged);
+    settingsRoot.querySelector('#cmr_import_choices_list')?.addEventListener('change', onImportChoiceChanged);
+    settingsRoot.querySelector('#cmr_cleanup_native')?.addEventListener('click', () => openSettingsChangePreview('cleanup'));
+    settingsRoot.querySelector('#cmr_undo_settings')?.addEventListener('click', () => openSettingsChangePreview('undo'));
+    settingsRoot.querySelector('#cmr_provider_connections_list')?.addEventListener('click', onRetryProviderIntegration);
     settingsRoot.addEventListener('keydown', onPanelKeyDown);
     return root;
 }
@@ -2275,6 +2497,22 @@ function onModelListClick(event) {
         return;
     }
 
+    if (button.dataset.cmrAction === 'toggle-enabled') {
+        try {
+            const enabled = !hasEnabledModel(settings, provider.id, modelId);
+            settings = assertRegistryReplacementSafe(setModelEnabled(settings, provider.id, modelId, enabled));
+            pendingModelDeletionUndo = null;
+            persistSettings('settings-ui');
+            synchronize();
+            [...(settingsRoot?.querySelectorAll('[data-cmr-action="toggle-enabled"]') ?? [])]
+                .find(control => control.dataset.provider === provider.id && control.dataset.modelId === modelId)?.focus?.();
+            announce(`모델을 ${enabled ? '활성화' : '비활성화'}했습니다.`);
+        } catch (error) {
+            announce(error instanceof ModelRegistryError ? error.message : '활성 상태를 바꾸지 못했습니다.', 'error');
+        }
+        return;
+    }
+
     if (button.dataset.cmrAction === 'delete') {
         const configured = getConfiguredModel(provider);
         const preservesInputValue = provider.controlType === 'input' && configured === modelId;
@@ -2295,6 +2533,9 @@ function onModelListClick(event) {
 }
 
 async function teardownRuntime({ applyNativeFallback = false } = {}) {
+    unsubscribeProviderIntegrations?.();
+    unsubscribeProviderIntegrations = null;
+    lastSettingsUndo = null;
     observer?.disconnect();
     observer = null;
     observedContainer = null;
@@ -2422,6 +2663,10 @@ async function initialize(generation) {
         onError: error => {
             console.warn('[Custom Model Router] 공용 provider integration 처리 실패', error);
         },
+    });
+    unsubscribeProviderIntegrations = providerIntegrationController.api.subscribe(() => {
+        renderConvenienceTools();
+        renderExternalIntegrations();
     });
     registryApiController = createRegistryApi({
         extensionVersion: EXTENSION_VERSION,

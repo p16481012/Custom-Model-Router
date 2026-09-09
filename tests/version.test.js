@@ -165,14 +165,14 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
     assert.match(registryApi, /REGISTRY_API_VERSION = '1\.2\.0'/);
     assert.match(registryApi, /providerIntegrations: Boolean\(options\.integrationsApi\)/);
     assert.match(registryApi, /integrations: options\.integrationsApi \?\? null/);
-    assert.match(providerIntegrations, /PROVIDER_INTEGRATION_API_VERSION = '1\.0\.0'/);
+    assert.match(providerIntegrations, /PROVIDER_INTEGRATION_API_VERSION = '1\.1\.0'/);
     assert.match(providerIntegrations, /PROVIDER_INTEGRATION_INPUT_SCHEMA = 'cmr\.chat-completion\/1'/);
     assert.match(providerIntegrations, /SILLYTAVERN_INHERITED: 'sillytavern-inherited'/);
     assert.match(providerIntegrations, /OPENAI_COMPATIBLE: 'openai-compatible'/);
     assert.match(providerIntegrations, /PROVIDER_INTEGRATION_OWNED_ATTRIBUTE = 'data-cmr-provider-hook-owned'/);
     assert.match(providerIntegrations, /installHandler/);
     assert.match(providerIntegrations, /publishModels/);
-    assert.match(providerIntegrationSandbox, /src\/provider-integrations\.js\?provider-sandbox=0\.6\.16/);
+    assert.match(providerIntegrationSandbox, /src\/provider-integrations\.js\?provider-sandbox=0\.6\.17/);
     assert.match(providerIntegrationSandbox, /ConnectionManagerRequestService/);
     assert.match(providerIntegrationSandbox, /provider-integrations\/echo/);
     assert.match(providerIntegrationSandbox, /data-cmr-provider-hook-owned="true"/);
@@ -181,7 +181,7 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
     assert.match(checklist, /진단 schema v2/);
     assert.match(apiDocument, /v0\.6 범용 DOM 모델 브리지/);
     assert.match(apiDocument, /Portable backup schema v2/);
-    assert.match(apiDocument, /Provider Integration API 1\.0\.0/);
+    assert.match(apiDocument, /Provider Integration API 1\.1\.0/);
     assert.match(apiDocument, /모두 새 객체로 만들고 순서까지 뒤집으면/);
     assert.match(apiDocument, /DOM 브리지 내부 저장 schema v2/);
     assert.match(apiDocument, /excludedTargets/);
@@ -214,7 +214,7 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
     assert.match(checklist, /EXT-23/);
     for (const document of [readme, roadmap, checklist, apiDocument]) {
         assert.match(document, /Registry API[^\n]*1\.2\.0|1\.2\.0[^\n]*Registry API/);
-        assert.match(document, /(?:Provider )?Integration API[^\n]*1\.0\.0|1\.0\.0[^\n]*(?:Provider )?Integration API/);
+        assert.match(document, /(?:Provider )?Integration API[^\n]*1\.1\.0|1\.1\.0[^\n]*(?:Provider )?Integration API/);
         assert.match(document, /Routing API[^\n]*1\.0\.0|1\.0\.0[^\n]*Routing API/);
         assert.match(document, /선택된.*Connection Manager.*프로필/s);
         assert.match(document, /Custom.*OpenAI-compatible|OpenAI-compatible.*Custom/s);
@@ -367,8 +367,8 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
     assert.match(checklist, new RegExp(`Node 자동 검사 ${testCount}개`));
     const currentUiCountPatterns = [
         /Playwright Chromium UI 회귀 검사 (\d+)개는 제품/,
-        /## v0\.6\.16[\s\S]*?Node 자동 검사 \d+개와 Playwright Chromium UI 회귀 검사 (\d+)개로/,
-        /v0\.6\.16 저장소에서는 Node 자동 검사 \d+개와 Playwright Chromium UI 회귀 검사 (\d+)개를/,
+        /## v0\.6\.17[\s\S]*?Node 자동 검사 \d+개와 Playwright Chromium UI 회귀 검사 (\d+)개로/,
+        /v0\.6\.17 저장소에서는 Node 자동 검사 \d+개와 Playwright Chromium UI 회귀 검사 (\d+)개를/,
     ];
     const documentedUiCounts = [readme, roadmap, checklist].map((document, index) => {
         const match = document.match(currentUiCountPatterns[index]);
@@ -376,7 +376,7 @@ test('배포 파일과 진행 문서의 버전 표기가 모두 일치한다', a
         return Number(match[1]);
     });
     assert.equal(new Set(documentedUiCounts).size, 1, '세 문서의 Playwright UI 검사 개수가 같아야 한다');
-    assert.equal(documentedUiCounts[0], 15, 'v0.6.16 Playwright UI 검사 개수는 15개여야 한다');
+    assert.equal(documentedUiCounts[0], 23, 'v0.6.17 Playwright UI 검사 개수는 23개여야 한다');
 
     const checklistIds = Array.from(
         checklist.matchAll(/\*\*\[(?:필수|조건부|권장|선택)\]\[([A-Z0-9-]+)\]/g),

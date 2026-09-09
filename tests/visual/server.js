@@ -723,6 +723,20 @@ export async function startUiRegressionServer() {
 
     const server = createServer(async (request, response) => {
         const url = new URL(request.url ?? '/', 'http://127.0.0.1');
+        if (url.pathname === '/runtime-sandbox') {
+            await sendFile(response, resolve(REPOSITORY_ROOT, 'tests/runtime-sandbox.html'));
+            return;
+        }
+        if (url.pathname === '/cmr/index.js' || url.pathname === '/cmr/settings.html') {
+            await sendFile(response, resolve(REPOSITORY_ROOT, url.pathname.slice('/cmr/'.length)));
+            return;
+        }
+        if (url.pathname.startsWith('/cmr/src/')) {
+            const sourcePath = safePublicPath(SOURCE_ROOT, url.pathname.slice('/cmr/src/'.length));
+            if (!sourcePath) { response.writeHead(403); response.end(); return; }
+            await sendFile(response, sourcePath);
+            return;
+        }
         if (url.pathname === '/ui-regression') {
             response.writeHead(200, {
                 'cache-control': 'no-store',

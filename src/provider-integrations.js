@@ -12,7 +12,7 @@ import {
     hasEnabledModel,
 } from './registry.js';
 
-export const PROVIDER_INTEGRATION_API_VERSION = '1.0.0';
+export const PROVIDER_INTEGRATION_API_VERSION = '1.1.0';
 export const PROVIDER_INTEGRATION_READY_EVENT = 'custom-model-router:provider-integrations-ready';
 export const PROVIDER_INTEGRATION_INPUT_SCHEMA = 'cmr.chat-completion/1';
 export const PROVIDER_INTEGRATION_OWNED_ATTRIBUTE = 'data-cmr-provider-hook-owned';
@@ -71,6 +71,7 @@ const SAFE_ERROR_MESSAGES = Object.freeze({
 const SAFE_BINDING_FAILURE_CODES = new Set([
     'handler_receipt_invalid',
     'publication_receipt_invalid',
+    'consumer_hook_timeout',
 ]);
 
 export class ProviderIntegrationError extends Error {
@@ -689,7 +690,6 @@ export function createProviderIntegrationController(options = {}) {
     let active = true;
     let generation = 0;
     let revision = 0;
-    let syncQueue = Promise.resolve();
 
     function assertActive() {
         if (!active) {
@@ -712,6 +712,37 @@ export function createProviderIntegrationController(options = {}) {
         ? Math.max(1, Math.min(5_000, Math.trunc(configuredDisposeTimeout)))
         : DEFAULT_RECEIPT_DISPOSE_TIMEOUT_MS;
     const safeDispose = createReceiptDisposer(reportError, disposeTimeoutMs);
+    const hookTimeoutMs = Number.isFinite(options.hookTimeoutMs)
+        ? Math.max(1, Math.min(60_000, options.hookTimeoutMs)) : 10_000;
+
+    function awaitHook(binding, invoke, receipt = true) {
+        const signal = binding.controller.signal;
+        return new Promise((resolve, reject) => {
+            let settled = false;
+            const finish = (error, value) => {
+                if (settled) return;
+                settled = true;
+                clearTimeout(timer);
+                signal.removeEventListener('abort', abort);
+                if (error) reject(error); else resolve(value);
+            };
+            const abort = () => finish(new ProviderIntegrationError('binding_disposed', 'provider binding이 종료되었습니다.'));
+            const timer = setTimeout(() => {
+                finish(new ProviderIntegrationError('consumer_hook_timeout', '외부 연동의 응답 시간이 초과되었습니다.'));
+                binding.controller.abort();
+            }, hookTimeoutMs);
+            signal.addEventListener('abort', abort, { once: true });
+            if (signal.aborted) abort();
+            Promise.resolve().then(() => {
+                if (signal.aborted) throw new ProviderIntegrationError('binding_disposed', 'provider binding이 종료되었습니다.');
+                return invoke();
+            }).then(value => {
+                if (settled) {
+                    if (receipt) void safeDispose(value);
+                } else finish(null, value);
+            }, error => finish(error));
+        });
+    }
 
     function emit(type, consumer, binding = null) {
         revision += 1;
@@ -1084,14 +1115,14 @@ export function createProviderIntegrationController(options = {}) {
         emit('binding-pending', consumer, binding);
         const installGeneration = binding.generation;
         try {
-            const handlerValue = await consumer.hooks.installHandler(Object.freeze({
+            const handlerValue = await awaitHook(binding, () => consumer.hooks.installHandler(Object.freeze({
                 slotId: slot.slotId,
                 strategy: candidate.strategy,
                 provider: candidate.provider,
                 capabilities: HANDLER_CAPABILITIES,
                 execute: createBoundExecute(binding),
                 signal: binding.controller.signal,
-            }));
+            })));
             binding.handlerReceipt = handlerValue;
             validateHandlerReceipt(handlerValue);
             if (!active || !consumer.active || binding.draining
@@ -1100,14 +1131,14 @@ export function createProviderIntegrationController(options = {}) {
                 await safeDispose(binding.handlerReceipt);
                 return;
             }
-            const publicationValue = await consumer.hooks.publishModels(Object.freeze({
+            const publicationValue = await awaitHook(binding, () => consumer.hooks.publishModels(Object.freeze({
                 handlerToken: binding.handlerReceipt.handlerToken,
                 slotId: slot.slotId,
                 strategy: candidate.strategy,
                 provider: candidate.provider,
                 models: candidate.models,
                 signal: binding.controller.signal,
-            }));
+            })));
             binding.publicationReceipt = publicationValue;
             validatePublicationReceipt(publicationValue);
             if (!active || !consumer.active || binding.draining
@@ -1120,6 +1151,7 @@ export function createProviderIntegrationController(options = {}) {
             binding.status = 'ready';
             emit('binding-ready', consumer, binding);
         } catch (error) {
+            binding.controller.abort();
             await safeDispose(binding.publicationReceipt);
             await safeDispose(binding.handlerReceipt);
             if (consumer.bindings.get(key) === binding && !binding.draining) {
@@ -1135,9 +1167,9 @@ export function createProviderIntegrationController(options = {}) {
 
     async function updateBindingModels(consumer, binding, candidate) {
         try {
-            const updated = await binding.publicationReceipt.updateModels(candidate.models, {
+            const updated = await awaitHook(binding, () => binding.publicationReceipt.updateModels(candidate.models, {
                 signal: binding.controller.signal,
-            });
+            }), false);
             if (updated !== true) {
                 throw new ProviderIntegrationError(
                     'model_update_rejected',
@@ -1148,8 +1180,17 @@ export function createProviderIntegrationController(options = {}) {
                 binding.candidate = candidate;
                 emit('models-updated', consumer, binding);
             }
-        } catch {
+        } catch (error) {
+            const alreadyDraining = binding.draining;
             await drainBinding(consumer, binding, 'binding-update-failed');
+            if (!alreadyDraining && active && consumer.active && !consumer.bindings.has(binding.key)) {
+                binding.status = 'failed';
+                binding.code = error?.code === 'consumer_hook_timeout' ? error.code : 'model_update_rejected';
+                binding.draining = false;
+                binding.drainPromise = null;
+                consumer.bindings.set(binding.key, binding);
+                emit('binding-failed', consumer, binding);
+            }
         }
     }
 
@@ -1193,15 +1234,24 @@ export function createProviderIntegrationController(options = {}) {
     function sync(optionsValue = {}) {
         assertActive();
         const forceRetry = optionsValue?.retryFailed === true;
-        const operation = syncQueue.catch(() => undefined).then(async () => {
-            for (const consumer of [...consumers.values()]) {
-                await reconcileConsumer(consumer, forceRetry);
+        const selected = optionsValue.consumerId === undefined ? [...consumers.values()]
+            : [consumers.get(optionsValue.consumerId)].filter(Boolean);
+        const operation = Promise.all(selected.map(async consumer => {
+            const drains = [];
+            // Profile changes must release a pending old hook immediately, not
+            // wait behind that hook's per-consumer queue.
+            for (const binding of consumer.bindings.values()) {
+                const candidate = createBackendCandidate(binding.strategy, options, connectionAdapter);
+                if (!candidate || candidate.fingerprint !== binding.candidate.fingerprint) {
+                    drains.push(drainBinding(consumer, binding, 'binding-unavailable'));
+                }
             }
-        });
-        // 호출자는 현재 실패를 관찰하되, 다음 동기화는 이전 실패에서 회복할 수 있다.
-        syncQueue = operation.catch(() => {
-            reportError('reconcile_failed');
-        });
+            const task = consumer.syncQueue.catch(() => undefined)
+                .then(() => Promise.all(drains))
+                .then(() => reconcileConsumer(consumer, forceRetry));
+            consumer.syncQueue = task.catch(() => reportError('reconcile_failed'));
+            return task;
+        }));
         return operation.catch(() => {
             throw new ProviderIntegrationError(
                 'reconcile_failed',
@@ -1226,11 +1276,12 @@ export function createProviderIntegrationController(options = {}) {
             descriptor,
             hooks: normalizeConsumerHooks(hooksValue),
             bindings: new Map(),
+            syncQueue: Promise.resolve(),
             active: true,
         };
         consumers.set(descriptor.consumerId, consumer);
         emit('consumer-registered', consumer);
-        const ready = sync().then(() => createConsumerSnapshot(consumer));
+        const ready = sync({ consumerId: descriptor.consumerId }).then(() => createConsumerSnapshot(consumer));
         let disposed = false;
         const dispose = () => {
             if (disposed || !consumer.active) {
@@ -1287,6 +1338,8 @@ export function createProviderIntegrationController(options = {}) {
             strategies: Object.values(PROVIDER_INTEGRATION_STRATEGIES),
             inputSchema: PROVIDER_INTEGRATION_INPUT_SCHEMA,
             atomicHandlerBeforeModels: true,
+            consumerScopedRefresh: true,
+            hookTimeoutMs,
             selectedConnectionProfileOnly: true,
             credentials: 'connection-manager-owned',
             mainChatMutation: false,
@@ -1299,8 +1352,12 @@ export function createProviderIntegrationController(options = {}) {
         },
         registerConsumer,
         getConsumers,
-        refresh() {
-            return sync({ retryFailed: true });
+        refresh(consumerId) {
+            assertActive();
+            if (consumerId !== undefined && !consumers.has(consumerId)) {
+                throw new ProviderIntegrationError('consumer_not_found', '등록된 연동을 찾지 못했습니다.');
+            }
+            return sync({ retryFailed: true, consumerId });
         },
         subscribe,
     });
