@@ -5,7 +5,6 @@ import {
     validateProviderModelId,
 } from './providers.js';
 
-export const EXTERNAL_AUTO_CONFIDENCE_THRESHOLD = 0.72;
 // v0.6.5 이하 모듈 import 호환용 상수다. controller는 mode mapping을 사용하지 않는다.
 export const EXTERNAL_MAPPING_MANUAL = 'manual';
 export const EXTERNAL_MAPPING_DISABLED = 'disabled';
@@ -1382,7 +1381,14 @@ function createManagedOption(documentRef, providerId, modelId, externalAttribute
 function ensureExternalOptionHost(target, providerMarker, documentRef) {
     let host = target?.optionHost;
     const control = target?.control;
-    if (!host && tagName(control) === 'INPUT' && documentRef?.createElement) {
+    const sourceAttribute = 'data-cmr-external-source-list';
+    const shared = tagName(host) === 'DATALIST'
+        && getAttribute(host, EXTERNAL_DATALIST_ATTRIBUTE) !== 'true'
+        && getAll(documentRef, 'input').filter(input => {
+            const list = resolveDatalist(input, documentRef);
+            return list === host || getAttribute(list, sourceAttribute) === host.id;
+        }).length > 1;
+    if ((!host || shared) && tagName(control) === 'INPUT' && documentRef?.createElement) {
         const previousList = getAttribute(control, 'list');
         const hadList = control.hasAttribute?.('list') ?? Boolean(previousList);
         const datalist = documentRef.createElement('datalist');
@@ -1399,6 +1405,12 @@ function ensureExternalOptionHost(target, providerMarker, documentRef) {
         datalist.setAttribute?.(EXTERNAL_DATALIST_ATTRIBUTE, 'true');
         datalist.setAttribute?.(EXTERNAL_DATALIST_PREVIOUS_LIST_ATTRIBUTE, previousList);
         datalist.setAttribute?.(EXTERNAL_DATALIST_HAD_LIST_ATTRIBUTE, hadList ? 'true' : 'false');
+        if (shared) {
+            // A native list can serve excluded/non-chat inputs too. Never put
+            // target-specific CMR options in that shared host.
+            removeExternalTargetModels(target);
+            datalist.setAttribute(sourceAttribute, host.id);
+        }
         const parent = control.parentElement ?? documentRef.body;
         parent?.append?.(datalist);
         control.setAttribute?.('list', datalist.id);
@@ -1407,6 +1419,25 @@ function ensureExternalOptionHost(target, providerMarker, documentRef) {
     }
     if (host && getAttribute(host, EXTERNAL_DATALIST_ATTRIBUTE) === 'true') {
         host.dataset.cmrProvider = providerMarker;
+        const sourceId = getAttribute(host, sourceAttribute);
+        if (sourceId) {
+            const source = documentRef.getElementById?.(sourceId);
+            for (const child of Array.from(host.children ?? [])) {
+                if (!isManagedOption(child)) removeElement(child);
+            }
+            for (const option of getOptions(source).filter(option => !isManagedOption(option))) {
+                const copy = documentRef.createElement('option');
+                copy.value = option.value;
+                copy.textContent = option.textContent;
+                copy.label = option.label;
+                copy.disabled = option.disabled;
+                for (const attribute of ['data-type', 'data-provider', 'data-source']) {
+                    const value = getAttribute(option, attribute);
+                    if (hasAttribute(option, attribute)) copy.setAttribute(attribute, value);
+                }
+                host.append(copy);
+            }
+        }
     }
     return host;
 }
@@ -2003,12 +2034,12 @@ export function createExternalIntegrationController(options = {}) {
             return null;
         }
         const preferred = String(preferredOption.value);
+        target.control.value = preferred;
         if (tagName(target.control) === 'SELECT') {
             for (const option of getOptions(target.optionHost)) {
                 option.selected = option === preferredOption;
             }
         }
-        target.control.value = preferred;
         if (String(target.control.value) !== preferred) {
             return null;
         }
@@ -2241,7 +2272,11 @@ export function createExternalIntegrationController(options = {}) {
     function requestSync(records = null) {
         const knownControls = new Set([
             ...managedTargets.keys(),
-            ...[...managedTargets.values()].flatMap(target => [target.optionHost, target.providerControl]).filter(Boolean),
+            ...[...managedTargets.values()].flatMap(target => {
+                const sourceId = getAttribute(target.optionHost, 'data-cmr-external-source-list');
+                return [target.optionHost, target.providerControl,
+                    sourceId ? target.optionHost?.ownerDocument?.getElementById?.(sourceId) : null];
+            }).filter(Boolean),
         ]);
         if (records && !mutationNeedsExternalRescan(records, { root, documentRef: options.documentRef, knownControls })) {
             return false;

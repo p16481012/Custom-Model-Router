@@ -1,10 +1,10 @@
 # 개발 로드맵과 현재 진행 상태
 
-마지막 업데이트: **2026-08-20**
+마지막 업데이트: **2026-09-09**
 
-현재 릴리스: **v0.6.16**
+현재 릴리스: **v0.6.17**
 
-현재 단계: **v0.6.16에서 SillyTavern 공식 Popup 닫기를 CMR 패널 안쪽에 배치하고 실제 설치 화면 검증 대기 중**
+현재 단계: **v0.6.17 안정성·편의 기능 구현 및 자동 검사 완료, 실제 계정 검증 대기**
 
 ## 상태 범례
 
@@ -25,16 +25,16 @@
 | 다중 provider Registry | ✅ 완료 | `(provider, model ID)` 복합키, 제공업체별 선택, v1 Vertex 이관 |
 | 관리 팝업과 기본 컨트롤 | ✅ 완료 | 숫자 배지 없는 단일 런처, 안쪽 우측 상단의 SillyTavern 공식 닫기 하나, 24개 제공업체 모델 등록·삭제, 단일·여러 줄 공용 textarea와 아이콘 버튼 하나, 핵심 한 줄 안내와 native popover 도움말 5곳, 전체 provider 목록, 12개 초과 조건부 검색, 최대 200줄 원자 등록, 삭제 실행 취소와 6개 초과 숨은 스크롤 |
 | 공개 Registry API | ✅ 완료 | API `1.2.0`, 불변 스냅샷·mutation·이벤트·수명주기, Provider Integration API 노출, 현재 custom-only 모델 삭제 보호 |
-| 공용 provider 연동 | ✅ 완료 | Integration API `1.0.0`, 선택된 일반·Custom Connection Profile 전략, 공개 hook의 handler 설치→모델 게시 2단계 준비 계약 |
+| 공용 provider 연동 | ✅ 완료 | Integration API `1.1.0`, 선택된 일반·Custom Connection Profile 전략, 공개 hook의 handler 설치→모델 게시 2단계 준비 계약 |
 | hookless native provider 재사용 | ✅ 완료 | 기존 exact Custom/OpenAI-compatible에는 `custom` 모델만, exact SillyTavern 현재 연결에는 활성 ST provider 모델만 투영; provider option·연결 설정·요청 handler 불변 |
 | 용도별 라우팅 | ✅ 완료 | 일반 UI 없이 Routing API `1.0.0`, Connection Profile 어댑터, route·backup 보존 |
 | 호환성 진단 | ✅ 완료 | ST·context·provider·런타임 진단, native Custom·현재 연결·projection·확인 불가 집계, 복구 상세와 target별 native 중복 제외 후보 512개·전체 예상/실제 option 합계 2,048개 주의 |
 | 범용 외부 확장 브리지 | ✅ 완료 | 표준 select/input/datalist 모델 target 탐지, provider/source 선택기 비대상 판별·metadata 감시, 안전 대상 자동 주입, 실패·사용자 제외 기본 목록, 정상 대상 명시적 제외 선택기, 위험 대상 진단 집계 |
 | 설정 백업·복구 | ✅ 완료 | Registry·route·외부 선택·사용자 제외 portable schema v2, 적용 전 추가·충돌·삭제 미리보기, legacy 이관·미래 schema 거부 |
 | 안정성 계측 | ✅ 완료 | source·profile 전환 표본의 core 자원과 외부 observer 제한 판정; 외부 target·binding·listener는 현재 진단 스냅샷에서 교차 확인 |
-| 자동 검사 | ✅ 완료 | 단위·통합·수명주기·보안 경계·버전 일치 검사 240개 통과 |
+| 자동 검사 | ✅ 완료 | 단위·통합·수명주기·보안 경계·버전 일치 검사 255개 통과 |
 | DOM·공개 API 샌드박스 | ✅ 완료 | 기본 24개·native 선택·외부 모델 컨트롤, provider/source 선택기 보존·개발자 route API와 정리 수명주기 확인 |
-| Chromium UI 회귀 검사 | ✅ 완료 | 실제 `settings.html`, SillyTavern 1.18.0 고정 CSS, 공식 닫기의 내부 배치와 브라우저 native 재사용·공용 provider hook fixture를 확인하는 Playwright Chromium UI 회귀 검사 15개 통과 |
+| Chromium UI 회귀 검사 | ✅ 완료 | 실제 `settings.html`, SillyTavern 1.18.0 고정 CSS, 공식 닫기의 내부 배치와 브라우저 native 재사용·공용 provider hook fixture를 확인하는 Playwright Chromium UI 회귀 검사 23개 통과 |
 | 사용자 실제 계정 검증 | 🧪 대기 | [통합 체크리스트](./USER_CHECKLIST.md)를 사용하는 연결에서 한 번 수행 |
 
 ## 지원 기준
@@ -627,6 +627,24 @@ SillyTavern 1.18.0의 공용 Popup CSS는 닫기 컨트롤을 테두리 바깥�
 - [ ] 마우스·터치·Tab 뒤 Enter와 `Escape`로 닫히며 닫은 뒤 관리 런처로 초점이 돌아옴
 - [ ] 팝업 본문을 위·아래로 스크롤한 상태에서도 닫기 컨트롤을 사용할 수 있고 중요한 행·버튼을 가리지 않음
 
+## v0.6.17 — 안정성 보완과 선택적 모델 관리
+
+상태: **✅ 구현·자동 검사 완료, 🧪 실제 계정 검증 대기**
+
+- [x] falsy JSON 루트를 정상 백업으로 승인하지 않음
+- [x] 동일 value의 다른 공급자 select 복원과 공유 datalist의 입력별 격리
+- [x] Routing 스트림 종료까지 취소·수명 추적 유지
+- [x] consumer별 직렬 큐, hook 응답 시간 제한, 늦은 영수증 정리와 개별 재시도
+- [x] Registry 이벤트 batch revision 고정과 재진입 mutation 순차 알림
+- [x] 모델 활성 토글, 현재 custom-only 모델 비활성화 보호
+- [x] 모델만 선택 병합, 충돌 시 현재 상태 기본 유지, 기존 경로·외부 설정 보존
+- [x] 백업 적용·일괄 정리 직전 상태 한 건의 세션 내 되돌리기와 미리보기
+- [x] 기본 목록 중복 등록 정리 미리보기와 적용 직전 native 상태 재확인
+- [x] 등록/백업 5,000개 한도 통일, 미사용 상수·스타일 제거
+- [x] Node 자동 검사 255개와 Playwright Chromium UI 회귀 검사 23개로 기존 계약과 신규 제품 진입점 흐름을 검증
+
+되돌리기에는 portable 허용 필드만 보관하며 손상된 원본 저장값이나 인증 설정은 복원하지 않습니다. 기존 v0.1 호환 래퍼와 백업 이관은 유지합니다. 큰 파일의 전면 분리, 일반 조회 캐시, Firefox/WebKit 자동 검증은 이번 패치에 포함하지 않습니다.
+
 ## 실제 사용자 검증 게이트
 
 다음 조건은 자동 검사만으로 완료 처리하지 않습니다.
@@ -655,7 +673,7 @@ SillyTavern 1.18.0의 공용 Popup CSS는 닫기 컨트롤을 테두리 바깥�
 22. hookless exact Custom/OpenAI-compatible 선택에는 `custom` Registry 모델만, exact SillyTavern 현재 연결 선택에는 현재 활성 ST provider 모델만 투영됩니다.
 23. native 재사용 전후 provider option·값·endpoint·API 키·전역 요청 함수·메인 설정은 바뀌지 않고, 외부 handler의 실제 `model` 사용은 기능 실행으로 별도 확인합니다.
 
-실제 검증에서 발견되는 v0.6 범위의 후속 결함은 `v0.6.17`, `v0.6.18`, ... 패치 버전으로 수정합니다.
+실제 검증에서 발견되는 v0.6 범위의 후속 결함은 `v0.6.18`, `v0.6.19`, ... 패치 버전으로 수정합니다.
 
 ## 업데이트 규칙
 
@@ -692,4 +710,5 @@ SillyTavern 1.18.0의 공용 Popup CSS는 닫기 컨트롤을 테두리 바깥�
 | v0.6.13 | ✅ 완료·🧪 사용자 검증 대기 | 외부 provider/source 선택기 오탐 차단, native option·값 보존, 모호한 provider 후보 임의 연결 방지 |
 | v0.6.14 | ✅ 완료·🧪 사용자 검증 대기 | 선택된 Connection Manager 프로필 기반 일반·Custom 공용 handler, Provider Integration API `1.0.0`, 2단계 준비·정리 계약 |
 | v0.6.15 | ✅ 완료·🧪 사용자 검증 대기 | hookless 기존 Custom·SillyTavern 현재 연결 provider option의 보수적인 provider별 모델 projection |
-| v0.6.16 | ✅ 현재 릴리스·🧪 사용자 검증 대기 | SillyTavern 공식 Popup 닫기의 CMR 패널 내부 배치와 좁은 화면 회귀 방지 |
+| v0.6.16 | ✅ 구현 완료·🧪 사용자 검증 대기 | SillyTavern 공식 Popup 닫기의 CMR 패널 내부 배치와 좁은 화면 회귀 방지 |
+| v0.6.17 | ✅ 현재 릴리스·🧪 사용자 검증 대기 | 안정성 보완과 선택적 모델 관리, 제품 진입점 회귀 검사 |

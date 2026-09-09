@@ -1,6 +1,6 @@
 # 공개 Registry 및 Provider Integration API
 
-Custom Model Router v0.6.16은 다른 SillyTavern 확장이 내부 파일 경로에 의존하지 않고 등록 모델, 공용 provider 연동과 용도별 라우팅을 사용할 수 있도록 `globalThis.CustomModelRouter`를 제공합니다. Registry API 계약 버전은 `1.2.0`, `CustomModelRouter.integrations`의 Provider Integration API 계약 버전은 `1.0.0`, Routing API 계약 버전은 `1.0.0`입니다. Registry `1.2.0`은 Integration API를 추가한 하위 호환 minor 갱신이며 Routing API는 v0.5.0의 `1.0.0` 계약을 유지합니다.
+Custom Model Router v0.6.17은 다른 SillyTavern 확장이 내부 파일 경로에 의존하지 않고 등록 모델, 공용 provider 연동과 용도별 라우팅을 사용할 수 있도록 `globalThis.CustomModelRouter`를 제공합니다. Registry API 계약 버전은 `1.2.0`, `CustomModelRouter.integrations`의 Provider Integration API 계약 버전은 `1.1.0`, Routing API 계약 버전은 `1.0.0`입니다. Registry `1.2.0`은 Integration API를 추가한 하위 호환 minor 갱신이며 Routing API는 v0.5.0의 `1.0.0` 계약을 유지합니다.
 
 v0.6.0의 범용 DOM 모델 브리지, v0.6.15의 hookless native provider option 재사용, 호환성 진단과 설정 백업·복구, v0.6.7의 Playwright UI 회귀 검사 인프라는 Registry/Routing 호출 계약에 포함되지 않습니다. v0.6.14의 Provider Integration API는 공개 hook을 명시적으로 등록한 소비 확장에만 적용되며 hookless native 재사용과 별도 경로입니다. 대상별 제외·복구와 기존 UI 선택지 주입 상태는 진단 섹션의 고급 외부 연결 관리에 있고, 실제 요청 반영은 별도로 확인해야 합니다. 외부 저장 schema v2 역시 공개 API 호출 계약과 별개입니다. Routing API는 개발자 또는 연동 확장이 명시적으로 사용하는 opt-in 계약이며 일반 라우팅 UI는 없습니다. 용도별 경로에는 Connection Profile ID만 저장되고 프로필 본문·API 키·endpoint는 복제되지 않습니다.
 
@@ -56,7 +56,18 @@ if (!registry.integrations?.isCompatible('1.0.0')) {
 
 확장이 비활성화되면 전역 API가 제거되고 기존 참조는 `destroyed` 오류를 냅니다. 소비 확장은 API 참조를 영구 캐시하지 말고, 자신의 활성화 시점에 존재 여부와 호환성을 다시 확인해야 합니다.
 
-## Provider Integration API 1.0.0
+## Provider Integration API 1.1.0
+
+v0.6.17의 하위 호환 갱신입니다. 기존 `1.0.0` consumer 계약·요청 형식·영수증을 계속 허용합니다.
+
+- `integrations.refresh()`는 전체 연동을, `integrations.refresh(consumerId)`는 지정한 consumer만 재시도합니다. 알 수 없는 ID는 `consumer_not_found`로 거부합니다.
+- `capabilities.consumerScopedRefresh === true`, `capabilities.hookTimeoutMs === 10000`으로 기능을 확인합니다.
+- 설치·게시·모델 갱신 hook은 기본 10초 후 `consumer_hook_timeout`으로 종료합니다. 실제 생성 요청 시간은 제한하지 않습니다. consumer별 큐를 사용하며 취소 후 늦게 반환된 영수증도 한 번 정리합니다.
+- 프로필 변경 시 기존 게시 정리를 기다린 뒤 새 handler·모델을 설치합니다. 같은 consumer의 실패를 자동 무한 재시도하지 않습니다.
+- Registry 알림은 batch별 revision과 snapshot을 고정해 순서대로 배출합니다. 구독자 내부 mutation은 현재 batch 이후 알림으로 전달합니다.
+- Routing API의 스트림 factory/iterator도 완료·return·취소까지 수명을 추적하며, caller abort와 CMR 종료를 전파합니다.
+
+백업 UI의 모델 병합은 Registry의 선택한 모델만 반영합니다. 전체 경로·외부 기록 복구는 전체 교체를 사용합니다. 되돌리기 메모리에는 portable allowlist만 남으며 새로고침·종료 시 폐기됩니다.
 
 `CustomModelRouter.integrations`는 외부 확장이 공개 provider registry 또는 hook을 제공할 때 사용하는 opt-in 계약입니다. CMR은 외부 확장의 비공개 provider 배열, 요청 함수, 전역 `fetch` 또는 `XMLHttpRequest`를 추측해 patch하지 않습니다. 공개 hook이 없거나 계약이 맞지 않는 확장의 provider UI는 변경하지 않습니다.
 

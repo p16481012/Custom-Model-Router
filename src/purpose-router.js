@@ -1,3 +1,4 @@
+import { retainRoutingStream } from './routing-stream.js';
 import {
     hasEnabledModel,
 } from './registry.js';
@@ -483,6 +484,11 @@ export class PurposeRouter {
             }
         }
         this.#activeExecutions.add(executionController);
+        let streaming = false;
+        const cleanup = () => {
+            this.#activeExecutions.delete(executionController);
+            if (forwardCallerAbort) signal.removeEventListener?.('abort', forwardCallerAbort);
+        };
 
         const execution = Object.freeze({
             purpose: purposeValidation.id,
@@ -529,6 +535,11 @@ export class PurposeRouter {
             try {
                 const result = await adapter.execute(execution);
                 throwIfAborted(executionController.signal);
+                const retained = retainRoutingStream(result, executionController, cleanup);
+                if (retained) {
+                    streaming = true;
+                    return retained;
+                }
                 return result;
             } catch (error) {
                 throwIfAborted(executionController.signal);
@@ -541,10 +552,7 @@ export class PurposeRouter {
                 });
             }
         } finally {
-            this.#activeExecutions.delete(executionController);
-            if (forwardCallerAbort && typeof signal.removeEventListener === 'function') {
-                signal.removeEventListener('abort', forwardCallerAbort);
-            }
+            if (!streaming) cleanup();
         }
     }
 

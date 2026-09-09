@@ -46,6 +46,7 @@ function createHarness({
     modelIds = ['gpt-cmr-test'],
     sendRequest,
     disposeTimeoutMs,
+    hookTimeoutMs,
 } = {}) {
     const profileSecret = 'PROFILE_API_KEY_SHOULD_NOT_LEAK';
     const endpointSecret = 'https://private.example.invalid/v1';
@@ -100,6 +101,7 @@ function createHarness({
         getContext: () => context,
         onError: error => errors.push(error),
         disposeTimeoutMs,
+        hookTimeoutMs,
     });
     return {
         controller,
@@ -144,6 +146,56 @@ function createValidHandlerReceipt(onDispose = () => {}) {
     });
 }
 
+test('모델 갱신 hook timeout은 실패 상태를 유지하고 개별 재시도로 복구한다', async () => {
+    const harness = createHarness({ hookTimeoutMs: 20 });
+    let installs = 0;
+    const registration = harness.controller.api.registerConsumer(createDescriptor(), {
+        installHandler() { installs += 1; return createValidHandlerReceipt(); },
+        publishModels: () => createValidPublicationReceipt({ updateModels: () => new Promise(() => {}) }),
+    });
+    await registration.ready;
+    harness.setRegistry(createRegistry('openai', 'gpt-cmr-test', 'extra'));
+    await harness.controller.sync();
+    const failed = harness.controller.api.getConsumers()[0].bindings[0];
+    assert.equal(failed.status, 'failed');
+    assert.equal(failed.code, 'consumer_hook_timeout');
+    await harness.controller.sync();
+    assert.equal(installs, 1, '자동 재시도 루프를 만들지 않는다');
+    await harness.controller.api.refresh('test.consumer');
+    assert.equal(installs, 2);
+    assert.equal(harness.controller.getMetrics().readyCount, 1);
+    await harness.controller.destroy();
+});
+
+test('프로필 전환은 기존 consumer의 느린 정리가 끝난 뒤 새 모델을 게시한다', async () => {
+    const harness = createHarness();
+    const pendingDispose = deferred();
+    const phases = [];
+    let first = true;
+    const registration = harness.controller.api.registerConsumer(createDescriptor(), {
+        installHandler() { phases.push('install'); return createValidHandlerReceipt(); },
+        publishModels() {
+            phases.push('publish');
+            const wait = first;
+            first = false;
+            return createValidPublicationReceipt({ onDispose: async () => {
+                if (wait) { phases.push('dispose-start'); await pendingDispose.promise; phases.push('dispose-end'); }
+            } });
+        },
+    });
+    await registration.ready;
+    harness.setProvider('claude');
+    harness.setRegistry(createRegistry('claude', 'claude-test'));
+    const sync = harness.controller.sync();
+    await waitFor(() => phases.includes('dispose-start'));
+    await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(phases, ['install', 'publish', 'dispose-start']);
+    pendingDispose.resolve();
+    await sync;
+    assert.deepEqual(phases, ['install', 'publish', 'dispose-start', 'dispose-end', 'install', 'publish']);
+    await harness.controller.destroy();
+});
+
 function createValidPublicationReceipt({
     onDispose = () => {},
     updateModels = async () => true,
@@ -158,12 +210,14 @@ function createValidPublicationReceipt({
 
 test('API contract is versioned, fail-closed, and exposes only the generic safe strategies', () => {
     assert.equal(isProviderIntegrationApiCompatible('1.0.0'), true);
-    assert.equal(isProviderIntegrationApiCompatible('1.0.1'), false);
+    assert.equal(isProviderIntegrationApiCompatible('1.0.1'), true);
+    assert.equal(isProviderIntegrationApiCompatible('1.1.0'), true);
+    assert.equal(isProviderIntegrationApiCompatible('1.1.1'), false);
     assert.equal(isProviderIntegrationApiCompatible('2.0.0'), false);
     assert.equal(isProviderIntegrationApiCompatible('invalid'), false);
 
     const harness = createHarness();
-    assert.equal(harness.controller.api.apiVersion, '1.0.0');
+    assert.equal(harness.controller.api.apiVersion, '1.1.0');
     assert.deepEqual(
         harness.controller.api.capabilities.strategies,
         ['sillytavern-inherited', 'openai-compatible'],
@@ -721,6 +775,7 @@ test('destroy during pending publication cleans the handler immediately and the 
         },
     }));
     await registration.ready;
+    await waitFor(() => publicationDisposals === 1, 'late publication cleanup after cancellation');
     assert.equal(publicationDisposals, 1);
     assert.equal(handlerDisposals, 1);
 });

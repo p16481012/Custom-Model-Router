@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="ko">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>CMR production runtime regression</title>
+    <link rel="stylesheet" href="/st/webfonts/NotoSans/stylesheet.css">
+    <link rel="stylesheet" href="/st/css/fontawesome.min.css">
+    <link rel="stylesheet" href="/st/css/solid.min.css">
+    <link rel="stylesheet" href="/st/style.css">
+    <link rel="stylesheet" href="/st/css/popup.css">
+    <link rel="stylesheet" href="/cmr/style.css">
+</head>
+<body>
+    <div id="rm_api_block"><div id="title_api"><select id="connection_profiles"><option>Fixture</option></select></div></div>
+    <script type="module">
+        import { getProviders } from '/src/providers.js';
+        import { init, destroy } from '/cmr/index.js';
+        import { stringifyPortableSettings } from '/src/portable-settings.js';
+        import { createModelKey } from '/src/registry.js';
+        import { createExternalTargetId } from '/src/external-integrations.js';
+        import { PROVIDER_INTEGRATION_REQUIRED_CAPABILITIES } from '/src/provider-integrations.js';
+
+        // Host API doubles only. All model rendering, event wiring, backup
+        // actions and lifecycle below run the production entrypoint/modules.
+        class HostPopup {
+            constructor(content, _type, _input, options) {
+                this.options = options;
+                this.dlg = document.createElement('dialog');
+                this.dlg.className = 'popup wider_dialogue_popup vertical_scrolling_dialogue_popup left_aligned_dialogue_popup popup--animation-none';
+                const body = document.createElement('div');
+                body.className = 'popup-body';
+                const scroll = document.createElement('div');
+                scroll.className = 'popup-content';
+                scroll.append(content);
+                body.append(scroll);
+                this.closeButton = document.createElement('div');
+                this.closeButton.className = 'popup-button-close right_menu_button fa-solid fa-circle-xmark';
+                this.closeButton.addEventListener('click', () => this.completeCancelled());
+                this.dlg.addEventListener('cancel', event => { event.preventDefault(); this.completeCancelled(); });
+                this.dlg.append(body, this.closeButton);
+            }
+            show() { document.body.append(this.dlg); this.dlg.showModal(); }
+            completeCancelled() {
+                if (!this.dlg.isConnected) return;
+                this.dlg.close(); this.dlg.remove(); this.options.onClose();
+            }
+        }
+        const listeners = new Map();
+        const eventTypes = Object.fromEntries(['SETTINGS_UPDATED', 'CHATCOMPLETION_SOURCE_CHANGED', 'CHATCOMPLETION_MODEL_CHANGED', 'CONNECTION_PROFILE_LOADED'].map(name => [name, name]));
+        const chatCompletionSettings = { chat_completion_source: 'openai' };
+        const extensionSettings = { disabledExtensions: [], connectionManager: { selectedProfile: 'fixture' } };
+        const context = {
+            version: '1.18.0', mainApi: 'openai', chatCompletionSettings, extensionSettings,
+            saveSettingsDebounced() {}, Popup: HostPopup, POPUP_TYPE: { DISPLAY: 1 }, eventTypes,
+            eventSource: {
+                on(name, fn) { if (!listeners.has(name)) listeners.set(name, new Set()); listeners.get(name).add(fn); },
+                removeListener(name, fn) { listeners.get(name)?.delete(fn); },
+                emit(name) { for (const fn of listeners.get(name) ?? []) fn(); },
+            },
+            ConnectionManagerRequestService: {
+                getProfile: () => ({ id: 'fixture' }),
+                validateProfile: () => ({ selected: 'openai', source: 'openai' }),
+                sendRequest: async () => ({ content: 'fixture' }),
+            },
+        };
+        for (const provider of getProviders()) {
+            const control = document.createElement(provider.controlType === 'select' ? 'select' : 'input');
+            control.id = provider.selector.slice(1);
+            if (provider.controlType === 'select') control.append(new Option('Native', 'native-model'));
+            control.value = 'native-model';
+            chatCompletionSettings[provider.settingKey] = 'native-model';
+            control.addEventListener(provider.applyEvent, () => { chatCompletionSettings[provider.settingKey] = control.value; });
+            document.querySelector('#rm_api_block').append(control);
+        }
+        globalThis.SillyTavern = { getContext: () => context };
+        await init();
+        globalThis.cmrRuntime = {
+            context, init, destroy, createExternalTargetId, createModelKey,
+            backup: models => stringifyPortableSettings({ registrySettings: { schemaVersion: 2, models, selectedModels: {} } }),
+            async registerTestConsumer(consumerId = 'browser.test') {
+                let rejectInstall = true;
+                const registration = CustomModelRouter.integrations.registerConsumer({
+                    consumerId, label: '테스트 연동', contractVersion: '1.0.0', capabilities: PROVIDER_INTEGRATION_REQUIRED_CAPABILITIES,
+                    slots: [{ slotId: 'chat', strategies: ['sillytavern-inherited'] }],
+                }, {
+                    installHandler() {
+                        if (rejectInstall) { rejectInstall = false; throw new Error('fixture failure'); }
+                        return { requestHandlerBound: true, handlerToken: {}, dispose() {} };
+                    },
+                    publishModels: () => ({ modelsPublished: true, publicationToken: {}, updateModels: () => true, dispose() {} }),
+                });
+                await registration.ready;
+            },
+        };
+    </script>
+</body>
+</html>
