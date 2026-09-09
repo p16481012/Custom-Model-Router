@@ -1,6 +1,6 @@
-# v0.6.17 통합 사용자 검증 체크리스트
+# v0.6.18 통합 사용자 검증 체크리스트
 
-대상 버전: **v0.6.17**
+대상 버전: **v0.6.18**
 
 이 문서는 v0.1~v0.6 기능을 한 번에 확인하는 최종 수동 검증 순서입니다. 위에서 아래로 진행하고, 사용하지 않는 제공업체·외부 확장·개발자 API 항목은 `해당 없음`으로 표시하세요.
 
@@ -17,15 +17,21 @@
 
 ## 자동 검사 완료 범위
 
-v0.6.17 저장소에서는 Node 자동 검사 255개와 Playwright Chromium UI 회귀 검사 23개를 별도로 실행합니다. Node 검사는 기존 UI·Registry·Routing·DOM 브리지·진단 schema v2·백업·Provider Integration API 계약에 더해 hookless native Custom·현재 연결 exact 분류, provider별 모델 projection, 모호한 토큰 미분류, provider option·연결 설정·전역 요청·메인 설정 불변과 단일 공식 Popup 닫기의 소유권을 포함합니다. UI 검사는 실제 `settings.html`과 SillyTavern 1.18.0 고정 commit의 core·Popup CSS를 결합해 320·360·420·720px에서 공식 닫기의 패널 내부 배치·최소 24px 조작 영역·제목 및 정보 아이콘 비중첩을 확인하고, 브라우저 브리지 native 재사용과 공개 hook fixture를 서로 분리해 실행합니다. 이 검사는 전체 SillyTavern 런타임, 실제 외부 확장의 handler나 원격 요청 성공을 대신하지 않습니다. GitHub Actions의 `ui-regression-evidence-*` artifact에는 성공·실패 PNG와 HTML report가 14일 보관됩니다.
+v0.6.18 저장소에서는 Node 자동 검사 256개와 Playwright Chromium UI 회귀 검사 24개를 별도로 실행합니다. Node 검사는 기존 UI·Registry·Routing·DOM 브리지·진단 schema v2·백업·Provider Integration API 계약에 더해 hookless native Custom·현재 연결 exact 분류, provider별 모델 projection, 모호한 토큰 미분류, provider option·연결 설정·전역 요청·메인 설정 불변과 단일 공식 Popup 닫기의 소유권을 포함합니다. UI 검사는 실제 `settings.html`과 SillyTavern 1.18.0 고정 commit의 core·Popup CSS를 결합해 320·360·420·720px에서 공식 닫기의 패널 내부 배치·최소 24px 조작 영역·제목 및 정보 아이콘 비중첩을 확인하고, 브라우저 브리지 native 재사용과 공개 hook fixture를 서로 분리해 실행합니다. 이 검사는 전체 SillyTavern 런타임, 실제 외부 확장의 handler나 원격 요청 성공을 대신하지 않습니다. GitHub Actions의 `ui-regression-evidence-*` artifact에는 성공·실패 PNG와 HTML report가 14일 보관됩니다.
 
 provider integration 브라우저 fixture는 실제 제품 모듈과 공개 wiring을 실행하지만 Connection Manager와 네트워크는 더미입니다. 자동 검사는 전체 SillyTavern JavaScript 런타임, 실제 외부 확장 코드, 실제 제공업체 API 요청을 실행하지 않습니다. 아래 체크리스트에서 실제 설치 화면, 외부 확장의 provider/model 게시, Network payload와 제공업체 요청 성공을 계속 확인해야 합니다. API 키나 Service Account를 자동 검사에 제공할 필요는 없습니다.
+
+## v0.6.18 추가 검증
+
+- [ ] **[필수][TOOLS-08] 전체 등록 모델 제목 옆에 빗자루 아이콘 하나가 표시되며, 좁은 화면에서도 버튼이 세로로 늘어나거나 제목·정보 아이콘과 겹치지 않는다. 버튼 툴팁은 기본 모델 중복 정리다.**
+- [ ] **[조건부][TOOLS-09] 진단·백업 메뉴가 접힌 상태에서 빗자루를 누르면 목록 바로 아래에 정리 미리보기가 나타난다. 취소·적용 뒤 빗자루로 초점이 돌아오며, 중복이 없으면 안내만 표시된다.**
+- [ ] **[권장][TOOLS-10] 변경 적용과 최근 설정 변경 되돌리기 문구가 버튼 폭 때문에 불필요하게 세로로 쌓이지 않는다.**
 
 ## v0.6.17 추가 검증
 
 - [ ] **[필수][TOOLS-01] 모델 토글로 비활성화하면 선택지에서 사라지고, 다시 켜면 돌아오되 메인 모델을 바꾸지 않는다. 현재 사용 중인 custom-only 모델의 비활성화는 거부된다.**
 - [ ] **[필수][TOOLS-02] 백업 미리보기에서 모델만 병합을 고르면 기존 모델·경로·외부 기록은 보존되고 체크한 항목만 반영된다. 충돌 항목은 현재 상태 유지가 기본이다.**
-- [ ] **[필수][TOOLS-03] 백업 적용 뒤 모델 정리 및 복구의 최근 설정 변경 되돌리기에서 변경 내역을 확인하고 복구한다. 팝업 재개방 후에도 가능하고 새로고침·확장 종료 시 만료된다.**
+- [ ] **[필수][TOOLS-03] 백업 적용 뒤 호환성 진단 및 CMR 설정 백업 → 설정 복구의 최근 설정 변경 되돌리기에서 변경 내역을 확인하고 복구한다. 팝업 재개방 후에도 가능하고 새로고침·확장 종료 시 만료된다.**
 - [ ] **[조건부][TOOLS-04] 기본 모델 중복 정리 미리보기에서 고른 등록만 제거되고 기본 모델·현재 native 선택은 유지된다.**
 - [ ] **[조건부][TOOLS-05] 공용 hook 연동 실패는 상태와 재시도 버튼으로 나타나고 해당 연동만 다시 시도한다. hook이 응답하지 않으면 약 10초 뒤 실패하며 다른 연동의 준비는 막지 않는다.**
 - [ ] **[권장][TOOLS-06] 내용이 null, false, 0 또는 빈 문자열인 JSON 파일은 backup_root_invalid로 거부되고 현재 설정은 보존된다.**
@@ -38,7 +44,7 @@ provider integration 브라우저 fixture는 실제 제품 모듈과 공개 wiri
 ```text
 검증 날짜:
 SillyTavern 버전:
-Custom Model Router 버전: v0.6.17
+Custom Model Router 버전: v0.6.18
 브라우저·OS:
 설치 방식: 신규 / 업데이트
 이전 확장 버전:
@@ -284,7 +290,7 @@ CMR 외부 브리지는 best-effort UI 선택지 주입 기능이며 전역 `fet
 
 ## 10. 확장 전용 백업·복구
 
-- [ ] **[필수][BKP-01] `백업 내보내기`로 `custom-model-router-backup-v0.6.17.json`을 저장한다. 최대 허용 범위인 UTF-8 8,000,000바이트·모델 5,000개·route 256개 안에서 성공한 백업은 다시 가져올 수 있다.**
+- [ ] **[필수][BKP-01] `백업 내보내기`로 `custom-model-router-backup-v0.6.18.json`을 저장한다. 최대 허용 범위인 UTF-8 8,000,000바이트·모델 5,000개·route 256개 안에서 성공한 백업은 다시 가져올 수 있다.**
 - [ ] **[필수][BKP-02] JSON 최상위에 `format`, `schemaVersion`, `createdAt`, `registry`, `purposeRoutes`, `externalIntegrations`만 있고 portable schemaVersion이 `2`인지 확인한다.**
 - [ ] **[필수][BKP-03] Registry에는 provider·model ID·protocol·enabled·선택 상태만 있는지 확인한다.**
 - [ ] **[필수][BKP-04] route에는 provider·model ID·adapter ID·Connection Profile ID만 있는지 확인한다.**
@@ -323,10 +329,10 @@ CMR 외부 브리지는 best-effort UI 선택지 주입 기능이며 전역 `fet
 ## 결과 보고 양식
 
 ```text
-제목: [v0.6.17][제공업체 또는 기능][항목 ID] 짧은 증상
+제목: [v0.6.18][제공업체 또는 기능][항목 ID] 짧은 증상
 
 SillyTavern 버전:
-Custom Model Router 버전: v0.6.17
+Custom Model Router 버전: v0.6.18
 OS / 브라우저:
 신규 설치 또는 업데이트:
 이전 CMR 버전:

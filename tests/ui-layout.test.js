@@ -68,7 +68,7 @@ test('통합 모델 등록·삭제 실행 취소·백업 미리보기는 접근 
     assert.doesNotMatch(html, /cmr_bulk_/);
     assert.match(html, /id="cmr_undo_delete"[^>]*\bhidden\b/);
     assert.match(html, /id="cmr_import_preview"[^>]*\bhidden\b/);
-    assert.match(html, /id="cmr_import_preview_list"[^>]*aria-label="백업 변경 내역"[^>]*tabindex="0"/);
+    assert.match(html, /id="cmr_import_preview_list"[^>]*aria-label="설정 변경 내역"[^>]*tabindex="0"/);
     assert.match(index, /#cmr_add_form'\)\?\.addEventListener\('submit', onAddModel\)/);
     assert.doesNotMatch(index, /cmr_bulk_|onBulkAddModels/);
     assert.match(index, /#cmr_undo_delete'\)\?\.addEventListener\('click', onUndoModelDeletion\)/);
@@ -80,6 +80,24 @@ test('통합 모델 등록·삭제 실행 취소·백업 미리보기는 접근 
     assert.match(css, /\.cmr-import-preview\[hidden\]\s*{[^}]*display:\s*none/s);
     assert.match(css, /\.cmr-change-list\s*{[^}]*max-block-size:[^;}]+;[^}]*overflow-y:\s*auto[^}]*scrollbar-width:\s*none/s);
     assert.match(css, /\.cmr-change-list::\-webkit-scrollbar\s*{[^}]*display:\s*none/s);
+});
+
+test('중복 정리는 목록 제목 옆 아이콘과 접힌 메뉴 밖의 공용 미리보기를 사용한다', async () => {
+    const [html, css] = await readUiFiles();
+    const header = html.slice(html.indexOf('<div class="cmr-list-header">'), html.indexOf('<div id="cmr_model_search_region"'));
+    const button = header.match(/<button\s+id="cmr_cleanup_native"[^>]*>[\s\S]*?<\/button>/)?.[0] ?? '';
+    assert.equal((html.match(/id="cmr_cleanup_native"/g) ?? []).length, 1);
+    assert.match(button, /class="menu_button cmr-icon-button"/);
+    assert.match(button, /title="기본 모델 중복 정리"/);
+    assert.match(button, /aria-label="기본 모델 중복 정리"/);
+    assert.match(button, /aria-controls="cmr_import_preview"/);
+    assert.match(button, /<i class="fa-solid fa-broom" aria-hidden="true"><\/i>/);
+    assert.doesNotMatch(button, />\s*기본 모델 중복 정리\s*</);
+    assert.ok(html.indexOf('id="cmr_model_list"') < html.indexOf('id="cmr_import_preview"'));
+    assert.ok(html.indexOf('id="cmr_import_preview"') < html.indexOf('<details'));
+    assert.doesNotMatch(html, /모델 정리 및 복구/);
+    assert.match(css, /#cmr_undo_settings\s*{[^}]*inline-size:\s*100%\s*!important/s);
+    assert.match(css, /#cmr_settings \.menu_button\s*{[^}]*inline-size:\s*auto/s);
 });
 
 test('모델 목록은 6개 초과 표식에서만 내부 스크롤하고 스크롤바를 숨긴다', async () => {
