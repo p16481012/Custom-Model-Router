@@ -84,7 +84,7 @@ import {
     removeNativeRegistrations,
 } from './src/settings-operations.js';
 
-const EXTENSION_VERSION = '0.6.17';
+const EXTENSION_VERSION = '0.6.18';
 const SETTINGS_KEY = 'customModelRouter';
 const ROUTES_SETTINGS_KEY = 'customModelRouterRouting';
 const EXTERNAL_SETTINGS_KEY = 'customModelRouterExternalIntegrations';
@@ -2121,8 +2121,22 @@ function closeImportPreview(message = '') {
 }
 
 function onCancelImportPreview() {
-    closeImportPreview('백업 가져오기를 취소했습니다.');
-    settingsRoot?.querySelector('#cmr_import_backup_button')?.focus?.();
+    const kind = pendingImportPreview?.kind;
+    closeImportPreview(kind === 'cleanup' ? '기본 모델 중복 정리를 취소했습니다.'
+        : kind === 'undo' ? '설정 되돌리기를 취소했습니다.' : '백업 가져오기를 취소했습니다.');
+    focusSettingsChangeTrigger(kind);
+}
+
+function focusSettingsChangeTrigger(kind) {
+    const selector = kind === 'cleanup' ? '#cmr_cleanup_native'
+        : kind === 'undo' && lastSettingsUndo ? '#cmr_undo_settings' : '#cmr_import_backup_button';
+    const trigger = settingsRoot?.querySelector(selector);
+    // The preview is outside disclosures. A caller may close its source menu
+    // while reviewing changes, so reveal the return target before focusing it.
+    for (let parent = trigger?.parentElement; parent && parent !== settingsRoot; parent = parent.parentElement) {
+        if (parent.tagName === 'DETAILS') parent.open = true;
+    }
+    trigger?.focus?.();
 }
 
 function onApplyImportPreview() {
@@ -2186,7 +2200,7 @@ function applyImportPreview() {
         : pending.parsed.report.status === 'warning'
         ? `백업을 가져왔습니다. ${pending.parsed.report.summary}`
         : '미리보기에서 확인한 Registry, 용도별 경로와 외부 확장 연결 변경을 적용했습니다.');
-    settingsRoot?.querySelector('#cmr_import_backup_button')?.focus?.();
+    focusSettingsChangeTrigger(pending.kind);
 }
 
 async function onImportBackup(event) {

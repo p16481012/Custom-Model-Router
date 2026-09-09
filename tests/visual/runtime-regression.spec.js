@@ -72,23 +72,52 @@ test('제품 모델 병합의 충돌 선택과 세션 내 설정 되돌리기를
     await page.locator('.popup-button-close').click();
     await openPanel(page);
     await openTools(page);
-    await page.getByText('모델 정리 및 복구', { exact: true }).click();
+    await page.getByText('설정 복구', { exact: true }).click();
+    const undoWidth = await page.locator('#cmr_undo_settings').evaluate(button => ({
+        button: button.getBoundingClientRect().width, parent: button.parentElement.clientWidth,
+    }));
+    expect(undoWidth.button).toBeCloseTo(undoWidth.parent, 0);
     await page.locator('#cmr_undo_settings').click();
     await expect(page.locator('#cmr_import_preview_title')).toHaveText('설정 되돌리기 미리보기');
     await expect(page.locator('#cmr_import_preview_summary')).toContainText('삭제 1건');
+    await page.locator('#cmr_import_preview_cancel').click();
+    await expect(page.locator('#cmr_feedback')).toHaveText('설정 되돌리기를 취소했습니다.');
+    await expect(page.locator('#cmr_undo_settings')).toBeFocused();
+    await page.locator('#cmr_undo_settings').click();
+    // The preview remains accessible even when its source menu is collapsed.
+    await openTools(page);
+    await expect(page.locator('#cmr_import_preview')).toBeVisible();
     await page.screenshot({ path: testInfo.outputPath('production-undo-preview.png') });
     await page.locator('#cmr_import_preview_apply').click();
     expect(await page.evaluate(() => CustomModelRouter.getModel('openai', 'existing').enabled)).toBe(true);
     expect(await page.evaluate(() => CustomModelRouter.hasModel('openai', 'incoming'))).toBe(false);
     await expect(page.locator('#cmr_undo_settings')).toBeHidden();
+    await expect(page.locator('#cmr_import_backup_button')).toBeFocused();
 });
 
 test('기본 모델 중복 정리는 native 선택을 유지하고 적용 직전 변경을 재확인한다', async ({ page }) => {
     await page.evaluate(() => CustomModelRouter.registerModel('openai', 'native-model'));
     await openPanel(page);
-    await openTools(page);
-    await page.getByText('모델 정리 및 복구', { exact: true }).click();
-    await page.locator('#cmr_cleanup_native').click();
+    const cleanup = page.getByRole('button', { name: '기본 모델 중복 정리', exact: true });
+    await expect(cleanup).toBeVisible();
+    await expect(page.locator('#cmr_operations_section')).not.toHaveAttribute('open');
+    await cleanup.focus();
+    await page.keyboard.press('Enter');
+    await expect(page.locator('#cmr_import_preview')).toBeVisible();
+    await expect(page.locator('#cmr_import_preview_cancel')).toBeFocused();
+    expect(await page.locator('#cmr_import_preview_apply').evaluate(button => {
+        const range = document.createRange();
+        range.selectNodeContents(button);
+        return range.getClientRects().length;
+    })).toBe(1);
+    expect(await page.locator('#cmr_import_preview').evaluate(node => node.closest('details'))).toBeNull();
+    expect(await page.evaluate(() => CustomModelRouter.hasModel('openai', 'native-model'))).toBe(true);
+    await page.keyboard.press('Enter');
+    await expect(page.locator('#cmr_import_preview')).toBeHidden();
+    await expect(page.locator('#cmr_feedback')).toHaveText('기본 모델 중복 정리를 취소했습니다.');
+    await expect(cleanup).toBeFocused();
+    expect(await page.evaluate(() => CustomModelRouter.hasModel('openai', 'native-model'))).toBe(true);
+    await cleanup.click();
     await expect(page.locator('#cmr_import_preview_summary')).toContainText('삭제');
     await page.evaluate(() => CustomModelRouter.registerModel('openai', 'added-later'));
     await page.locator('#cmr_import_preview_apply').click();
@@ -98,6 +127,54 @@ test('기본 모델 중복 정리는 native 선택을 유지하고 적용 직전
     expect(await page.evaluate(() => CustomModelRouter.hasModel('openai', 'native-model'))).toBe(false);
     expect(await page.evaluate(() => CustomModelRouter.hasModel('openai', 'added-later'))).toBe(true);
     await expect(page.locator('#model_openai_select')).toHaveValue('native-model');
+    await expect(cleanup).toBeFocused();
+    await expect(page.locator('#cmr_operations_section')).not.toHaveAttribute('open');
+    await cleanup.click();
+    await expect(page.locator('#cmr_feedback')).toHaveText('기본 목록과 중복된 등록 모델이 없습니다.');
+    await expect(page.locator('#cmr_import_preview')).toBeHidden();
+});
+
+test('목록의 중복 정리 아이콘은 좁은 화면과 밝은 테마에서도 접힌 메뉴 밖에 정사각형으로 표시된다', async ({ page }, testInfo) => {
+    await page.evaluate(() => {
+        for (const id of ['gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash-lite']) {
+            CustomModelRouter.registerModel('vertexai', id);
+        }
+    });
+    await page.addStyleTag({ content: `
+        :root { --SmartThemeBodyColor: #171717; --SmartThemeBlurTintColor: #fff; --SmartThemeBorderColor: #333; }
+        .menu_button { width: min-content; background: #fff; color: #171717; border: 1px solid #333; box-shadow: 2px 2px #333; }
+    ` });
+    await openPanel(page);
+    const cleanup = page.locator('#cmr_cleanup_native');
+    await expect(cleanup).toHaveCount(1);
+    await expect(cleanup).toHaveAttribute('title', '기본 모델 중복 정리');
+    await expect(cleanup).toHaveAccessibleName('기본 모델 중복 정리');
+    await expect(cleanup).toHaveText('');
+    await expect(cleanup.locator('.fa-broom')).toBeVisible();
+    for (const width of [320, 360, 420, 720]) {
+        await page.setViewportSize({ width, height: 800 });
+        await cleanup.scrollIntoViewIfNeeded();
+        await expect(cleanup).toBeInViewport();
+        const metrics = await cleanup.evaluate(button => {
+            const box = button.getBoundingClientRect();
+            const heading = document.querySelector('#cmr_list_title').getBoundingClientRect();
+            const help = document.querySelector('#cmr_model_list_help_trigger').getBoundingClientRect();
+            const panel = document.querySelector('#cmr_settings');
+            return {
+                width: box.width, height: box.height,
+                inlineWithTitle: Math.abs((box.top + box.bottom) / 2 - (heading.top + heading.bottom) / 2) < 1,
+                afterHelp: box.left >= help.right,
+                inHeader: Boolean(button.closest('.cmr-list-header')),
+                inDetails: Boolean(button.closest('details')),
+                overflow: panel.scrollWidth > panel.clientWidth + 1,
+            };
+        });
+        expect(metrics.width).toBeGreaterThanOrEqual(24);
+        expect(metrics.width).toBeCloseTo(metrics.height, 1);
+        expect(metrics).toMatchObject({ inlineWithTitle: true, afterHelp: true, inHeader: true, inDetails: false, overflow: false });
+        await expect(page.locator('#cmr_operations_section')).not.toHaveAttribute('open');
+        await page.screenshot({ path: testInfo.outputPath(`cleanup-button-${width}.png`) });
+    }
 });
 
 test('현재 사용 중인 custom-only 모델의 비활성화와 백업 삭제는 차단된다', async ({ page }) => {

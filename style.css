@@ -210,6 +210,7 @@
     align-items: center !important;
     box-sizing: border-box;
     display: inline-flex !important;
+    inline-size: auto;
     justify-content: center !important;
     line-height: 1.2;
     margin: 0 !important;
@@ -852,6 +853,10 @@
     white-space: nowrap;
 }
 
+#cmr_settings #cmr_undo_settings {
+    inline-size: 100% !important;
+    min-block-size: 2.25rem;
+}
 #cmr_settings #cmr_undo_settings[hidden] { display: none !important; }
 
 #cmr_settings #cmr_import_mode_label { display: grid; gap: 0.3rem; }

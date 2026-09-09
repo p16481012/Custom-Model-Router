@@ -60,7 +60,7 @@ test('설정 복구는 파일 선택 직후 적용하지 않고 변경 미리보
 
     assert.match(html, /id="cmr_import_preview"[^>]*\bhidden\b/);
     assert.match(html, /id="cmr_import_preview_summary"[^>]*role="status"/);
-    assert.match(html, /id="cmr_import_preview_list"[^>]*aria-label="백업 변경 내역"/);
+    assert.match(html, /id="cmr_import_preview_list"[^>]*aria-label="설정 변경 내역"/);
     assert.match(html, /id="cmr_import_preview_cancel"/);
     assert.match(html, /id="cmr_import_preview_apply"/);
     assert.match(source, /pendingImportPreview\s*=\s*\{/);
