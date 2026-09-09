@@ -685,7 +685,7 @@ SillyTavern 1.18.0의 공용 Popup CSS는 닫기 컨트롤을 테두리 바깥�
 22. hookless exact Custom/OpenAI-compatible 선택에는 `custom` Registry 모델만, exact SillyTavern 현재 연결 선택에는 현재 활성 ST provider 모델만 투영됩니다.
 23. native 재사용 전후 provider option·값·endpoint·API 키·전역 요청 함수·메인 설정은 바뀌지 않고, 외부 handler의 실제 `model` 사용은 기능 실행으로 별도 확인합니다.
 
-실제 검증에서 발견되는 v0.6 범위의 후속 결함은 `v0.6.18`, `v0.6.19`, ... 패치 버전으로 수정합니다.
+실제 검증에서 발견되는 v0.6 범위의 후속 결함은 다음 `v0.6.x` 패치 버전으로 수정합니다.
 
 ## 업데이트 규칙
 
