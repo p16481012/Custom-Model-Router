@@ -53,7 +53,7 @@ function createPlanIssue(line, id, code, message, source = null) {
     return issue;
 }
 
-export function createBulkModelRegistrationPlan(settings, providerValue, input, options = {}) {
+export function createBulkModelRegistrationPlan(settings, providerValue, input) {
     const providerId = normalizeProviderId(providerValue);
     const provider = getProvider(providerId);
     if (!provider) {
@@ -129,16 +129,9 @@ export function createBulkModelRegistrationPlan(settings, providerValue, input, 
             ));
             return;
         }
-        if (typeof options.isUnavailableModelId === 'function' && options.isUnavailableModelId(id) === true) {
-            duplicates.push(createPlanIssue(
-                line,
-                id,
-                'core_duplicate',
-                '이미 SillyTavern 기본 목록에 있는 모델 ID입니다.',
-                'native',
-            ));
-            return;
-        }
+        // A host's native catalog does not imply that external extensions have
+        // the same options. Deduplicate against each target when projecting,
+        // not when explicitly registering a model for use across extensions.
         additions.push({ line, id });
     });
 

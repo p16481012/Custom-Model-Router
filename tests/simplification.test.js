@@ -124,7 +124,7 @@ test('수동 UI 샌드박스도 모델 등록·복구 미리보기·외부 목�
     }
     assert.equal((html.match(/class="cmr-info-button"/g) ?? []).length, 5);
     assert.equal((html.match(/class="cmr-help-popover" popover="auto"/g) ?? []).length, 5);
-    assert.match(html, /목록에 없는 모델을 등록하고, 실제 선택은 API Connections에서 합니다/);
+    assert.match(html, /사용할 모델을 등록하고, 실제 선택은 각 모델 선택기에서 합니다/);
     assert.match(html, /등록 위치만 정하며 현재 모델은 바뀌지 않습니다/);
     assert.match(html, /한 줄에 하나 · 최대 200개 · 오류가 있으면 전체 취소/);
     assert.match(html, /실제 요청 적용은 외부 기능에서 직접 확인하세요/);

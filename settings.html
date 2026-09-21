@@ -6,7 +6,7 @@
         </div>
     </header>
 
-    <p class="cmr-description">목록에 없는 모델을 등록하고, 실제 선택은 API Connections에서 합니다.</p>
+    <p class="cmr-description">사용할 모델을 등록하고, 실제 선택은 각 모델 선택기에서 합니다.</p>
 
     <div class="cmr-provider-field">
         <div class="cmr-label-row">
@@ -46,8 +46,8 @@
                 <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
             </button>
             <div id="cmr_model_help" class="cmr-help-popover" popover="auto">
-                <span class="cmr-sentence">제공업체가 허용하는 정확한 모델 ID를 입력합니다.</span>
-                <span class="cmr-sentence">빈 줄·중복·SillyTavern 기본 모델은 건너뜁니다.</span>
+                <span class="cmr-sentence">SillyTavern 기본 모델도 등록할 수 있습니다.</span>
+                <span class="cmr-sentence">빈 줄·입력 중복·CMR 기등록은 건너뜁니다.</span>
                 <span class="cmr-sentence">잘못된 행이 하나라도 있으면 아무 모델도 등록하지 않습니다.</span>
             </div>
         </div>
@@ -136,6 +136,7 @@
 
     <section id="cmr_import_preview" class="cmr-import-preview" aria-labelledby="cmr_import_preview_title" hidden>
         <h3 id="cmr_import_preview_title">백업 가져오기 미리보기</h3>
+        <p id="cmr_cleanup_warning" class="cmr-tool-description" hidden>기본 모델이어도 외부 확장에서 쓰는 등록은 정리 대상에서 빼 주세요.</p>
         <label id="cmr_import_mode_label" for="cmr_import_mode">가져오기 방식
             <select id="cmr_import_mode" class="text_pole">
                 <option value="replace">전체 교체</option>
