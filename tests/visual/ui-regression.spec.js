@@ -370,7 +370,7 @@ async function exerciseHelpPopovers(page) {
     }
 
     await expect(page.locator('.cmr-description')).toHaveText(
-        '목록에 없는 모델을 등록하고, 실제 선택은 API Connections에서 합니다.',
+        '사용할 모델을 등록하고, 실제 선택은 각 모델 선택기에서 합니다.',
     );
     await expect(page.locator('#cmr_provider_hint')).toHaveText('등록 위치만 정하며 현재 모델은 바뀌지 않습니다.');
     await expect(page.locator('#cmr_model_hint')).toHaveText('한 줄에 하나 · 최대 200개 · 오류가 있으면 전체 취소');

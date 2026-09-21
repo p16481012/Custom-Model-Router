@@ -84,7 +84,7 @@ import {
     removeNativeRegistrations,
 } from './src/settings-operations.js';
 
-const EXTENSION_VERSION = '0.6.18';
+const EXTENSION_VERSION = '0.6.19';
 const SETTINGS_KEY = 'customModelRouter';
 const ROUTES_SETTINGS_KEY = 'customModelRouterRouting';
 const EXTERNAL_SETTINGS_KEY = 'customModelRouterExternalIntegrations';
@@ -633,7 +633,7 @@ function renderProviderFields() {
     const help = settingsRoot.querySelector('#cmr_model_help');
     if (help) {
         help.textContent = formatUiSentences(
-            `${getProviderHelp(provider)} 모델 ID 하나를 입력하거나 여러 개면 한 줄에 하나씩 최대 200개를 입력합니다. 빈 줄·중복·SillyTavern 기본 모델은 건너뛰며, 잘못된 행이 하나라도 있으면 아무 모델도 등록하지 않습니다.`,
+            `${getProviderHelp(provider)} SillyTavern 기본 모델도 등록할 수 있습니다. 빈 줄·입력 중복·CMR 기등록은 건너뜁니다. 잘못된 행이 하나라도 있으면 아무 모델도 등록하지 않습니다.`,
         );
     }
 }
@@ -2052,6 +2052,8 @@ function renderImportPreview() {
     const title = settingsRoot.querySelector('#cmr_import_preview_title');
     if (title) title.textContent = pending.kind === 'undo' ? '설정 되돌리기 미리보기'
         : pending.kind === 'cleanup' ? '기본 모델 중복 정리 미리보기' : '백업 가져오기 미리보기';
+    const cleanupWarning = settingsRoot.querySelector('#cmr_cleanup_warning');
+    if (cleanupWarning) cleanupWarning.hidden = pending.kind !== 'cleanup';
     const modeLabel = settingsRoot.querySelector('#cmr_import_mode_label');
     const modeSelect = settingsRoot.querySelector('#cmr_import_mode');
     if (modeLabel) modeLabel.hidden = pending.kind !== 'import';
@@ -2412,18 +2414,10 @@ function onAddModel(event) {
         if (!provider) {
             throw new ModelRegistryError('unsupported_provider', '지원하지 않는 제공업체입니다.');
         }
-        const control = getProviderControl(provider);
         const plan = createBulkModelRegistrationPlan(
             settings,
             provider.id,
             input?.value,
-            {
-                isUnavailableModelId: id => (
-                    provider.controlType === 'select'
-                    && Boolean(control)
-                    && isNativeModelOption(control, id)
-                ),
-            },
         );
         if (!plan.ok) {
             const examples = plan.invalid.slice(0, 3)
@@ -2455,7 +2449,7 @@ function onAddModel(event) {
             ? ` 중복 ${plan.duplicates.length}개는 건너뛰었습니다.`
             : '';
         announce(plan.additions.length === 1
-            ? `${provider.label}에 ${plan.additions[0].id} 모델을 등록했습니다.${duplicateSuffix} 사용할 모델은 API Connections의 모델 선택기 또는 입력란에서 선택·입력하세요.`
+            ? `${provider.label}에 ${plan.additions[0].id} 모델을 등록했습니다.${duplicateSuffix} 사용할 모델은 각 모델 선택기 또는 입력란에서 선택·입력하세요.`
             : `${provider.label}에 모델 ${plan.additions.length}개를 등록했습니다.${duplicateSuffix}`);
     } catch (error) {
         input?.setAttribute('aria-invalid', 'true');

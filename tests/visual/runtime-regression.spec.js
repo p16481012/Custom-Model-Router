@@ -43,6 +43,78 @@ test('제품 UI의 여러 줄 등록·활성 토글·삭제 실행 취소가 좁
     await expect(page.locator('#cmr_manager_dialog')).toHaveCount(0);
 });
 
+test('기본 모델의 단일·여러 줄 등록은 외부의 부족한 목록을 채우고 native 옵션·현재 선택을 보존한다', async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: 568 });
+    await page.evaluate(() => {
+        const core = document.querySelector('#model_openai_select');
+        const alternative = new Option('Native alternative', 'native-alternative');
+        core.append(alternative, new Option('Native second alternative', 'native-second-alternative'));
+        const subset = document.createElement('select');
+        subset.id = 'subset_chat_model';
+        subset.append(new Option('Current native model only', 'native-model'));
+        const existing = document.createElement('select');
+        existing.id = 'existing_chat_model';
+        const externalAlternative = new Option('Already available', 'native-alternative');
+        existing.append(new Option('Current native model', 'native-model'), externalAlternative);
+        document.body.append(subset, existing);
+        const events = { core: 0, subset: 0, existing: 0 };
+        for (const [key, select] of Object.entries({ core, subset, existing })) {
+            select.addEventListener('change', () => { events[key] += 1; });
+        }
+        cmrRuntime.nativeRegistration = { core, subset, existing, alternative, externalAlternative, events };
+    });
+    await openPanel(page);
+    await page.locator('#cmr_model_help_trigger').click();
+    const help = page.locator('#cmr_model_help');
+    await expect(help).toBeVisible();
+    await expect(help).toContainText('SillyTavern 기본 모델도 등록할 수 있습니다.');
+    const helpBox = await help.boundingBox();
+    expect(helpBox.y).toBeGreaterThanOrEqual(0);
+    expect(helpBox.y + helpBox.height).toBeLessThanOrEqual(569);
+    await page.keyboard.press('Escape');
+    const input = page.locator('#cmr_model_id');
+    const submit = page.locator('#cmr_add_form button[type="submit"]');
+    await input.fill('native-alternative');
+    await submit.click();
+    await expect(page.locator('#cmr_feedback')).toContainText('native-alternative 모델을 등록했습니다.');
+    await expect(page.locator('#cmr_model_list .cmr-model-row')).toHaveCount(1);
+    await expect(page.locator('#subset_chat_model option[value="native-alternative"]')).toHaveCount(1);
+    await expect(page.locator('#subset_chat_model option[value="native-alternative"]')).toHaveAttribute('data-cmr-provider', 'openai');
+    await input.fill('native-model\nnative-alternative\nnative-second-alternative\nnative-second-alternative');
+    await submit.click();
+    await expect(page.locator('#cmr_feedback')).toContainText('모델 2개를 등록했습니다. 중복 2개');
+    await expect(page.locator('#cmr_model_list .cmr-model-row')).toHaveCount(3);
+    for (const selector of ['#model_openai_select', '#subset_chat_model', '#existing_chat_model']) {
+        for (const id of ['native-model', 'native-alternative', 'native-second-alternative']) {
+            await expect(page.locator(`${selector} option[value="${id}"]`)).toHaveCount(1);
+        }
+        await expect(page.locator(selector)).toHaveValue('native-model');
+    }
+    await expect(page.locator('#model_openai_select optgroup[data-cmr-provider]')).toHaveCount(0);
+    expect(await page.evaluate(() => {
+        const { core, existing, alternative, externalAlternative, events } = cmrRuntime.nativeRegistration;
+        return {
+            corePreserved: alternative.parentElement === core,
+            externalPreserved: externalAlternative.parentElement === existing,
+            events,
+        };
+    })).toEqual({ corePreserved: true, externalPreserved: true, events: { core: 0, subset: 0, existing: 0 } });
+
+    // Model availability and actual extension requests are separate contracts:
+    // this fixture checks native selection/events, not a remote provider call.
+    await page.locator('.popup-button-close').click();
+    await page.locator('#subset_chat_model').selectOption('native-alternative');
+    await expect(page.locator('#subset_chat_model')).toHaveValue('native-alternative');
+    await expect(page.locator('#model_openai_select')).toHaveValue('native-model');
+    expect(await page.evaluate(() => cmrRuntime.nativeRegistration.events.subset)).toBe(1);
+    await page.evaluate(async () => { await cmrRuntime.destroy(); await cmrRuntime.init(); });
+    expect(await page.evaluate(() => CustomModelRouter.listModels().map(model => model.id).sort())).toEqual([
+        'native-alternative', 'native-model', 'native-second-alternative',
+    ]);
+    await expect(page.locator('#subset_chat_model option[value="native-alternative"]')).toHaveCount(1);
+    await expect(page.locator('#model_openai_select option[value="native-alternative"]')).toHaveCount(1);
+});
+
 test('제품 가져오기 경로가 falsy 백업을 거부하고 현재 설정을 보존한다', async ({ page }) => {
     await page.evaluate(() => CustomModelRouter.registerModel('openai', 'keep-me'));
     await openPanel(page);
@@ -105,6 +177,8 @@ test('기본 모델 중복 정리는 native 선택을 유지하고 적용 직전
     await page.keyboard.press('Enter');
     await expect(page.locator('#cmr_import_preview')).toBeVisible();
     await expect(page.locator('#cmr_import_preview_cancel')).toBeFocused();
+    await expect(page.locator('#cmr_cleanup_warning')).toBeVisible();
+    await expect(page.locator('#cmr_cleanup_warning')).toContainText('외부 확장에서 쓰는 등록');
     expect(await page.locator('#cmr_import_preview_apply').evaluate(button => {
         const range = document.createRange();
         range.selectNodeContents(button);

@@ -1138,7 +1138,7 @@ test('init은 24개 제공업체를 연결하고 API Connections Popup을 한 �
         assert.ok(harness.observers.some(observer => observer.target === harness.observerRoot));
         assert.ok(harness.observers.some(observer => observer.target === harness.documentRef.body));
         assert.equal(globalThis.CustomModelRouter.apiVersion, '1.2.0');
-        assert.equal(globalThis.CustomModelRouter.extensionVersion, '0.6.18');
+        assert.equal(globalThis.CustomModelRouter.extensionVersion, '0.6.19');
         assert.equal(globalThis.CustomModelRouter.routing.apiVersion, '1.0.0');
         assert.equal(globalThis.CustomModelRouter.getSnapshot().models.length, 1);
 
@@ -1685,7 +1685,7 @@ test('비활성 등록 모델도 런처·전체 목록·검색에 남고 주입 
     }
 });
 
-test('통합 모델 등록 입력은 여러 줄 오류를 원자적으로 중단하고 중복·native 모델만 건너뛴다', async () => {
+test('통합 모델 등록 입력은 여러 줄 오류를 원자적으로 중단하고 native 모델은 등록한다', async () => {
     const harness = createHarness();
     const restoreGlobals = installBrowserGlobals(harness);
     try {
@@ -1711,6 +1711,8 @@ test('통합 모델 등록 입력은 여러 줄 오류를 원자적으로 중단
         assert.match(panel.querySelector('#cmr_feedback').textContent, /아무 모델도 등록하지 않았습니다/);
 
         const nativeModelId = getProvider('vertexai').fallbackModelIds[0];
+        const nativeOption = harness.controls.get('vertexai').options.find(option => option.value === nativeModelId);
+        const currentValue = harness.controls.get('vertexai').value;
         input.value = [
             VERTEX_MODEL_ID,
             'gemini-bulk-one',
@@ -1727,8 +1729,12 @@ test('통합 모델 등록 입력은 여러 줄 오류를 원자적으로 중단
         assert.ok(globalThis.CustomModelRouter.getModel('vertexai', 'gemini-bulk-one'));
         assert.ok(globalThis.CustomModelRouter.getModel('vertexai', 'gemini-bulk-two'));
         assert.equal(harness.saveCallCount, saveCountBefore + 1);
-        assert.match(panel.querySelector('#cmr_feedback').textContent, /모델 2개를 등록/);
-        assert.match(panel.querySelector('#cmr_feedback').textContent, /중복 3개/);
+        assert.ok(globalThis.CustomModelRouter.getModel('vertexai', nativeModelId));
+        assert.match(panel.querySelector('#cmr_feedback').textContent, /모델 3개를 등록/);
+        assert.match(panel.querySelector('#cmr_feedback').textContent, /중복 2개/);
+        const nativeOptions = harness.controls.get('vertexai').options.filter(option => option.value === nativeModelId);
+        assert.deepEqual(nativeOptions, [nativeOption]);
+        assert.equal(harness.controls.get('vertexai').value, currentValue);
     } finally {
         await destroy();
         restoreGlobals();

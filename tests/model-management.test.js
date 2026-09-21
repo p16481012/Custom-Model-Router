@@ -42,14 +42,12 @@ test('여러 줄 모델 ID는 빈 줄을 무시하고 신규·중복·잘못된 
         settings,
         'openai',
         '\nnew-one\nalready-there\nnew-one\nbad id\nnative-one\n',
-        { isUnavailableModelId: id => id === 'native-one' },
     );
     assert.equal(plan.ok, false);
-    assert.deepEqual(plan.additions, [{ line: 2, id: 'new-one' }]);
+    assert.deepEqual(plan.additions, [{ line: 2, id: 'new-one' }, { line: 6, id: 'native-one' }]);
     assert.deepEqual(plan.duplicates.map(item => item.code), [
         'duplicate_registry',
         'duplicate_input',
-        'core_duplicate',
     ]);
     assert.equal(plan.invalid[0].line, 5);
     assert.throws(
@@ -68,6 +66,21 @@ test('유효한 여러 줄 계획은 한 번에 적용하며 입력 중복은 �
     const settings = applyBulkModelRegistrationPlan(normalizeSettings(), plan);
     assert.deepEqual(settings.models.map(model => model.id), ['gemini-a', 'gemini-b']);
     assert.equal(plan.duplicates.length, 1);
+});
+
+test('기본 카탈로그 모델도 등록하고 동일 제공업체의 등록·입력 중복만 건너뛴다', () => {
+    const original = addModel(normalizeSettings(), 'vertexai', 'gemini-2.5-flash');
+    const plan = createBulkModelRegistrationPlan(original, 'makersuite', 'gemini-2.5-flash\ngemini-2.5-flash');
+    assert.equal(plan.ok, true);
+    assert.deepEqual(plan.additions, [{ line: 1, id: 'gemini-2.5-flash' }]);
+    assert.deepEqual(plan.duplicates.map(issue => issue.code), ['duplicate_input']);
+    const registered = applyBulkModelRegistrationPlan(original, plan);
+    assert.deepEqual(registered.models.map(model => [model.provider, model.id]), [
+        ['vertexai', 'gemini-2.5-flash'], ['makersuite', 'gemini-2.5-flash'],
+    ]);
+    const repeated = createBulkModelRegistrationPlan(registered, 'makersuite', 'gemini-2.5-flash');
+    assert.deepEqual(repeated.additions, []);
+    assert.deepEqual(repeated.duplicates.map(issue => issue.code), ['duplicate_registry']);
 });
 
 test('대량 입력의 전체 길이와 행 수를 제한한다', () => {
