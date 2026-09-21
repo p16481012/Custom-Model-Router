@@ -47,6 +47,7 @@ function createHarness({
     sendRequest,
     disposeTimeoutMs,
     hookTimeoutMs,
+    getModels,
 } = {}) {
     const profileSecret = 'PROFILE_API_KEY_SHOULD_NOT_LEAK';
     const endpointSecret = 'https://private.example.invalid/v1';
@@ -98,6 +99,7 @@ function createHarness({
     const errors = [];
     const controller = createProviderIntegrationController({
         readRegistrySettings: () => registrySettings,
+        getModels,
         getContext: () => context,
         onError: error => errors.push(error),
         disposeTimeoutMs,
@@ -207,6 +209,42 @@ function createValidPublicationReceipt({
         dispose: onDispose,
     });
 }
+
+test('공용 hook은 등록 없는 기본 모델도 게시·실행하고 제거 직후 요청은 거부한다', async () => {
+    let available = [{ provider: 'openai', id: 'native-only', enabled: true, source: 'native' }];
+    const harness = createHarness({ modelIds: [], getModels: () => available });
+    let execute;
+    let published;
+    const registration = harness.controller.api.registerConsumer(createDescriptor(), {
+        installHandler(binding) { execute = binding.execute; return createValidHandlerReceipt(); },
+        publishModels(binding) { published = binding.models; return createValidPublicationReceipt(); },
+    });
+    await registration.ready;
+    assert.deepEqual(published, [{ provider: 'openai', id: 'native-only', protocol: 'openai-chat-completions' }]);
+    await execute({ modelId: 'native-only', prompt: 'test', maxTokens: 8 });
+    assert.equal(harness.sendCalls.length, 1);
+    available = [];
+    await assert.rejects(execute({ modelId: 'native-only', prompt: 'test', maxTokens: 8 }), { code: 'model_not_ready' });
+    assert.equal(harness.sendCalls.length, 1);
+    await harness.controller.destroy();
+});
+
+test('공용 hook 카탈로그는 다른 provider·비활성·잘못된 모델을 거부하고 중복을 합친다', async () => {
+    const harness = createHarness({ provider: 'custom', modelIds: [], getModels: () => [
+        { provider: 'custom', id: 'vendor/model' }, { provider: 'custom', id: 'vendor/model' },
+        { provider: 'openai', id: 'other' }, { provider: 'custom', id: 'off', enabled: false },
+        { provider: 'custom', id: 'bad model' },
+    ] });
+    let models;
+    const registration = harness.controller.api.registerConsumer(createDescriptor({ strategies: [PROVIDER_INTEGRATION_STRATEGIES.OPENAI_COMPATIBLE] }), {
+        installHandler: () => createValidHandlerReceipt(),
+        publishModels(binding) { models = binding.models; return createValidPublicationReceipt(); },
+    });
+    await registration.ready;
+    assert.deepEqual(models.map(model => model.id), ['vendor/model']);
+    assert.equal(harness.sendCalls.length, 0);
+    await harness.controller.destroy();
+});
 
 test('API contract is versioned, fail-closed, and exposes only the generic safe strategies', () => {
     assert.equal(isProviderIntegrationApiCompatible('1.0.0'), true);
@@ -338,7 +376,7 @@ test('custom selected profile enables only the OpenAI-compatible strategy', asyn
     assert.equal(installs[0].strategy, 'openai-compatible');
     assert.deepEqual(installs[0].provider, {
         id: 'cmr.openai-compatible',
-        label: 'OpenAI-compatible · 사용자 모델',
+        label: 'OpenAI-compatible · CMR 모델',
         source: 'custom',
         protocol: 'openai-compatible',
     });

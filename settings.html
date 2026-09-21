@@ -6,7 +6,7 @@
         </div>
     </header>
 
-    <p class="cmr-description">사용할 모델을 등록하고, 실제 선택은 각 모델 선택기에서 합니다.</p>
+    <p class="cmr-description">기본 모델은 자동 제공됩니다. 목록에 없는 모델을 등록하세요.</p>
 
     <div class="cmr-provider-field">
         <div class="cmr-label-row">
@@ -46,7 +46,7 @@
                 <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
             </button>
             <div id="cmr_model_help" class="cmr-help-popover" popover="auto">
-                <span class="cmr-sentence">SillyTavern 기본 모델도 등록할 수 있습니다.</span>
+                <span class="cmr-sentence">현재 로드된 기본 모델은 별도 등록 없이 외부에 제공됩니다.</span>
                 <span class="cmr-sentence">빈 줄·입력 중복·CMR 기등록은 건너뜁니다.</span>
                 <span class="cmr-sentence">잘못된 행이 하나라도 있으면 아무 모델도 등록하지 않습니다.</span>
             </div>
@@ -96,7 +96,7 @@
                     <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
                 </button>
                 <div id="cmr_model_list_help" class="cmr-help-popover" popover="auto">
-                    <span class="cmr-sentence">등록 모델은 제공업체별로 정리됩니다.</span>
+                    <span class="cmr-sentence">직접 등록한 모델만 관리합니다. 기본 모델은 저장하지 않습니다.</span>
                     <span class="cmr-sentence">지원되는 SillyTavern·외부 확장 모델 칸에 추가됩니다.</span>
                     <span class="cmr-sentence">비활성 모델은 이 목록에만 남고 선택기에는 표시되지 않습니다.</span>
                     <span class="cmr-sentence">자유 입력 방식은 기존 입력란에 모델 ID를 직접 입력합니다.</span>
@@ -136,7 +136,7 @@
 
     <section id="cmr_import_preview" class="cmr-import-preview" aria-labelledby="cmr_import_preview_title" hidden>
         <h3 id="cmr_import_preview_title">백업 가져오기 미리보기</h3>
-        <p id="cmr_cleanup_warning" class="cmr-tool-description" hidden>기본 모델이어도 외부 확장에서 쓰는 등록은 정리 대상에서 빼 주세요.</p>
+        <p id="cmr_cleanup_warning" class="cmr-tool-description" hidden>정리한 기본 모델은 현재 목록에서 자동 제공됩니다. 수동 등록을 유지할 항목은 빼 주세요.</p>
         <label id="cmr_import_mode_label" for="cmr_import_mode">가져오기 방식
             <select id="cmr_import_mode" class="text_pole">
                 <option value="replace">전체 교체</option>
@@ -234,7 +234,7 @@
                             <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
                         </button>
                         <div id="cmr_external_help" class="cmr-help-popover" popover="auto">
-                            <span class="cmr-sentence">안전한 Chat Completion 모델 칸에는 등록 모델을 자동으로 표시합니다.</span>
+                            <span class="cmr-sentence">안전한 Chat Completion 모델 칸에 기본·등록 모델을 함께 표시합니다.</span>
                             <span class="cmr-sentence">연결 실패와 사용자가 제외한 대상만 기본 목록에 표시합니다.</span>
                             <span class="cmr-sentence">선택지가 보여도 실제 요청에 사용됐다는 뜻은 아닙니다.</span>
                         </div>

@@ -1,6 +1,6 @@
 # 공개 Registry 및 Provider Integration API
 
-Custom Model Router v0.6.19은 다른 SillyTavern 확장이 내부 파일 경로에 의존하지 않고 등록 모델, 공용 provider 연동과 용도별 라우팅을 사용할 수 있도록 `globalThis.CustomModelRouter`를 제공합니다. Registry API 계약 버전은 `1.2.0`, `CustomModelRouter.integrations`의 Provider Integration API 계약 버전은 `1.1.0`, Routing API 계약 버전은 `1.0.0`입니다. Registry `1.2.0`은 Integration API를 추가한 하위 호환 minor 갱신이며 Routing API는 v0.5.0의 `1.0.0` 계약을 유지합니다.
+Custom Model Router v0.6.20은 다른 SillyTavern 확장이 내부 파일 경로에 의존하지 않고 등록 모델, 공용 provider 연동과 용도별 라우팅을 사용할 수 있도록 `globalThis.CustomModelRouter`를 제공합니다. Registry API 계약 버전은 `1.2.0`, `CustomModelRouter.integrations`의 Provider Integration API 계약 버전은 `1.1.0`, Routing API 계약 버전은 `1.0.0`입니다. Registry `1.2.0`은 Integration API를 추가한 하위 호환 minor 갱신이며 Routing API는 v0.5.0의 `1.0.0` 계약을 유지합니다.
 
 v0.6.0의 범용 DOM 모델 브리지, v0.6.15의 hookless native provider option 재사용, 호환성 진단과 설정 백업·복구, v0.6.7의 Playwright UI 회귀 검사 인프라는 Registry/Routing 호출 계약에 포함되지 않습니다. v0.6.14의 Provider Integration API는 공개 hook을 명시적으로 등록한 소비 확장에만 적용되며 hookless native 재사용과 별도 경로입니다. 대상별 제외·복구와 기존 UI 선택지 주입 상태는 진단 섹션의 고급 외부 연결 관리에 있고, 실제 요청 반영은 별도로 확인해야 합니다. 외부 저장 schema v2 역시 공개 API 호출 계약과 별개입니다. Routing API는 개발자 또는 연동 확장이 명시적으로 사용하는 opt-in 계약이며 일반 라우팅 UI는 없습니다. 용도별 경로에는 Connection Profile ID만 저장되고 프로필 본문·API 키·endpoint는 복제되지 않습니다.
 
@@ -18,6 +18,12 @@ if (!registry.integrations?.isCompatible('1.0.0')) {
 ```
 
 호환성은 같은 major 안에서 요청한 최소 버전을 충족할 때만 참입니다. 확장 자체 버전은 `extensionVersion`, API 계약 버전은 `apiVersion`으로 구분합니다.
+
+## 기본 모델 카탈로그와 Registry의 구분
+
+v0.6.20부터 제품 DOM 브리지와 Provider Integration hook은 현재 로드된 core 기본 모델과 활성 수동 등록을 provider·ID로 합쳐 제공합니다. 기본 모델은 설정·백업에 복사하지 않으며 아래 Registry 조회·변경 API와 Routing API의 등록 계약도 바꾸지 않습니다. `listModels()`는 여전히 수동 Registry만 반환합니다.
+
+23개 알려진 core select와 Custom의 `model_custom_select_fill`·`model_custom_select`만 읽습니다. 비어 있는 안내, disabled/hidden, CMR 소유 옵션은 제외합니다. 직접 등록은 보존하고 비활성 수동 등록이 기본 참조보다 우선합니다. 아직 로드되지 않은 목록을 조회하거나 임의 input 값을 모델 목록으로 추측하지 않습니다. hook 요청은 실행 직전 현재 가용성을 검사하므로 목록에서 제거된 native 모델은 `model_not_ready`로 거부합니다.
 
 ## 조회
 
@@ -75,8 +81,8 @@ v0.6.17의 하위 호환 갱신입니다. 기존 `1.0.0` consumer 계약·요청
 
 ### 세 가지 공용 연동 경계
 
-1. **선택된 SillyTavern 연결 상속** (`sillytavern-inherited`): 현재 선택된 Connection Manager 프로필이 Chat Completion 프로필이고 source가 CMR Registry provider와 일치할 때, 해당 비-Custom provider의 활성 Registry 모델과 요청 handler를 준비합니다.
-2. **선택된 Custom OpenAI-compatible 특화** (`openai-compatible`): 현재 선택된 Connection Manager 프로필 source가 `Custom`일 때만 `custom` Registry 모델과 OpenAI-compatible 요청 handler를 준비합니다.
+1. **선택된 SillyTavern 연결 상속** (`sillytavern-inherited`): 현재 선택된 Connection Manager 프로필이 Chat Completion 프로필이고 source가 CMR 지원 provider와 일치할 때, 해당 비-Custom provider의 기본·활성 등록 모델과 요청 handler를 준비합니다.
+2. **선택된 Custom OpenAI-compatible 특화** (`openai-compatible`): 현재 선택된 Connection Manager 프로필 source가 `Custom`일 때만 `custom`의 로드된 기본·활성 등록 모델과 OpenAI-compatible 요청 handler를 준비합니다.
 3. **버전이 명시된 공개 provider registry/hook**: 외부 확장이 Integration API `1.0.0`의 descriptor와 `installHandler`·`publishModels` hook을 등록해 위 handler와 모델을 자신의 provider UI·요청 경로에 수용합니다.
 
 앞의 두 항목은 공개 hook 소비 확장에 제공하는 공용 backend 전략입니다. CMR이 hookless 확장 화면에 자동으로 provider를 삽입한다는 의미가 아닙니다. 기존 v0.6 DOM 모델 브리지와 v0.6.15 native provider option 재사용은 별도 계층으로 계속 동작하므로 hookless 확장이라도 안전하게 감지된 표준 모델 `select`·텍스트 `input`·`datalist`에는 모델 선택지가 표시될 수 있습니다. 이 경로는 `installHandler`·`publishModels`를 호출하지 않습니다.
@@ -169,11 +175,11 @@ binding은 다음 순서를 모두 통과해야만 `ready`가 됩니다.
 
 1. CMR이 `installHandler()`에 동결된 provider descriptor, 안전 capability, `execute`와 binding `signal`을 전달합니다.
 2. 소비 확장이 `requestHandlerBound: true`, 고유 `handlerToken`, `dispose()`가 있는 영수증을 반환합니다.
-3. CMR이 그 `handlerToken`과 현재 provider의 활성 Registry 모델을 `publishModels()`에 전달합니다.
+3. CMR이 그 `handlerToken`과 현재 provider의 기본·활성 등록 모델을 `publishModels()`에 전달합니다.
 4. 소비 확장이 `modelsPublished: true`, 고유 `publicationToken`, `updateModels()`, `dispose()`가 있는 영수증을 반환합니다.
 5. 두 영수증이 유효하고 binding이 아직 활성일 때만 상태와 모델 수가 `ready`로 공개됩니다.
 
-handler 설치가 확인되기 전에는 `publishModels()`를 호출하지 않습니다. 모델 게시가 실패하면 handler도 정리하고 provider UI를 준비 상태로 남기지 않습니다. Registry 모델이 바뀌면 게시 영수증의 `updateModels()`가 `true`를 반환해야 계속 유지합니다. 소비 확장 해제, profile 변경, CMR 비활성화, AbortSignal 또는 늦게 도착한 영수증에서도 확보한 게시·handler 자원을 각각 한 번만 정리합니다.
+handler 설치가 확인되기 전에는 `publishModels()`를 호출하지 않습니다. 모델 게시가 실패하면 handler도 정리하고 provider UI를 준비 상태로 남기지 않습니다. 기본·등록 모델 카탈로그가 바뀌면 게시 영수증의 `updateModels()`가 `true`를 반환해야 계속 유지합니다. 소비 확장 해제, profile 변경, CMR 비활성화, AbortSignal 또는 늦게 도착한 영수증에서도 확보한 게시·handler 자원을 각각 한 번만 정리합니다.
 
 각 hook은 성공 영수증을 반환하기 전에 만든 자체 side effect가 있다면 reject 또는 throw 전에 스스로 원복해야 합니다. CMR은 실제로 전달받은 영수증의 `dispose()`만 호출할 수 있으며, 반환되지 않은 token이나 소비 확장 내부 UI를 추측해 정리하지 않습니다. 영수증 `dispose()`가 응답하지 않더라도 CMR 비활성화·재초기화가 무기한 멈추지는 않습니다.
 
@@ -183,7 +189,7 @@ handler 설치가 확인되기 전에는 `publishModels()`를 호출하지 않�
 
 설치 hook에 전달된 `execute(request, { signal? })`는 binding이 `ready`인 동안에만 사용할 수 있습니다. request는 다음 값만 허용합니다.
 
-- `modelId`: 게시된 provider의 현재 활성 Registry 모델 ID
+- `modelId`: 게시된 provider의 현재 가용 기본·활성 등록 모델 ID
 - `prompt` 문자열 또는 `messages` 배열 중 정확히 하나
 - `maxTokens`: 1 이상의 정수
 - 선택 `stream`, `extractData`: boolean
@@ -194,16 +200,16 @@ handler 설치가 확인되기 전에는 `publishModels()`를 호출하지 않�
 
 stream factory를 아직 호출하지 않았거나 반복 중이더라도 소비 확장 해제, CMR 비활성화 또는 전달한 `AbortSignal` 취소가 발생하면 이후 factory·`next()`는 고정된 `AbortError`로 실패합니다. profile 변경은 재조정 전에 감지되면 `backend_stale`, binding이 이미 해제 중이면 `AbortError`로 중단됩니다. factory 재사용, 올바르지 않은 iterator, factory·반복기 내부 예외도 비식별 고정 오류로 바뀌며 외부 backend의 원문 오류를 전달하지 않습니다.
 
-`getConsumers()`는 소비 확장별 slot·strategy의 `pending`, `ready`, `failed` 상태와 공개 provider ID·모델 개수만 반환합니다. `refresh()`는 실패 binding 재시도와 현재 선택 profile·Registry 모델 재조정을 요청합니다. `subscribe(listener)`는 비밀정보 없는 수명주기 이벤트를 제공하고 반환 함수로 해제합니다.
+`getConsumers()`는 소비 확장별 slot·strategy의 `pending`, `ready`, `failed` 상태와 공개 provider ID·모델 개수만 반환합니다. `refresh()`는 실패 binding 재시도와 현재 선택 profile·가용 모델 재조정을 요청합니다. `subscribe(listener)`는 비밀정보 없는 수명주기 이벤트를 제공하고 반환 함수로 해제합니다.
 
 ## Hookless native provider option 재사용
 
-이 기능은 새 provider·요청 handler·credential bridge를 설치하는 API가 아닙니다. 외부 확장에 이미 존재하고 현재 선택된 native provider option을 보수적으로 분류해, 연결된 model control에 투영할 Registry 모델 집합만 좁힙니다.
+이 기능은 새 provider·요청 handler·credential bridge를 설치하는 API가 아닙니다. 외부 확장에 이미 존재하고 현재 선택된 native provider option을 보수적으로 분류해, 연결된 model control에 투영할 기본·등록 모델 집합만 좁힙니다.
 
 | 선택된 native provider option | 투영 모델 | 변경하지 않는 항목 |
 |---|---|---|
-| 정확한 Custom/OpenAI-compatible 선택 | provider가 `custom`인 활성 Registry 모델만 | provider option·선택값, endpoint·API 키, 외부 handler |
-| 정확한 SillyTavern/current-connection 후보 | 현재 활성 SillyTavern provider와 같은 활성 Registry 모델만 | provider option·선택값, 메인 source·모델·Connection Profile |
+| 정확한 Custom/OpenAI-compatible 선택 | provider가 `custom`인 가용 기본·등록 모델만 | provider option·선택값, endpoint·API 키, 외부 handler |
+| 정확한 SillyTavern/current-connection 후보 | 현재 활성 SillyTavern provider와 같은 가용 기본·등록 모델만 | provider option·선택값, 메인 source·모델·Connection Profile |
 
 `main`, `current`, `inherit`, `openai`, `st` 같은 단독 토큰과 서로 충돌하는 값·표시명은 native 재사용으로 분류하지 않습니다. 이처럼 모호한 provider option은 일반 DOM 브리지의 안전 판정이 별도로 성립하면 종전의 best-effort 선택지 주입을 유지할 수 있지만, native 재사용 특화라고 보고하지 않습니다.
 
@@ -266,7 +272,7 @@ DOM 브리지는 전역 `fetch` 또는 `XMLHttpRequest`를 monkey patch하지 �
 
 진단의 외부 bridge details는 `nativeCustomTargetCount`, `nativeCurrentTargetCount`, `nativeReuseProjectedTargetCount`, `nativeReuseUnavailableTargetCount`로 native 재사용 분류·projection·현재 연결 확인 불가 상태를 집계합니다. 이 집계에는 provider option 원문, endpoint와 API 키가 포함되지 않습니다.
 
-외부 target 하나에는 native option과 중복되는 항목을 제외한 표시 가능한 CMR 후보 중 최대 512개만 주입합니다. 이 target별 후보가 512개를 넘으면 용량 주의를 표시합니다. 모든 direct target의 예상 CMR option 합계 또는 실제 CMR option 합계가 2,048개를 넘으면 별도의 성능 주의를 표시합니다. 위험 분류 대상과 native option은 CMR option 예산에서 제외합니다. 이 한도와 경고는 DOM 브리지 구현 계약이며 `CustomModelRouter.listModels()` 결과를 줄이지 않습니다. 따라서 활성 Registry 모델 총수가 512개를 넘는다는 사실만으로 target별 용량 경고가 발생하지는 않습니다.
+외부 target 하나에는 native option과 중복되는 항목을 제외한 표시 가능한 기본·등록 후보 중 최대 512개만 주입합니다. 현재 선택을 보존하고, 모든 provider의 직접 등록을 기본 참조보다 우선합니다. 이 target별 후보가 512개를 넘으면 용량 주의를 표시합니다. 모든 direct target의 예상 CMR option 합계 또는 실제 CMR option 합계가 2,048개를 넘으면 별도의 성능 주의를 표시합니다. 위험 분류 대상과 대상 자체의 native option은 CMR option 예산에서 제외합니다. 이 한도와 경고는 DOM 브리지 구현 계약이며 `CustomModelRouter.listModels()` 결과를 줄이지 않습니다. 따라서 카탈로그 총수가 512개를 넘는다는 사실만으로 target별 용량 경고가 발생하지는 않습니다. 기존 진단 필드명 `activeRegistryModelCount`는 브리지에 제공된 병합 카탈로그 수를 집계하며, 수동 등록 수는 Registry API로 확인합니다.
 
 ### 의도적 제외
 
