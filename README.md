@@ -1,18 +1,25 @@
 # Custom Model Router
 
-SillyTavern 코어 파일을 수정하지 않고 기존 Chat Completion 연결에 사용자 모델 ID를 등록하는 UI 확장입니다. 관리 팝업의 기본 목록은 등록한 모든 모델을 제공업체별로 보여주며, 실제 모델은 SillyTavern의 기존 모델 선택기 또는 입력란에서 선택합니다. 범용 외부 확장 브리지는 안전하게 감지한 모델 컨트롤에 native option과 중복되지 않는 등록 모델을 target별 최대 512개까지 제공업체별로 자동 추가합니다. 공개 provider hook에 명시적으로 opt-in한 외부 확장은 선택된 SillyTavern Connection Manager 프로필을 CMR 요청 handler로 상속할 수 있고, hook이 없어도 이미 존재하는 명확한 Custom/OpenAI-compatible 또는 SillyTavern 현재 연결 provider option에는 그 option 의미에 맞는 Registry 모델만 투영합니다. 실제 handler 사용 여부는 별도로 확인해야 합니다.
+SillyTavern 코어 파일을 수정하지 않고 기존 Chat Completion 연결에 사용자 모델 ID를 등록하는 UI 확장입니다. 관리 팝업에는 직접 등록한 모델만 표시합니다. 범용 외부 확장 브리지는 현재 로드된 기본 모델과 등록 모델을 합쳐 안전한 모델 칸에 target별 최대 512개까지 제공합니다. 공개 provider hook에 opt-in한 외부 확장은 선택된 Connection Manager 프로필을 CMR 요청 handler로 상속할 수 있습니다. hook이 없는 명확한 Custom/OpenAI-compatible 또는 SillyTavern 현재 연결 provider option에는 그 의미에 맞는 모델만 투영하며, 실제 handler 사용 여부는 별도로 확인해야 합니다.
 
-현재 버전은 **v0.6.19**입니다. SillyTavern 1.18.0의 Chat Completion 연결 24개에 사용자 모델을 등록하고, 안전한 외부 모델 칸과 공개 API에 제공합니다. 이번 버전부터 SillyTavern 기본 목록에 있는 모델도 CMR에 등록할 수 있습니다. 외부 확장이 현재 모델만 가져오는 경우에도 원하는 기본 모델을 등록해 해당 확장의 지원 모델 칸에 제공할 수 있습니다.
+현재 버전은 **v0.6.20**입니다. SillyTavern 1.18.0의 Chat Completion 연결 24개를 지원합니다. 외부 확장이 현재 모델만 가져오더라도, SillyTavern에 로드된 나머지 기본 모델을 CMR에 중복 등록할 필요 없이 지원되는 외부 모델 칸에서 선택할 수 있습니다. 목록에 없는 모델만 직접 등록하면 됩니다.
 
 v0.5.0까지의 공개 API와 용도별 라우팅은 다른 확장이 스스로 연동해야 사용할 수 있었으며, 이미 설치된 다른 확장의 모델 선택기에 CMR 모델을 자동 표시하지는 않았습니다. v0.6.0은 이 누락을 보완해 표준 `select`, 텍스트 `input`, `datalist` 기반 Chat Completion 모델 컨트롤을 탐지했습니다. v0.6.6부터 대상별 모드 선택 없이, 감지된 안전한 Chat Completion 모델 컨트롤에 native 중복을 제외한 Registry 모델을 target별 512개 한도 내에서 제공업체별로 표시합니다.
 
 ## 현재 진행 상태
 
+### v0.6.20 기본 목록 자동 제공
+
+- 현재 로드된 core 모델 목록과 CMR 등록 목록을 `(제공업체, 모델 ID)`로 합칩니다. Custom은 실제 로드된 select·datalist를 참조하며, 임의 입력값이나 아직 불러오지 않은 원격 모델을 추측하지 않습니다.
+- 기본 모델은 등록 목록·백업·Registry API에 복사하지 않습니다. 외부 DOM 브리지와 opt-in한 공용 provider hook에만 함께 제공합니다. 추가 네트워크 요청은 없습니다.
+- 기존 수동 등록은 삭제하지 않습니다. 비활성화한 등록은 같은 기본 모델의 자동 제공도 막으며, 등록을 삭제하면 현재 기본 목록에 있는 모델은 다시 자동 제공됩니다. core의 원래 옵션은 지우지 않습니다.
+- 현재 선택과 native 옵션을 보존합니다. 목록에서 실제로 사라진 선택은 기존 fallback 정책을 따릅니다. 512개 표시 한도에서는 현재 선택과 직접 등록한 모델을 우선하며, 초과 경고를 유지합니다.
+
 ### v0.6.19 기본 모델 등록 허용
 
 - 기본 목록에 있는 모델도 단일·여러 줄 입력으로 등록합니다. CMR에 이미 등록한 동일 제공업체·ID와 입력 내 반복만 중복으로 건너뜁니다.
 - 등록과 화면의 중복 표시를 구분합니다. 각 모델 선택기에 이미 있는 옵션은 그대로 재사용하고, 그 선택기에 없는 등록 모델만 추가합니다. 현재 선택 모델은 바꾸지 않습니다.
-- **기본 모델 중복 정리**는 선택적인 등록 삭제 기능입니다. 외부 확장에서 필요한 기본 모델 등록은 정리하지 마세요. 미리보기에도 이 주의사항을 표시합니다.
+- **기본 모델 중복 정리**는 선택적인 등록 삭제 기능입니다. v0.6.20부터 정리한 기본 모델도 현재 로드된 목록에서 자동 제공됩니다. 항상 수동 등록을 유지하려는 항목은 미리보기에서 제외하세요.
 
 ### v0.6.18 중복 정리 바로가기
 
@@ -36,7 +43,8 @@ v0.6.17은 잘못된 JSON 루트 거부, 중복 모델 ID의 공급자 복원, �
 
 | 항목 | 상태 |
 |---|---|
-| 현재 릴리스 | `v0.6.19` |
+| 현재 릴리스 | `v0.6.20` |
+| v0.6.20 기본 목록 자동 제공 | ✅ 등록 없는 기본 모델 제공, provider·ID 중복 제거, 저장·백업 분리와 동적 목록 갱신 |
 | v0.6.19 기본 모델 등록 | ✅ 단일·여러 줄 기본 모델 등록 허용, 대상별 옵션 중복 방지·현재 선택 유지 |
 | v0.6.18 중복 정리 바로가기 | ✅ 목록 제목 옆 아이콘, 접힌 메뉴 밖 미리보기와 초점 복원, 텍스트 버튼 폭 보완 |
 | v0.6.17 안정성·편의 기능 | ✅ 결함 6개 보완, 모델 토글·병합·되돌리기·중복 정리·개별 재시도, Integration API `1.1.0` |
@@ -48,7 +56,7 @@ v0.6.17은 잘못된 JSON 루트 거부, 중복 모델 ID의 공급자 복원, �
 | v0.6.15 hookless native 재사용 | ✅ 기존 provider option을 보존한 Custom·현재 연결 모델 projection 구현 |
 | v0.6.16 Popup 닫기 배치 | ✅ SillyTavern 공식 닫기 하나를 CMR 팝업 안쪽 우측 상단에 배치 |
 | DOM·공개 API 샌드박스 | ✅ 기본 24개와 외부 select/input/datalist, provider/source 선택기 보존·재렌더·정리 수명주기 통과 |
-| Chromium UI 회귀 검사 | ✅ 실제 `settings.html`, SillyTavern 1.18.0 CSS와 native 재사용·공용 provider hook fixture 및 제품 진입점 검사 25개 통과 |
+| Chromium UI 회귀 검사 | ✅ 실제 `settings.html`, SillyTavern 1.18.0 CSS와 native 재사용·공용 provider hook fixture 및 제품 진입점 검사 27개 통과 |
 | 실제 제공업체 계정 검증 | 🧪 사용자 환경별 확인 대기 |
 | 사용자가 할 일 | [통합 사용자 체크리스트](./USER_CHECKLIST.md)를 한 번 순서대로 확인 |
 
@@ -78,7 +86,7 @@ v0.6.17은 잘못된 JSON 루트 거부, 중복 모델 ID의 공급자 복원, �
 - 원격 모델 목록 재생성, source 변경, 새로고침과 Connection Profile 전환 뒤 옵션과 선택을 복원합니다.
 - v0.1의 Vertex 설정을 제공업체별 schema v2로 자동 이관합니다.
 - `globalThis.CustomModelRouter`로 다른 확장에 읽기 전용 Registry 스냅샷, mutation, 이벤트와 용도별 라우팅 API를 제공합니다.
-- `CustomModelRouter.integrations`에 opt-in한 외부 확장에는 선택된 Connection Manager 프로필 기반의 provider 요청 handler와 해당 provider의 활성 Registry 모델만 제공합니다.
+- `CustomModelRouter.integrations`에 opt-in한 외부 확장에는 선택된 Connection Manager 프로필 기반의 provider 요청 handler와 해당 provider의 가용 기본·등록 모델만 제공합니다.
 - 공용 provider 연동은 handler 설치 확인 뒤 모델 게시를 요청하고, 두 영수증이 모두 유효할 때만 준비 상태가 됩니다. 실패·취소·비활성화 시 확보한 handler와 모델 게시 자원을 정리하며 다른 provider나 메인 모델로 자동 대체하지 않습니다.
 - 공개 API도 SillyTavern `select`에서 현재 사용 중인 custom-only 모델은 `model_in_use`로 등록 해제를 거부하고, native 모델로 전환한 뒤에만 삭제합니다.
 - 개발자 opt-in Routing API는 Registry의 `(provider, model ID)`와 같은 제공업체의 Connection Profile을 직접 연결합니다. 일반 사용자용 라우팅 설정 UI는 제공하지 않습니다.
@@ -173,7 +181,7 @@ const unsubscribe = registry.subscribe('registry:changed', event => {
 `CustomModelRouter.integrations`는 외부 확장이 자신의 공개 provider registry 또는 hook을 CMR에 명시적으로 등록할 때만 동작합니다. 지원 경계는 다음 세 가지입니다.
 
 1. **SillyTavern 연결 상속**: 현재 선택된 Connection Manager 프로필이 Chat Completion 프로필이고 그 source가 CMR Registry provider와 일치할 때, 해당 프로필의 인증·endpoint를 그대로 사용하는 `sillytavern-inherited` handler를 준비합니다. `Custom` source는 이 경로에서 제외합니다.
-2. **OpenAI-compatible 특화**: 현재 선택된 프로필이 SillyTavern `Custom` source일 때만 `openai-compatible` handler와 `custom` Registry 모델을 준비합니다.
+2. **OpenAI-compatible 특화**: 현재 선택된 프로필이 SillyTavern `Custom` source일 때만 `openai-compatible` handler와 `custom`의 가용 기본·등록 모델을 준비합니다.
 3. **공개 provider registry/hook**: 외부 확장이 Integration API `1.0.0`의 capability와 slot을 선언하고 `installHandler`·`publishModels` hook을 제공하면 CMR이 위 공용 handler와 모델을 그 확장에 전달합니다.
 
 CMR은 `installHandler`가 유효한 handler 영수증을 반환한 뒤에만 `publishModels`를 호출합니다. 모델 게시 영수증까지 유효해야 binding이 `ready`가 되며, 그 전에는 전달된 `execute`도 요청을 받지 않습니다. 외부 확장은 CMR이 소유하는 provider UI 루트에 API가 알려 준 `data-cmr-provider-hook-owned` 표식을 적용해 기존 DOM 모델 브리지의 중복 주입을 피해야 합니다.
@@ -184,8 +192,8 @@ CMR은 `installHandler`가 유효한 handler 영수증을 반환한 뒤에만 `p
 
 v0.6.15의 native 재사용은 Provider Integration API의 요청 handler 연동이 아니라 기존 DOM 모델 브리지의 보수적인 **모델 projection**입니다. 외부 확장이 이미 가진 provider option을 선택한 상태에서만 실제 model control의 CMR 후보를 다음과 같이 제한합니다.
 
-- 정확한 Custom/OpenAI-compatible 선택: `custom` Registry 모델만 투영
-- 정확한 SillyTavern/current-connection 선택: 현재 활성 SillyTavern provider의 Registry 모델만 투영
+- 정확한 Custom/OpenAI-compatible 선택: `custom`의 가용 기본·등록 모델만 투영
+- 정확한 SillyTavern/current-connection 선택: 현재 활성 SillyTavern provider의 가용 기본·등록 모델만 투영
 
 이 과정은 provider option을 만들거나 지우지 않고 선택된 option과 provider control 값을 그대로 둡니다. endpoint·API 키를 읽거나 복제하지 않고, 전역 `fetch`·`XMLHttpRequest`, 외부 확장의 요청 함수와 SillyTavern 메인 source·모델을 patch하거나 전환하지 않습니다. `main`, `current`, `inherit`, `openai`, `st` 같은 단독 토큰과 서로 충돌하는 표식은 의미를 추측하지 않으며, 일반 DOM 브리지의 안전 판정이 별도로 성립할 때만 기존 best-effort 선택지 주입을 유지합니다. 정확한 SillyTavern 현재 연결 option이지만 활성 ST provider가 없거나 지원 provider로 확정되지 않으면 현재 연결 후보라는 분류는 유지하되 `current-connection-unavailable`로 실패하고 모델을 하나도 넣지 않습니다. 이때 전체 provider나 Custom 모델로 fallback하지 않으므로 현재 ST 연결을 확인해야 합니다. 외부 확장이 그 native option을 실제 요청 handler와 어떻게 연결했는지는 DOM만으로 검증할 수 없으므로, 모델을 선택한 뒤 해당 기능을 실행하고 Network payload 또는 확장의 공개 결과에서 정확한 `model`을 직접 확인해야 합니다.
 
@@ -334,11 +342,11 @@ npm run test:ui
 
 로컬 UI 검사는 SillyTavern 1.18.0 소스가 필요합니다. `SILLYTAVERN_ROOT`에 해당 저장소 경로를 지정하거나 CMR 저장소와 나란히 `sillytavern-1.18.0-review`를 두세요. 버전이 다르거나 필요한 CSS가 없으면 검사를 시작하지 않고 명시적으로 중단합니다. GitHub Actions는 검증한 SillyTavern 1.18.0 commit을 별도로 체크아웃합니다.
 
-현재 자동 검사 257개는 24개 provider 회계, 숫자 배지 없는 단일 런처와 스크린 리더용 등록 개수, 전체 등록 모델 UI와 SillyTavern native 선택 경계, 12개 초과 조건부 검색, 공용 textarea의 단일·최대 200줄 원자 등록, 삭제 실행 취소, 공개 API의 `model_in_use` 보호, schema 이관, 동적 옵션 복원, 팝업 수명주기, 개발자용 라우팅 격리, 외부 select/input/datalist 선택지 주입과 provider/source 선택기 비대상 판별을 검증합니다. v0.6.15 검사는 Integration API capability 협상과 별도로, hookless native Custom·현재 연결 exact 분류, provider별 모델 projection, 모호·충돌 표식 미분류, provider option·값·endpoint·key·전역 요청·메인 설정 불변도 포함합니다. 실제 handler와 계정 요청 확인은 [통합 사용자 체크리스트](./USER_CHECKLIST.md)에서 별도로 수행합니다.
+현재 자동 검사 266개는 24개 provider 회계, 숫자 배지 없는 단일 런처와 스크린 리더용 등록 개수, 전체 등록 모델 UI와 SillyTavern native 선택 경계, 12개 초과 조건부 검색, 공용 textarea의 단일·최대 200줄 원자 등록, 삭제 실행 취소, 공개 API의 `model_in_use` 보호, schema 이관, 동적 옵션 복원, 팝업 수명주기, 개발자용 라우팅 격리, 외부 select/input/datalist 선택지 주입과 provider/source 선택기 비대상 판별을 검증합니다. v0.6.15 검사는 Integration API capability 협상과 별도로, hookless native Custom·현재 연결 exact 분류, provider별 모델 projection, 모호·충돌 표식 미분류, provider option·값·endpoint·key·전역 요청·메인 설정 불변도 포함합니다. 실제 handler와 계정 요청 확인은 [통합 사용자 체크리스트](./USER_CHECKLIST.md)에서 별도로 수행합니다.
 
 추가로 브라우저 DOM 샌드박스에서 24개 컨트롤 감지, GLM 등록과 SillyTavern native 선택, 개발자 API 라우팅, 외부 모델 컨트롤 연결, provider/source 선택기의 native 상태 보존, source/profile 이벤트 반복, 비활성화·재활성화와 정리 수명주기를 확인합니다.
 
-숫자 배지 없는 런처와 스크린 리더용 등록 개수는 Node 통합 검사에서 확인합니다. Playwright Chromium UI 회귀 검사 25개는 제품 `settings.html`을 SillyTavern 1.18.0 고정 commit의 `style.css`·`popup.css`와 함께 렌더링하며, 브라우저 브리지 회귀에서는 provider/source 선택기에 CMR option이 들어가지 않고 native option·값이 유지되는지 확인합니다. native 재사용 fixture는 정확한 Custom/OpenAI-compatible와 SillyTavern 현재 연결 선택에서 해당 provider 모델만 투영되고 모호한 단독 토큰은 특화되지 않는지 확인합니다. 공용 provider hook fixture는 별도로 실제 제품 `src/provider-integrations.js`와 공개 API wiring을 사용하되 가짜 Connection Manager 서비스와 로컬 echo 요청으로 handler 설치→모델 게시→요청→정리 경계를 검증합니다. 실제 SillyTavern 전체 JavaScript 런타임, 실제 외부 확장 코드, 원격 제공업체 네트워크나 자격 증명을 검증하는 환경은 아닙니다. 320×568, 360×640, 420×800, 720×900에서 가로 넘침, 버튼 정렬, 공백 단위 줄바꿈, 단일 공식 닫기의 팝업 내부 우측 상단 배치·접근 가능한 이름·최소 24px 조작 영역, 단일·여러 줄 공용 textarea와 아이콘 전용 등록 버튼, 예외 중심 고급 외부 연결 관리 UI를 검사합니다. native popover 정보 아이콘 다섯 곳의 접근 가능한 이름·키보드 열기·Escape 닫기·좁은 화면 배치, 핵심 힌트와 경고의 상시 노출도 확인합니다. 모델 목록 경계, 12개 초과 검색, 여러 줄 원자 등록·삭제 실행 취소, 백업 미리보기, 조건부 문제 카드에서 고급 관리로 이동하는 흐름과 문제 대상 제외·복구 뒤 포커스 유지도 검증합니다. 모델·외부 대상·진단 목록은 마우스 휠과 키보드로, Popup 본문은 마우스 휠로 실제 스크롤합니다. GitHub Actions는 성공과 실패 모두 PNG와 HTML report를 `ui-regression-evidence-*` artifact로 14일 보관합니다.
+숫자 배지 없는 런처와 스크린 리더용 등록 개수는 Node 통합 검사에서 확인합니다. Playwright Chromium UI 회귀 검사 27개는 제품 `settings.html`을 SillyTavern 1.18.0 고정 commit의 `style.css`·`popup.css`와 함께 렌더링하며, 브라우저 브리지 회귀에서는 provider/source 선택기에 CMR option이 들어가지 않고 native option·값이 유지되는지 확인합니다. native 재사용 fixture는 정확한 Custom/OpenAI-compatible와 SillyTavern 현재 연결 선택에서 해당 provider 모델만 투영되고 모호한 단독 토큰은 특화되지 않는지 확인합니다. 공용 provider hook fixture는 별도로 실제 제품 `src/provider-integrations.js`와 공개 API wiring을 사용하되 가짜 Connection Manager 서비스와 로컬 echo 요청으로 handler 설치→모델 게시→요청→정리 경계를 검증합니다. 실제 SillyTavern 전체 JavaScript 런타임, 실제 외부 확장 코드, 원격 제공업체 네트워크나 자격 증명을 검증하는 환경은 아닙니다. 320×568, 360×640, 420×800, 720×900에서 가로 넘침, 버튼 정렬, 공백 단위 줄바꿈, 단일 공식 닫기의 팝업 내부 우측 상단 배치·접근 가능한 이름·최소 24px 조작 영역, 단일·여러 줄 공용 textarea와 아이콘 전용 등록 버튼, 예외 중심 고급 외부 연결 관리 UI를 검사합니다. native popover 정보 아이콘 다섯 곳의 접근 가능한 이름·키보드 열기·Escape 닫기·좁은 화면 배치, 핵심 힌트와 경고의 상시 노출도 확인합니다. 모델 목록 경계, 12개 초과 검색, 여러 줄 원자 등록·삭제 실행 취소, 백업 미리보기, 조건부 문제 카드에서 고급 관리로 이동하는 흐름과 문제 대상 제외·복구 뒤 포커스 유지도 검증합니다. 모델·외부 대상·진단 목록은 마우스 휠과 키보드로, Popup 본문은 마우스 휠로 실제 스크롤합니다. GitHub Actions는 성공과 실패 모두 PNG와 HTML report를 `ui-regression-evidence-*` artifact로 14일 보관합니다.
 
 이 검사는 실제 설정 마크업과 SillyTavern CSS의 배치·상호작용을 확인하지만 전체 SillyTavern 런타임을 기동하지는 않습니다. 실제 외부 확장의 저장 로직, 제공업체 자격 증명과 API 요청 성공은 [통합 사용자 체크리스트](./USER_CHECKLIST.md)에서 별도로 확인해야 합니다.
 

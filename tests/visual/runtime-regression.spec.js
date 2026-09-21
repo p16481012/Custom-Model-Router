@@ -63,11 +63,14 @@ test('기본 모델의 단일·여러 줄 등록은 외부의 부족한 목록�
         }
         cmrRuntime.nativeRegistration = { core, subset, existing, alternative, externalAlternative, events };
     });
+    await expect(page.locator('#subset_chat_model option[value="native-alternative"]')).toHaveCount(1);
+    await expect(page.locator('#existing_chat_model option[value="native-alternative"]')).toHaveCount(1);
+    expect(await page.evaluate(() => CustomModelRouter.listModels())).toEqual([]);
     await openPanel(page);
     await page.locator('#cmr_model_help_trigger').click();
     const help = page.locator('#cmr_model_help');
     await expect(help).toBeVisible();
-    await expect(help).toContainText('SillyTavern 기본 모델도 등록할 수 있습니다.');
+    await expect(help).toContainText('기본 모델은 외부에 자동 제공됩니다.');
     const helpBox = await help.boundingBox();
     expect(helpBox.y).toBeGreaterThanOrEqual(0);
     expect(helpBox.y + helpBox.height).toBeLessThanOrEqual(569);
@@ -113,6 +116,102 @@ test('기본 모델의 단일·여러 줄 등록은 외부의 부족한 목록�
     ]);
     await expect(page.locator('#subset_chat_model option[value="native-alternative"]')).toHaveCount(1);
     await expect(page.locator('#model_openai_select option[value="native-alternative"]')).toHaveCount(1);
+});
+
+test('기본 카탈로그 변경은 저장 없이 반영되고 수동 비활성화·삭제·재초기화가 중복 없이 동작한다', async ({ page }) => {
+    await page.evaluate(() => {
+        const select = document.createElement('select');
+        select.id = 'catalog_chat_model';
+        select.append(new Option('Current', 'native-model'));
+        document.body.append(select);
+        const core = document.querySelector('#model_openai_select');
+        const option = new Option('Loaded model', 'native-extra');
+        core.append(option);
+        const events = { core: 0, external: 0 };
+        core.addEventListener('change', () => events.core++);
+        select.addEventListener('change', () => events.external++);
+        cmrRuntime.catalogTest = { option, events };
+    });
+    const extra = page.locator('#catalog_chat_model option[value="native-extra"]');
+    await expect(extra).toHaveCount(1);
+    await page.evaluate(() => { cmrRuntime.catalogTest.option.disabled = true; });
+    await expect(extra).toHaveCount(0);
+    await page.evaluate(() => { cmrRuntime.catalogTest.option.disabled = false; });
+    await expect(extra).toHaveCount(1);
+    await page.evaluate(() => { cmrRuntime.catalogTest.option.value = 'native-renamed'; });
+    await expect(extra).toHaveCount(0);
+    const renamed = page.locator('#catalog_chat_model option[value="native-renamed"]');
+    await expect(renamed).toHaveCount(1);
+    expect(await page.evaluate(async () => {
+        const { stringifyPortableSettings } = await import('/cmr/src/portable-settings.js');
+        return JSON.parse(stringifyPortableSettings({ registrySettings: cmrRuntime.context.extensionSettings.customModelRouter })).registry.models;
+    })).toEqual([]);
+    await page.evaluate(() => CustomModelRouter.registerModel('openai', 'native-renamed'));
+    await expect(renamed).toHaveCount(1);
+    await openPanel(page);
+    await page.locator('[data-cmr-action="toggle-enabled"][data-model-id="native-renamed"]').click();
+    await expect(renamed).toHaveCount(0);
+    await expect(page.locator('#model_openai_select option[value="native-renamed"]')).toHaveCount(1);
+    await page.locator('[data-cmr-action="delete"][data-model-id="native-renamed"]').click();
+    await expect(renamed).toHaveCount(1);
+    await page.locator('.popup-button-close').click();
+    await page.evaluate(async () => { await cmrRuntime.destroy(); await cmrRuntime.init(); });
+    await expect(renamed).toHaveCount(1);
+    await expect(page.locator('#catalog_chat_model')).toHaveValue('native-model');
+    await expect(page.locator('#model_openai_select')).toHaveValue('native-model');
+    expect(await page.evaluate(() => CustomModelRouter.listModels())).toEqual([]);
+    expect(await page.evaluate(() => cmrRuntime.catalogTest.events)).toEqual({ core: 0, external: 0 });
+    await page.evaluate(() => cmrRuntime.catalogTest.option.remove());
+    await expect(renamed).toHaveCount(0);
+});
+
+test('Custom의 실제 로드 목록도 native 연결과 공개 hook에 제공하며 요청 직전 가용성을 다시 검사한다', async ({ page }) => {
+    await page.evaluate(async () => {
+        const { PROVIDER_INTEGRATION_REQUIRED_CAPABILITIES } = await import('/cmr/src/provider-integrations.js');
+        const list = document.createElement('datalist');
+        list.id = 'model_custom_select_fill';
+        list.append(new Option('Custom model', 'vendor/native'));
+        const core = document.createElement('select');
+        core.id = 'model_custom_select';
+        core.append(new Option('Custom model', 'vendor/native'));
+        document.querySelector('#rm_api_block').append(list, core);
+        const panel = document.createElement('section');
+        panel.className = 'extension_container';
+        panel.innerHTML = '<label for="catalog_custom_provider">Model provider</label><select id="catalog_custom_provider"><option value="custom">Custom OpenAI-compatible</option></select><label for="catalog_custom_model">Chat model</label><select id="catalog_custom_model" data-provider-select="catalog_custom_provider"><option value="native-model">Current</option></select>';
+        document.body.append(panel);
+        const state = { models: [], calls: [], execute: null };
+        cmrRuntime.nativeHook = state;
+        cmrRuntime.context.ConnectionManagerRequestService.validateProfile = () => ({ selected: 'openai', source: 'custom' });
+        cmrRuntime.context.ConnectionManagerRequestService.sendRequest = async (...args) => { state.calls.push(args[4].model); return { content: 'ok' }; };
+        const registration = CustomModelRouter.integrations.registerConsumer({
+            consumerId: 'native.catalog', label: 'Native catalog', contractVersion: '1.1.0',
+            capabilities: PROVIDER_INTEGRATION_REQUIRED_CAPABILITIES,
+            slots: [{ slotId: 'chat', strategies: ['openai-compatible'] }],
+        }, {
+            installHandler(binding) { state.execute = binding.execute; return { requestHandlerBound: true, handlerToken: {}, dispose() {} }; },
+            publishModels(binding) {
+                state.models = binding.models.map(model => model.id);
+                return { modelsPublished: true, publicationToken: {}, updateModels(models) { state.models = models.map(model => model.id); return true; }, dispose() {} };
+            },
+        });
+        await registration.ready;
+    });
+    await expect(page.locator('#catalog_custom_model option[value="vendor/native"]')).toHaveCount(1);
+    await expect(page.locator('#catalog_custom_provider option')).toHaveCount(1);
+    await expect(page.locator('#catalog_custom_provider')).toHaveValue('custom');
+    expect(await page.evaluate(() => cmrRuntime.nativeHook.models)).toEqual(['vendor/native']);
+    expect(await page.evaluate(() => CustomModelRouter.listModels())).toEqual([]);
+    const result = await page.evaluate(async () => {
+        const state = cmrRuntime.nativeHook;
+        await state.execute({ modelId: 'vendor/native', prompt: 'test', maxTokens: 8 });
+        document.querySelector('#model_custom_select_fill').replaceChildren();
+        document.querySelector('#model_custom_select').replaceChildren();
+        let code;
+        try { await state.execute({ modelId: 'vendor/native', prompt: 'test', maxTokens: 8 }); } catch (error) { code = error.code; }
+        return { calls: state.calls, code };
+    });
+    expect(result).toEqual({ calls: ['vendor/native'], code: 'model_not_ready' });
+    await expect(page.locator('#catalog_custom_model option[value="vendor/native"]')).toHaveCount(0);
 });
 
 test('제품 가져오기 경로가 falsy 백업을 거부하고 현재 설정을 보존한다', async ({ page }) => {
@@ -178,7 +277,7 @@ test('기본 모델 중복 정리는 native 선택을 유지하고 적용 직전
     await expect(page.locator('#cmr_import_preview')).toBeVisible();
     await expect(page.locator('#cmr_import_preview_cancel')).toBeFocused();
     await expect(page.locator('#cmr_cleanup_warning')).toBeVisible();
-    await expect(page.locator('#cmr_cleanup_warning')).toContainText('외부 확장에서 쓰는 등록');
+    await expect(page.locator('#cmr_cleanup_warning')).toContainText('정리한 기본 모델은 현재 목록에서 자동 제공됩니다.');
     expect(await page.locator('#cmr_import_preview_apply').evaluate(button => {
         const range = document.createRange();
         range.selectNodeContents(button);

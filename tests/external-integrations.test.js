@@ -895,8 +895,8 @@ test('직접 연결 select는 제공업체별 optgroup과 multiplex alias를 유
 
     const groups = select.children.filter(child => child.tagName === 'OPTGROUP');
     assert.deepEqual(groups.map(group => group.label), [
-        'OpenAI · 사용자 모델',
-        'Anthropic · 사용자 모델',
+        'OpenAI · CMR 모델',
+        'Anthropic · CMR 모델',
     ]);
     const managed = select.options.filter(item => item.dataset.cmrExternalModel === 'true');
     assert.deepEqual(managed.map(item => [item.value, item.dataset.cmrProvider]), [
@@ -1888,6 +1888,33 @@ test('여러 provider의 표시 후보가 cap을 넘어도 bridge는 512개를 �
     assert.equal(metrics.capacityLimitedTargetCount, 1);
     assert.equal(controller.getTargets()[0].bridge.status, 'connected');
     controller.destroy();
+});
+
+test('기본 카탈로그가 한도를 넘어도 후순위 provider의 직접 등록과 현재 선택을 보존한다', () => {
+    const documentRef = new FakeDocument();
+    const select = documentRef.createElement('select');
+    const target = { control: select, optionHost: select, inference: {} };
+    const native = Array.from({ length: 600 }, (_, i) => ({ provider: 'openai', id: `native-${i}`, source: 'native' }));
+    const entries = [
+        { providerId: 'openai', models: native },
+        { providerId: 'zai', models: [{ provider: 'zai', id: 'manual-zai', source: 'registered' }] },
+    ];
+    const first = syncExternalTargetProviders(target, entries, { documentRef });
+    assert.equal(first.injectedModels.length, EXTERNAL_INJECTED_OPTION_LIMIT);
+    assert.equal(first.capacityLimited, true);
+    assert.ok(first.injectedModels.some(model => model.modelId === 'manual-zai'));
+    const selected = select.options.find(item => item.value === 'native-510');
+    select.value = selected.value;
+    selected.selected = true;
+    entries[0].models.unshift({ provider: 'openai', id: 'new-native', source: 'native' });
+    syncExternalTargetProviders(target, entries, { documentRef });
+    assert.equal(select.value, 'native-510');
+    assert.ok(select.options.some(item => item.value === 'manual-zai'));
+    assert.ok(select.options.some(item => item.selected && item.value === 'native-510'));
+    entries[0].models.unshift({ provider: 'openai', id: 'another-new-native', source: 'native' });
+    syncExternalTarget(target, 'openai', entries[0].models, { documentRef });
+    assert.equal(select.value, 'native-510', '단일 provider native 재사용도 현재 선택을 한도 밖으로 밀어내지 않는다');
+    assert.ok(select.options.some(item => item.selected && item.value === 'native-510'));
 });
 
 test('DOM에 남은 비활성 target은 native fallback을 알리고 분리된 target은 조용히 정리한다', () => {

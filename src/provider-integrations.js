@@ -6,10 +6,10 @@ import {
     getProvider,
     normalizeProviderId,
     normalizeProviderModelId,
+    validateProviderModelId,
 } from './providers.js';
 import {
     getEnabledModels,
-    hasEnabledModel,
 } from './registry.js';
 
 export const PROVIDER_INTEGRATION_API_VERSION = '1.1.0';
@@ -352,7 +352,20 @@ function normalizeMessages(value) {
     });
 }
 
-function validateExecutionInput(value, providerId, readRegistrySettings) {
+function readAvailableModels(options, providerId) {
+    if (typeof options.getModels !== 'function') return getEnabledModels(options.readRegistrySettings(), providerId);
+    const models = options.getModels(providerId);
+    const provider = getProvider(providerId);
+    const result = new Map();
+    for (const model of Array.isArray(models) ? models : []) {
+        const validation = validateProviderModelId(providerId, model?.id);
+        if (model?.enabled === false || model?.provider !== providerId || !validation.ok) continue;
+        result.set(validation.id, { provider: providerId, id: validation.id, protocol: provider.protocol });
+    }
+    return [...result.values()];
+}
+
+function validateExecutionInput(value, providerId, options) {
     if (!isRecord(value)) {
         throw new ProviderIntegrationError('request_invalid', '공용 provider 요청은 객체여야 합니다.');
     }
@@ -365,10 +378,10 @@ function validateExecutionInput(value, providerId, readRegistrySettings) {
         );
     }
     const modelId = normalizeProviderModelId(value.modelId);
-    if (!hasEnabledModel(readRegistrySettings(), providerId, modelId)) {
+    if (!readAvailableModels(options, providerId).some(model => model.id === modelId)) {
         throw new ProviderIntegrationError(
             'model_not_ready',
-            '요청한 모델은 이 provider binding의 활성 Registry 모델이 아닙니다.',
+            '요청한 모델은 이 provider binding에서 현재 사용할 수 없습니다.',
         );
     }
     const hasPrompt = value.prompt !== undefined;
@@ -469,7 +482,7 @@ function createBackendCandidate(strategy, options, connectionAdapter) {
     if (strategy === PROVIDER_INTEGRATION_STRATEGIES.OPENAI_COMPATIBLE && !isCustom) {
         return null;
     }
-    const models = getEnabledModels(options.readRegistrySettings(), selected.providerId)
+    const models = readAvailableModels(options, selected.providerId)
         .map(createPublicModel);
     if (models.length === 0) {
         return null;
@@ -478,7 +491,7 @@ function createBackendCandidate(strategy, options, connectionAdapter) {
         ? 'cmr.openai-compatible'
         : `cmr.sillytavern.${selected.providerId}`;
     const label = strategy === PROVIDER_INTEGRATION_STRATEGIES.OPENAI_COMPATIBLE
-        ? 'OpenAI-compatible · 사용자 모델'
+        ? 'OpenAI-compatible · CMR 모델'
         : `${selected.provider.label} · SillyTavern 연결`;
     const modelsFingerprint = JSON.stringify(models.map(model => `${model.provider}\u0000${model.id}`));
     const fingerprint = `${strategy}\u0000${selected.profileId}\u0000${selected.providerId}`;
@@ -521,7 +534,7 @@ function createBackendCandidate(strategy, options, connectionAdapter) {
         const normalized = validateExecutionInput(
             value,
             selected.providerId,
-            options.readRegistrySettings,
+            options,
         );
         const liveRoute = {
             provider: selected.providerId,

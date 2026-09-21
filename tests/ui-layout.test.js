@@ -159,7 +159,7 @@ test('정보 도움말은 다섯 개 native popover와 접근 가능한 아이�
 test('상시 안내는 짧게 유지하고 긴 도움말을 입력 컨트롤에 직접 연결하지 않는다', async () => {
     const [html, css, index] = await readUiFiles();
 
-    assert.match(html, /class="cmr-description">사용할 모델을 등록하고, 실제 선택은 각 모델 선택기에서 합니다\.<\/p>/);
+    assert.match(html, /class="cmr-description">기본 모델은 자동 제공됩니다\. 목록에 없는 모델을 등록하세요\.<\/p>/);
     assert.match(html, /id="cmr_provider_hint">등록 위치만 정하며 현재 모델은 바뀌지 않습니다\.<\/small>/);
     assert.match(html, /id="cmr_model_hint">한 줄에 하나 · 최대 200개 · 오류가 있으면 전체 취소<\/small>/);
     assert.match(html, /id="cmr_operations_description"[^>]*>CMR 상태를 진단하고 비밀정보를 제외한 설정을 백업·복구합니다\.<\/p>/);
@@ -171,9 +171,9 @@ test('상시 안내는 짧게 유지하고 긴 도움말을 입력 컨트롤에 
     assert.doesNotMatch(html, /<textarea[\s\S]*?id="cmr_model_id"[\s\S]*?aria-describedby="[^"]*cmr_(?:provider|model)_help/);
     assert.doesNotMatch(html, /<ul id="cmr_model_list"[^>]*aria-describedby=/);
     assert.match(index, /help\.textContent = formatUiSentences\(/);
-    assert.match(index, /\$\{getProviderHelp\(provider\)\}[^`]*SillyTavern 기본 모델도 등록할 수 있습니다/);
-    assert.match(index, /빈 줄·입력 중복·CMR 기등록은 건너뜁니다/);
-    assert.match(html, /기본 모델이어도 외부 확장에서 쓰는 등록은 정리 대상에서 빼 주세요/);
+    assert.match(index, /\$\{getProviderHelp\(provider\)\}[^`]*기본 모델은 외부에 자동 제공됩니다/);
+    assert.match(index, /빈 줄·중복은 건너뛰며/);
+    assert.match(html, /정리한 기본 모델은 현재 목록에서 자동 제공됩니다/);
     assert.match(css, /#cmr_settings #cmr_model_help[\s\S]*?white-space:\s*pre-line/);
     assert.match(css, /word-break:\s*keep-all/);
     assert.match(css, /overflow-wrap:\s*normal/);

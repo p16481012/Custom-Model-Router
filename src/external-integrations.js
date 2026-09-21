@@ -8,7 +8,7 @@ import {
 // v0.6.5 이하 모듈 import 호환용 상수다. controller는 mode mapping을 사용하지 않는다.
 export const EXTERNAL_MAPPING_MANUAL = 'manual';
 export const EXTERNAL_MAPPING_DISABLED = 'disabled';
-export const EXTERNAL_GROUP_LABEL = '사용자 모델';
+export const EXTERNAL_GROUP_LABEL = 'CMR 모델';
 export const EXTERNAL_MODEL_SELECTOR = '[data-cmr-external-model="true"]';
 export const EXTERNAL_GROUP_SELECTOR = '[data-cmr-external-group="true"]';
 export const EXTERNAL_PROVIDER_HOOK_OWNED_ATTRIBUTE = 'data-cmr-provider-hook-owned';
@@ -1467,6 +1467,10 @@ export function syncExternalTarget(target, providerId, models, options = {}) {
     const eligibleIds = enabledModelIds(normalizedProviderId, models)
         .filter(id => !nativeIds.has(id));
     const ids = eligibleIds.slice(0, EXTERNAL_INJECTED_OPTION_LIMIT);
+    if (previousProviderId === normalizedProviderId && eligibleIds.includes(previousValue)
+        && !ids.includes(previousValue)) {
+        ids[ids.length - 1] = previousValue;
+    }
     removeExternalTargetModels(target);
 
     if (ids.length) {
@@ -1512,7 +1516,7 @@ export function syncExternalTarget(target, providerId, models, options = {}) {
 }
 
 /**
- * 직접 연결 대상에는 Registry의 모든 제공업체 모델을 함께 표시한다.
+ * 직접 연결 대상에는 기본·등록 모델 카탈로그를 제공업체별로 함께 표시한다.
  * select는 제공업체별 optgroup을 사용하고, input/datalist는 실제 입력값을 바꾸지 않도록
  * 모델 ID를 value로 유지하면서 provider가 드러나는 label을 붙인다.
  */
@@ -1556,8 +1560,7 @@ export function syncExternalTargetProviders(target, providerEntries, options = {
     let eligibleModelCount = 0;
     removeExternalTargetModels(target);
 
-    let remaining = EXTERNAL_INJECTED_OPTION_LIMIT;
-    for (const entry of entries) {
+    const plans = entries.map(entry => {
         const externalAttributes = getExternalProviderAttributes(target, entry.providerId, options);
         const nativeIds = new Set(nativeOptions
             .filter(option => nativeOptionMatchesProvider(option, entry.providerId, externalAttributes))
@@ -1566,8 +1569,29 @@ export function syncExternalTargetProviders(target, providerEntries, options = {
         const eligibleIds = enabledModelIds(entry.providerId, entry.models)
             .filter(id => !nativeIds.has(id));
         eligibleModelCount += eligibleIds.length;
-        const ids = eligibleIds.slice(0, Math.max(remaining, 0));
-        remaining -= ids.length;
+        const nativeReferences = new Set(entry.models.filter(model => model?.source === 'native').map(model => model.id));
+        return { entry, externalAttributes, eligibleIds, nativeReferences, included: new Set() };
+    });
+    let remaining = EXTERNAL_INJECTED_OPTION_LIMIT;
+    // Keep the current managed choice, then prioritize manual registrations across ALL providers.
+    // A large first-provider catalog must not crowd out a later provider's custom model.
+    const selectedPlan = plans.find(plan => plan.entry.providerId === previousProviderId);
+    if (selectedPlan?.eligibleIds.includes(previousValue)) {
+        selectedPlan.included.add(previousValue);
+        remaining -= 1;
+    }
+    for (const nativePass of [false, true]) {
+        for (const plan of plans) {
+            for (const id of plan.eligibleIds) {
+                if (remaining === 0) break;
+                if (plan.included.has(id) || plan.nativeReferences.has(id) !== nativePass) continue;
+                plan.included.add(id);
+                remaining -= 1;
+            }
+        }
+    }
+    for (const { entry, externalAttributes, eligibleIds, included } of plans) {
+        const ids = eligibleIds.filter(id => included.has(id));
         if (!ids.length) {
             continue;
         }
@@ -1722,7 +1746,7 @@ export function mutationNeedsExternalRescan(records, options = {}) {
 
 /**
  * 외부 확장의 DOM을 관찰하는 수명주기 래퍼. 요청(fetch)을 가로채지 않으며,
- * 모델 컨트롤의 선택지와 CMR 등록 모델만 동기화한다.
+ * 모델 컨트롤의 선택지와 CMR에 제공된 가용 모델 카탈로그만 동기화한다.
  */
 export function createExternalIntegrationController(options = {}) {
     const root = options.root ?? globalThis.document;
@@ -2100,7 +2124,7 @@ export function createExternalIntegrationController(options = {}) {
         const nextTargets = discoverExternalModelTargets(root, options);
         stabilizeTargetIds(nextTargets);
         const nextControls = new Set(nextTargets.map(target => target.control));
-        // Registry 재고는 direct target의 존재 여부와 무관한 런타임 지표다.
+        // 가용 카탈로그 재고는 direct target의 존재 여부와 무관한 런타임 지표다.
         // scan마다 한 번만 snapshot을 만들고 모든 direct target 동기화에도 같은 값을 쓴다.
         const currentProviderEntries = getProviderEntries();
         const nextActiveRegistryModelCount = countActiveRegistryModels(currentProviderEntries);
@@ -2160,7 +2184,7 @@ export function createExternalIntegrationController(options = {}) {
                         syncResult = syncManagedTarget(target, () => syncExternalTarget(
                             target,
                             nativeReuse.providerId,
-                            getModels(nativeReuse.providerId),
+                            providerEntries[0]?.models ?? [],
                             {
                                 ...options,
                                 externalProviderValue: nativeReuse.externalProviderValue,
