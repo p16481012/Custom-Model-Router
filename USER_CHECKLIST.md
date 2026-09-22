@@ -1,6 +1,6 @@
-# v0.6.20 통합 사용자 검증 체크리스트
+# v0.6.21 통합 사용자 검증 체크리스트
 
-대상 버전: **v0.6.20**
+대상 버전: **v0.6.21**
 
 이 문서는 v0.1~v0.6 기능을 한 번에 확인하는 최종 수동 검증 순서입니다. 위에서 아래로 진행하고, 사용하지 않는 제공업체·외부 확장·개발자 API 항목은 `해당 없음`으로 표시하세요.
 
@@ -17,9 +17,18 @@
 
 ## 자동 검사 완료 범위
 
-v0.6.20 저장소에서는 Node 자동 검사 266개와 Playwright Chromium UI 회귀 검사 27개를 별도로 실행합니다. Node 검사는 기존 UI·Registry·Routing·DOM 브리지·진단 schema v2·백업·Provider Integration API 계약에 더해 hookless native Custom·현재 연결 exact 분류, provider별 모델 projection, 모호한 토큰 미분류, provider option·연결 설정·전역 요청·메인 설정 불변과 단일 공식 Popup 닫기의 소유권을 포함합니다. UI 검사는 실제 `settings.html`과 SillyTavern 1.18.0 고정 commit의 core·Popup CSS를 결합해 320·360·420·720px에서 공식 닫기의 패널 내부 배치·최소 24px 조작 영역·제목 및 정보 아이콘 비중첩을 확인하고, 브라우저 브리지 native 재사용과 공개 hook fixture를 서로 분리해 실행합니다. 이 검사는 전체 SillyTavern 런타임, 실제 외부 확장의 handler나 원격 요청 성공을 대신하지 않습니다. GitHub Actions의 `ui-regression-evidence-*` artifact에는 성공·실패 PNG와 HTML report가 14일 보관됩니다.
+v0.6.21 저장소에서는 Node 자동 검사 273개와 Playwright Chromium UI 회귀 검사 30개를 별도로 실행합니다. Node 검사는 기존 UI·Registry·Routing·DOM 브리지·진단 schema v2·백업·Provider Integration API 계약에 더해 hookless native Custom·현재 연결 exact 분류, provider별 모델 projection, 모호한 토큰 미분류, provider option·연결 설정·전역 요청·메인 설정 불변과 단일 공식 Popup 닫기의 소유권을 포함합니다. UI 검사는 실제 `settings.html`과 SillyTavern 1.18.0 고정 commit의 core·Popup CSS를 결합해 320·360·420·720px에서 공식 닫기의 패널 내부 배치·최소 24px 조작 영역·제목 및 정보 아이콘 비중첩을 확인하고, 브라우저 브리지 native 재사용과 공개 hook fixture를 서로 분리해 실행합니다. 이 검사는 전체 SillyTavern 런타임, 실제 외부 확장의 handler나 원격 요청 성공을 대신하지 않습니다. GitHub Actions의 `ui-regression-evidence-*` artifact에는 성공·실패 PNG와 HTML report가 14일 보관됩니다.
 
 provider integration 브라우저 fixture는 실제 제품 모듈과 공개 wiring을 실행하지만 Connection Manager와 네트워크는 더미입니다. 자동 검사는 전체 SillyTavern JavaScript 런타임, 실제 외부 확장 코드, 실제 제공업체 API 요청을 실행하지 않습니다. 아래 체크리스트에서 실제 설치 화면, 외부 확장의 provider/model 게시, Network payload와 제공업체 요청 성공을 계속 확인해야 합니다. API 키나 Service Account를 자동 검사에 제공할 필요는 없습니다.
+
+## v0.6.21 추가 검증
+
+- [ ] **[필수][REG-17] 입력·붙여넣기 후 신규·중복·형식 오류 개수와 문제가 있는 행이 표시되고, 빈 입력에서는 숨는다. 미리보기만으로 등록 목록이나 현재 사용 모델은 바뀌지 않는다.**
+- [ ] **[필수][REG-18] 오류·중복 행을 클릭하거나 Tab 뒤 Enter로 실행하면 입력란의 해당 행이 선택되고 화면에 보인다. 긴 입력과 좁은 화면에서도 선택한 행을 바로 수정할 수 있다.**
+- [ ] **[필수][REG-19] 수정 뒤 결과가 갱신되고 기본 실행 취소·다시 실행이 유지된다. 중복은 건너뛰되 형식 오류가 하나라도 남으면 아무 모델도 등록하지 않는다.**
+- [ ] **[권장][REG-20] 한글 조합 중 검사 결과가 튀어나오지 않고, 제공업체 변경 뒤 새 규칙으로 검사한다. 입력 직후 팝업을 닫아도 이전 검사 결과가 새 팝업에 나타나지 않는다.**
+
+사전 검사는 로컬 형식·중복 검사이며, 실제 모델 존재·권한·요청 성공을 보장하지 않습니다.
 
 ## v0.6.20 추가 검증
 
@@ -58,7 +67,7 @@ provider integration 브라우저 fixture는 실제 제품 모듈과 공개 wiri
 ```text
 검증 날짜:
 SillyTavern 버전:
-Custom Model Router 버전: v0.6.20
+Custom Model Router 버전: v0.6.21
 브라우저·OS:
 설치 방식: 신규 / 업데이트
 이전 확장 버전:
@@ -304,7 +313,7 @@ CMR 외부 브리지는 best-effort UI 선택지 주입 기능이며 전역 `fet
 
 ## 10. 확장 전용 백업·복구
 
-- [ ] **[필수][BKP-01] `백업 내보내기`로 `custom-model-router-backup-v0.6.20.json`을 저장한다. 최대 허용 범위인 UTF-8 8,000,000바이트·모델 5,000개·route 256개 안에서 성공한 백업은 다시 가져올 수 있다.**
+- [ ] **[필수][BKP-01] `백업 내보내기`로 `custom-model-router-backup-v0.6.21.json`을 저장한다. 최대 허용 범위인 UTF-8 8,000,000바이트·모델 5,000개·route 256개 안에서 성공한 백업은 다시 가져올 수 있다.**
 - [ ] **[필수][BKP-02] JSON 최상위에 `format`, `schemaVersion`, `createdAt`, `registry`, `purposeRoutes`, `externalIntegrations`만 있고 portable schemaVersion이 `2`인지 확인한다.**
 - [ ] **[필수][BKP-03] Registry에는 provider·model ID·protocol·enabled·선택 상태만 있는지 확인한다.**
 - [ ] **[필수][BKP-04] route에는 provider·model ID·adapter ID·Connection Profile ID만 있는지 확인한다.**
@@ -343,10 +352,10 @@ CMR 외부 브리지는 best-effort UI 선택지 주입 기능이며 전역 `fet
 ## 결과 보고 양식
 
 ```text
-제목: [v0.6.20][제공업체 또는 기능][항목 ID] 짧은 증상
+제목: [v0.6.21][제공업체 또는 기능][항목 ID] 짧은 증상
 
 SillyTavern 버전:
-Custom Model Router 버전: v0.6.20
+Custom Model Router 버전: v0.6.21
 OS / 브라우저:
 신규 설치 또는 업데이트:
 이전 CMR 버전:

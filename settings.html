@@ -61,7 +61,7 @@
                 autocapitalize="none"
                 spellcheck="false"
                 placeholder="한 줄에 모델 ID 하나"
-                aria-describedby="cmr_model_hint cmr_feedback"
+                aria-describedby="cmr_model_hint cmr_input_validation_summary cmr_feedback"
                 required
             ></textarea>
             <button
@@ -74,6 +74,10 @@
             </button>
         </div>
         <small id="cmr_model_hint">한 줄에 하나 · 최대 200개 · 오류가 있으면 전체 취소</small>
+        <section id="cmr_input_validation" class="cmr-input-validation" aria-label="모델 ID 입력 확인" hidden>
+            <div id="cmr_input_validation_summary" class="cmr-feedback" role="status" aria-live="polite" aria-atomic="true"></div>
+            <ul id="cmr_input_validation_issues" class="cmr-input-issues" aria-label="수정할 입력 행" hidden></ul>
+        </section>
     </form>
 
     <div class="cmr-feedback-row">

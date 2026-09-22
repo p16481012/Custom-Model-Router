@@ -422,6 +422,15 @@ class FakeDocument {
         const modelHelp = this.createElement('small');
         modelHelp.id = 'cmr_model_help';
         addForm.append(modelLabel, input, addButton, modelHelp);
+        const inputValidation = this.createElement('section');
+        inputValidation.id = 'cmr_input_validation';
+        inputValidation.hidden = true;
+        const inputSummary = this.createElement('div');
+        inputSummary.id = 'cmr_input_validation_summary';
+        const inputIssues = this.createElement('ul');
+        inputIssues.id = 'cmr_input_validation_issues';
+        inputValidation.append(inputSummary, inputIssues);
+        addForm.append(inputValidation);
 
         const feedback = this.createElement('div');
         feedback.id = 'cmr_feedback';
@@ -1147,7 +1156,7 @@ test('init은 24개 제공업체를 연결하고 API Connections Popup을 한 �
         assert.ok(harness.observers.some(observer => observer.target === harness.observerRoot));
         assert.ok(harness.observers.some(observer => observer.target === harness.documentRef.body));
         assert.equal(globalThis.CustomModelRouter.apiVersion, '1.2.0');
-        assert.equal(globalThis.CustomModelRouter.extensionVersion, '0.6.20');
+        assert.equal(globalThis.CustomModelRouter.extensionVersion, '0.6.21');
         assert.equal(globalThis.CustomModelRouter.routing.apiVersion, '1.0.0');
         assert.equal(globalThis.CustomModelRouter.getSnapshot().models.length, 1);
 
@@ -1504,6 +1513,39 @@ test('Popup show가 Promise를 반환하지 않아도 열린 상태와 닫기 �
         assert.equal(harness.documentRef.querySelector('#cmr_settings'), null);
         assert.equal(launcher.getAttribute('aria-expanded'), 'false');
         assert.equal(harness.documentRef.activeElement, launcher);
+    } finally {
+        await destroy();
+        restoreGlobals();
+    }
+});
+
+test('입력 사전 검사와 행 이동은 저장·현재 모델을 바꾸지 않고 제출은 다시 검증한다', async () => {
+    const harness = createHarness({ models: [], selectedModels: {} });
+    const restoreGlobals = installBrowserGlobals(harness);
+    try {
+        await init();
+        const panel = openPanel(harness);
+        const input = panel.querySelector('#cmr_model_id');
+        const before = JSON.stringify(harness.context.extensionSettings.customModelRouter);
+        const beforeModel = harness.controls.get('vertexai').value;
+        const saves = harness.saveCallCount;
+        input.value = 'gemini-new\nbad id\ngemini-new';
+        input.setSelectionRange = (start, end) => { input.selectionStart = start; input.selectionEnd = end; };
+        input.dispatchEvent(new FakeEvent('input'));
+        await new Promise(resolve => setTimeout(resolve, 300));
+        assert.equal(panel.querySelector('#cmr_input_validation_summary').textContent, '신규 1개 · 중복 1개 · 오류 1개');
+        assert.equal(input.getAttribute('aria-invalid'), 'true');
+        assert.equal(harness.saveCallCount, saves);
+        assert.equal(JSON.stringify(harness.context.extensionSettings.customModelRouter), before);
+        panel.querySelector('#cmr_input_validation_issues').querySelector('button').click();
+        assert.equal(harness.documentRef.activeElement, input);
+        assert.equal(input.value.slice(input.selectionStart, input.selectionEnd), 'bad id');
+        input.value = 'gemini-new\ngemini-fixed';
+        input.dispatchEvent(new FakeEvent('input'));
+        panel.querySelector('#cmr_add_form').dispatchEvent(new FakeEvent('submit'));
+        assert.deepEqual(globalThis.CustomModelRouter.listModels('vertexai').map(model => model.id), ['gemini-new', 'gemini-fixed']);
+        assert.equal(harness.controls.get('vertexai').value, beforeModel);
+        assert.equal(panel.querySelector('#cmr_input_validation').hidden, true);
     } finally {
         await destroy();
         restoreGlobals();

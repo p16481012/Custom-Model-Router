@@ -9,7 +9,9 @@ import {
     applyBulkModelRegistrationPlan,
     createBulkModelRegistrationPlan,
     createModelDeletionUndo,
+    createModelInputFeedback,
     filterRegisteredModels,
+    getModelInputLineRange,
     restoreModelDeletion,
     shouldShowModelSearch,
 } from '../src/model-management.js';
@@ -122,6 +124,59 @@ test('삭제 실행 취소는 모델을 복구하되 이후 생긴 선택을 덮
     assert.equal(restored.selectionRestored, false);
     assert.equal(restored.settings.selectedModels.openai, 'other-model');
     assert.deepEqual(restored.settings.models.map(model => model.id), ['other-model', 'deleted-model']);
+});
+
+test('입력 사전 검사는 저장하지 않고 제출과 동일한 신규·중복·오류 및 행 번호를 제공한다', () => {
+    const settings = addModel(normalizeSettings(), 'openai', 'registered');
+    const original = JSON.stringify(settings);
+    const input = '\nnew-one\r\nregistered\nnew-one\nbad id\n';
+    const feedback = createModelInputFeedback(settings, 'openai', input);
+    assert.equal(feedback.state, 'error');
+    assert.equal(feedback.summary, '신규 1개 · 중복 2개 · 오류 1개');
+    assert.deepEqual(feedback.issues.map(issue => [issue.line, issue.kind, issue.code]), [
+        [3, 'duplicate', 'duplicate_registry'], [4, 'duplicate', 'duplicate_input'],
+        [5, 'error', createBulkModelRegistrationPlan(settings, 'openai', input).invalid[0].code],
+    ]);
+    assert.equal(JSON.stringify(settings), original);
+});
+
+test('빈 입력은 사전 확인을 숨기고 중복은 오류로 막지 않으며 공급자 규칙을 다시 적용한다', () => {
+    assert.deepEqual(createModelInputFeedback({}, 'openai', '\n \r\n'), { state: 'empty', summary: '', issues: [] });
+    assert.equal(createModelInputFeedback({}, 'openai', 'same\nsame').state, 'warning');
+    assert.equal(createModelInputFeedback({}, 'openrouter', 'vendor/model').state, 'ok');
+    assert.equal(createModelInputFeedback({}, 'vertexai', 'vendor/model').state, 'error');
+    const settings = addModel(normalizeSettings(), 'openai', 'same');
+    assert.equal(createModelInputFeedback(settings, 'claude', 'same').state, 'ok');
+    assert.equal(createModelInputFeedback(settings, 'openai', 'same').state, 'warning');
+});
+
+test('사전 검사도 입력 길이·행 수 상한을 알리되 무효한 행 이동 링크를 만들지 않는다', () => {
+    for (const input of [
+        'x'.repeat(BULK_MODEL_INPUT_MAX_LENGTH + 1),
+        Array.from({ length: 201 }, (_, i) => `model-${i}`).join('\n'),
+    ]) {
+        const feedback = createModelInputFeedback({}, 'openai', input);
+        assert.equal(feedback.state, 'error');
+        assert.ok(feedback.summary.length > 0);
+        assert.deepEqual(feedback.issues, []);
+    }
+});
+
+test('행 이동 범위는 LF·CRLF·빈 행·마지막 행과 UTF-16 문자를 그대로 선택한다', () => {
+    const input = '😀good\r\n\r\n  bad id  \nlast';
+    assert.deepEqual(getModelInputLineRange(input, 1), { start: 0, end: 6 });
+    assert.deepEqual(getModelInputLineRange(input, 2), { start: 8, end: 8 });
+    const range = getModelInputLineRange(input, 3);
+    assert.equal(input.slice(range.start, range.end), '  bad id  ');
+    const last = getModelInputLineRange(input, 4);
+    assert.equal(input.slice(last.start, last.end), 'last');
+    assert.deepEqual(getModelInputLineRange('one\n', 2), { start: 4, end: 4 });
+});
+
+test('행 이동은 범위를 벗어나거나 정수가 아닌 번호를 거부한다', () => {
+    for (const line of [-1, 0, 1.5, 3, Infinity, NaN, '1']) {
+        assert.equal(getModelInputLineRange('one\ntwo', line), null);
+    }
 });
 
 test('삭제 뒤 다른 변경이 없으면 선택까지 복구하고 같은 모델 재등록과 충돌하면 덮지 않는다', () => {
