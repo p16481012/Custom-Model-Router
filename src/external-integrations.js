@@ -579,16 +579,15 @@ function getExternalControlBoundary(control) {
     return fallback;
 }
 
-function getConnectedProviderSelect(control, documentRef) {
+function getConnectedProviderContext(control, documentRef) {
     const referenceId = normalizeText(
         getAttribute(control, 'data-provider-select')
         || getAttribute(control, 'data-source-select'),
     );
     if (referenceId) {
         const explicit = documentRef?.getElementById?.(referenceId);
-        if (tagName(explicit) === 'SELECT') {
-            return explicit;
-        }
+        const providerControl = tagName(explicit) === 'SELECT' ? explicit : null;
+        return { control: providerControl, candidates: providerControl ? [providerControl] : [], required: true };
     }
 
     // 공통 Extensions root까지 올라가면 이웃 확장의 provider를 잘못 연결할 수 있다.
@@ -600,7 +599,11 @@ function getConnectedProviderSelect(control, documentRef) {
             root: boundary,
             documentRef,
         }));
-    return candidates.length === 1 ? candidates[0] : null;
+    return { control: candidates.length === 1 ? candidates[0] : null, candidates, required: candidates.length > 0 };
+}
+
+function getConnectedProviderSelect(control, documentRef) {
+    return getConnectedProviderContext(control, documentRef).control;
 }
 
 function getNativeProviderChoiceValues(option) {
@@ -623,6 +626,9 @@ function classifyNativeProviderOption(providerControl) {
     if (!selectedOption
         || selectedOption.disabled === true
         || hasAttribute(selectedOption, 'disabled')
+        || selectedOption.hidden === true
+        || hasAttribute(selectedOption, 'hidden')
+        || selectedOption.parentElement?.disabled === true
         || isManagedOption(selectedOption)
         || isManagedGroup(selectedOption.parentElement)) {
         return null;
@@ -807,6 +813,50 @@ export function classifyExternalNativeProviderReuse(target, options = {}) {
     };
 }
 
+function exactExternalProviderId(value) {
+    const normalized = normalizeProviderId(value);
+    if (isSupportedProvider(normalized)) return normalized;
+    const text = searchableText(value);
+    if (!text) return null;
+    const externalDefault = Object.entries(DEFAULT_EXTERNAL_PROVIDER_VALUES)
+        .find(([, externalValue]) => searchableText(externalValue) === text);
+    const alias = PROVIDER_ALIASES.find(([name]) => searchableText(name) === text);
+    const provider = getProviders().find(candidate => searchableText(candidate.label) === text);
+    const id = externalDefault?.[0] ?? alias?.[1] ?? provider?.id;
+    return isSupportedProvider(id) ? id : null;
+}
+
+function getSelectedExternalProviderScope(target) {
+    const unresolved = { providerId: null, issueCode: 'provider-selection-unresolved' };
+    if (!target.providerSelectionRequired && !target.providerControl) {
+        const values = ['data-model-provider', 'data-api-provider', 'data-provider', 'data-source']
+            .map(attribute => getAttribute(target.control, attribute)).filter(Boolean);
+        if (!values.length) return null;
+        const ids = values.map(exactExternalProviderId);
+        if (ids.some(id => !id) || new Set(ids).size !== 1) return unresolved;
+        return { providerId: ids[0], externalProviderValue: normalizeText(values[0]), issueCode: null };
+    }
+    const control = target.providerControl;
+    if (!control || isUnavailableControl(control) || control.multiple === true) return unresolved;
+    const option = getSelectedOption(control);
+    if (!option || !normalizeText(option.value)
+        || option.disabled === true || hasAttribute(option, 'disabled')
+        || option.hidden === true || hasAttribute(option, 'hidden')
+        || option.parentElement?.disabled === true
+        || isManagedOption(option) || isManagedGroup(option.parentElement)) return unresolved;
+
+    // Only the selected provider choice defines this scope. Stale model options,
+    // model labels and previously injected CMR metadata must not vote on it.
+    const machineValues = [option.value, ...EXPLICIT_PROVIDER_ATTRIBUTES.map(attribute => getAttribute(option, attribute))];
+    const machineIds = machineValues.map(exactExternalProviderId).filter(Boolean);
+    const ids = new Set([...machineIds, ...[option.textContent, option.label].map(exactExternalProviderId).filter(Boolean)]);
+    if (!machineIds.length || ids.size !== 1) return unresolved;
+    const [providerId] = ids;
+    // Custom/current handlers retain their stricter native reuse contract.
+    if (providerId === 'custom') return unresolved;
+    return { providerId, externalProviderValue: normalizeText(option.value), issueCode: null };
+}
+
 function getRiskText(control, documentRef) {
     const parts = [getControlText(control, documentRef)];
     let ancestor = control?.parentElement;
@@ -967,7 +1017,8 @@ function describeControl(control, root, documentRef, options) {
         ? control
         : (tag === 'DATALIST' ? control : resolveDatalist(control, documentRef));
     const labels = getLabels(effectiveControl, documentRef);
-    const providerControl = getConnectedProviderSelect(effectiveControl, documentRef);
+    const providerContext = getConnectedProviderContext(effectiveControl, documentRef);
+    const providerControl = providerContext.control;
     const inference = inferExternalProvider(effectiveControl, { ...options, documentRef });
     let risk = assessExternalTargetRisk(effectiveControl, { documentRef });
     const selectedCaptionProviderValue = normalizeProviderId(
@@ -1017,6 +1068,8 @@ function describeControl(control, root, documentRef, options) {
         inference,
         risk,
         providerControl,
+        providerControls: providerContext.candidates,
+        providerSelectionRequired: providerContext.required,
     };
 }
 
@@ -1516,7 +1569,7 @@ export function syncExternalTarget(target, providerId, models, options = {}) {
 }
 
 /**
- * 직접 연결 대상에는 기본·등록 모델 카탈로그를 제공업체별로 함께 표시한다.
+ * 제공업체 제한 없는 직접 연결 대상에는 기본·등록 모델을 제공업체별로 함께 표시한다.
  * select는 제공업체별 optgroup을 사용하고, input/datalist는 실제 입력값을 바꾸지 않도록
  * 모델 ID를 value로 유지하면서 provider가 드러나는 label을 붙인다.
  */
@@ -1693,6 +1746,7 @@ function isPotentialExternalMutationNode(node, root, documentRef, knownControls)
     const tag = tagName(element);
     if (['SELECT', 'INPUT', 'DATALIST'].includes(tag)) {
         return isExternalModelControl(element, { root, documentRef })
+            || isLikelyProviderControl(element, { root, documentRef })
             || MODEL_WORD_PATTERN.test(searchableText(getControlText(element, documentRef)))
             || PROVIDER_WORD_PATTERN.test(searchableText(getControlText(element, documentRef)));
     }
@@ -1991,9 +2045,10 @@ export function createExternalIntegrationController(options = {}) {
     }
 
     function bindTarget(target) {
-        if (target.providerControl && target.providerControl !== target.control) {
-            bindElement(target.providerControl, 'change', () => requestSync(), `provider:${target.targetId}`);
-            bindElement(target.providerControl, 'input', () => requestSync(), `provider-input:${target.targetId}`);
+        for (const providerControl of target.providerControls ?? [target.providerControl]) {
+            if (!providerControl || providerControl === target.control) continue;
+            bindElement(providerControl, 'change', () => requestSync(), `provider:${target.targetId}`);
+            bindElement(providerControl, 'input', () => requestSync(), `provider-input:${target.targetId}`);
         }
         if (target.resolution?.source !== 'direct') {
             return;
@@ -2162,14 +2217,15 @@ export function createExternalIntegrationController(options = {}) {
                 target.resolution = resolution;
                 if (resolution.source === 'direct') {
                     const nativeReuse = classifyExternalNativeProviderReuse(target, options);
-                    const providerEntries = nativeReuse?.providerId
-                        ? currentProviderEntries.filter(entry => entry.providerId === nativeReuse.providerId)
+                    const providerScope = nativeReuse ?? getSelectedExternalProviderScope(target);
+                    const providerEntries = providerScope
+                        ? currentProviderEntries.filter(entry => entry.providerId === providerScope.providerId)
                         : currentProviderEntries;
-                    const registryModelCount = nativeReuse
+                    const registryModelCount = providerScope
                         ? countActiveRegistryModels(providerEntries)
                         : nextActiveRegistryModelCount;
                     let syncResult;
-                    if (nativeReuse?.issueCode) {
+                    if (providerScope?.issueCode) {
                         syncResult = syncManagedTarget(target, () => {
                             removeExternalTargetModels(target, null, { removeOwnedHost: true });
                             return {
@@ -2177,17 +2233,17 @@ export function createExternalIntegrationController(options = {}) {
                                 eligibleModelCount: 0,
                                 expectedManagedOptionCount: 0,
                                 capacityLimited: false,
-                                reason: nativeReuse.issueCode,
+                                reason: providerScope.issueCode,
                             };
                         });
-                    } else if (nativeReuse) {
+                    } else if (providerScope) {
                         syncResult = syncManagedTarget(target, () => syncExternalTarget(
                             target,
-                            nativeReuse.providerId,
+                            providerScope.providerId,
                             providerEntries[0]?.models ?? [],
                             {
                                 ...options,
-                                externalProviderValue: nativeReuse.externalProviderValue,
+                                externalProviderValue: providerScope.externalProviderValue,
                             },
                         ));
                     } else {
@@ -2195,9 +2251,9 @@ export function createExternalIntegrationController(options = {}) {
                             syncExternalTargetProviders(target, providerEntries, options)
                         ));
                     }
-                    const expectedModels = nativeReuse
+                    const expectedModels = providerScope
                         ? (Array.isArray(syncResult?.injectedIds) ? syncResult.injectedIds : [])
-                            .map(modelId => ({ providerId: nativeReuse.providerId, modelId }))
+                            .map(modelId => ({ providerId: providerScope.providerId, modelId }))
                         : (Array.isArray(syncResult?.injectedModels) ? syncResult.injectedModels : []);
                     const expectedModelKeys = new Set(
                         expectedModels.map(model => `${model.providerId}\u001f${model.modelId}`),
@@ -2222,7 +2278,7 @@ export function createExternalIntegrationController(options = {}) {
                             : registryModelCount === 0
                                 ? 'idle'
                                 : (bridgeIssue ? 'failed' : 'connected'),
-                        issueCode: nativeReuse?.issueCode
+                        issueCode: providerScope?.issueCode
                             ?? (registryModelCount === 0 ? 'registry-empty' : bridgeIssue),
                         injectedCount: bridgeIssue ? 0 : injectedCount,
                         eligibleModelCount: Number.isInteger(syncResult?.eligibleModelCount)
@@ -2298,7 +2354,7 @@ export function createExternalIntegrationController(options = {}) {
             ...managedTargets.keys(),
             ...[...managedTargets.values()].flatMap(target => {
                 const sourceId = getAttribute(target.optionHost, 'data-cmr-external-source-list');
-                return [target.optionHost, target.providerControl,
+                return [target.optionHost, ...(target.providerControls ?? [target.providerControl]),
                     sourceId ? target.optionHost?.ownerDocument?.getElementById?.(sourceId) : null];
             }).filter(Boolean),
         ]);
@@ -2334,7 +2390,7 @@ export function createExternalIntegrationController(options = {}) {
             attributes: true,
             attributeFilter: [
                 'id', 'name', 'class', 'type', 'list', 'value', 'placeholder', 'title', 'for',
-                'disabled', 'readonly', 'multiple', 'aria-label',
+                'disabled', 'hidden', 'readonly', 'multiple', 'selected', 'label', 'aria-label',
                 'data-role', 'data-control', 'data-field', 'data-provider', 'data-api-provider',
                 'data-model-provider', 'data-source', 'data-type', 'data-provider-select', 'data-source-select',
                 'data-extension-id', 'data-extension-name', 'data-name',

@@ -1156,7 +1156,7 @@ test('init은 24개 제공업체를 연결하고 API Connections Popup을 한 �
         assert.ok(harness.observers.some(observer => observer.target === harness.observerRoot));
         assert.ok(harness.observers.some(observer => observer.target === harness.documentRef.body));
         assert.equal(globalThis.CustomModelRouter.apiVersion, '1.2.0');
-        assert.equal(globalThis.CustomModelRouter.extensionVersion, '0.6.21');
+        assert.equal(globalThis.CustomModelRouter.extensionVersion, '0.6.22');
         assert.equal(globalThis.CustomModelRouter.routing.apiVersion, '1.0.0');
         assert.equal(globalThis.CustomModelRouter.getSnapshot().models.length, 1);
 
@@ -3740,7 +3740,7 @@ test('범용 연결은 안전한 외부 모델 select에 등록 모델을 직접
     assert.equal(wiredCurrent.model.querySelector('[data-cmr-external-model="true"]'), null);
 });
 
-test('범용 연결은 외부 provider 전환과 무관하게 모든 등록 제공업체 그룹을 유지한다', () => {
+test('범용 연결은 외부의 명시적 provider 속성이 바뀌면 해당 제공업체 모델만 표시한다', () => {
     const harness = createHarness();
     const external = appendExternalModelSelect(harness, {
         selectId: 'summarizer_model',
@@ -3766,7 +3766,6 @@ test('범용 연결은 외부 provider 전환과 무관하게 모든 등록 제�
         assert.deepEqual(external.select.querySelectorAll('[data-cmr-external-group="true"]')
             .map(group => [group.dataset.cmrProvider, group.children.map(option => option.value)]), [
             ['openai', [openaiModel]],
-            ['zai', [zaiModel]],
         ]);
 
         external.select.setAttribute('data-provider', 'zai');
@@ -3775,7 +3774,6 @@ test('범용 연결은 외부 provider 전환과 무관하게 모든 등록 제�
         assert.equal(target.resolution.source, 'direct');
         assert.deepEqual(external.select.querySelectorAll('[data-cmr-external-group="true"]')
             .map(group => [group.dataset.cmrProvider, group.children.map(option => option.value)]), [
-            ['openai', [openaiModel]],
             ['zai', [zaiModel]],
         ]);
     } finally {
