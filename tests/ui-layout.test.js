@@ -165,7 +165,7 @@ test('상시 안내는 짧게 유지하고 긴 도움말을 입력 컨트롤에 
     assert.match(html, /id="cmr_operations_description"[^>]*>CMR 상태를 진단하고 비밀정보를 제외한 설정을 백업·복구합니다\.<\/p>/);
     assert.match(html, /class="cmr-tool-description">실제 요청 적용은 외부 기능에서 직접 확인하세요\.<\/p>/);
     assert.match(html, /<select id="cmr_provider"[^>]*aria-describedby="cmr_provider_hint"[^>]*>/);
-    assert.match(html, /<textarea[\s\S]*?id="cmr_model_id"[\s\S]*?aria-describedby="cmr_model_hint cmr_feedback"[\s\S]*?<\/textarea>/);
+    assert.match(html, /<textarea[\s\S]*?id="cmr_model_id"[\s\S]*?aria-describedby="cmr_model_hint cmr_input_validation_summary cmr_feedback"[\s\S]*?<\/textarea>/);
     assert.match(html, /<ul id="cmr_model_list"[^>]*aria-labelledby="cmr_list_title"[^>]*><\/ul>/);
     assert.doesNotMatch(html, /<select id="cmr_provider"[^>]*aria-describedby="[^"]*cmr_provider_help/);
     assert.doesNotMatch(html, /<textarea[\s\S]*?id="cmr_model_id"[\s\S]*?aria-describedby="[^"]*cmr_(?:provider|model)_help/);
@@ -179,6 +179,19 @@ test('상시 안내는 짧게 유지하고 긴 도움말을 입력 컨트롤에 
     assert.match(css, /overflow-wrap:\s*normal/);
     assert.match(css, /\.cmr-sentence\s*{[^}]*display:\s*block/s);
     assert.doesNotMatch(css, /word-break:\s*break-all/);
+});
+
+test('입력 검사 결과는 입력란에 연결되고 숨김·스크롤·행 버튼의 접근성을 유지한다', async () => {
+    const [html, css, index] = await readUiFiles();
+    assert.match(html, /id="cmr_input_validation"[^>]*hidden/);
+    assert.match(html, /id="cmr_input_validation_summary"[^>]*aria-live="polite"[^>]*aria-atomic="true"/);
+    assert.match(html, /id="cmr_input_validation_issues"[^>]*aria-label="수정할 입력 행"/);
+    assert.match(css, /\.cmr-input-issues\s*{[^}]*max-block-size:[^;]+;[^}]*overflow-y:\s*auto/s);
+    assert.match(css, /\.cmr-input-issue-button:focus-visible/);
+    assert.match(index, /addEventListener\('input', onModelInput\)/);
+    assert.match(index, /addEventListener\('compositionstart', onModelInputCompositionStart\)/);
+    assert.match(index, /addEventListener\('compositionend', onModelInputCompositionEnd\)/);
+    assert.match(index, /button\.type = 'button';[\s\S]*button\.dataset\.cmrInputLine/);
 });
 
 test('외부 연결 UI는 평상시 숨기고 문제 경고와 고급 제외 관리만 제공한다', async () => {

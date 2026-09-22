@@ -157,6 +157,41 @@ export function applyBulkModelRegistrationPlan(settings, plan) {
     return next;
 }
 
+/** Read-only feedback using exactly the same validation as registration. */
+export function createModelInputFeedback(settings, providerId, input) {
+    if (!String(input ?? '').trim()) return { state: 'empty', summary: '', issues: [] };
+    try {
+        const plan = createBulkModelRegistrationPlan(settings, providerId, input);
+        return {
+            state: plan.invalid.length ? 'error' : plan.duplicates.length ? 'warning' : 'ok',
+            summary: `신규 ${plan.additions.length}개 · 중복 ${plan.duplicates.length}개 · 오류 ${plan.invalid.length}개`,
+            issues: [
+                ...plan.invalid.map(issue => ({ ...issue, kind: 'error' })),
+                ...plan.duplicates.map(issue => ({ ...issue, kind: 'duplicate' })),
+            ].sort((left, right) => left.line - right.line),
+        };
+    } catch (error) {
+        if (!(error instanceof ModelManagementError)) throw error;
+        return { state: 'error', summary: error.message, issues: [] };
+    }
+}
+
+/** UTF-16 offsets match textarea selectionStart/selectionEnd, including CRLF and blank lines. */
+export function getModelInputLineRange(input, line) {
+    if (!Number.isSafeInteger(line) || line < 1) return null;
+    const text = String(input ?? '');
+    let start = 0;
+    for (let current = 1; current < line; current += 1) {
+        const newline = text.indexOf('\n', start);
+        if (newline === -1) return null;
+        start = newline + 1;
+    }
+    const newline = text.indexOf('\n', start);
+    let end = newline === -1 ? text.length : newline;
+    if (end > start && text[end - 1] === '\r') end -= 1;
+    return { start, end };
+}
+
 export function createModelDeletionUndo(settings, providerValue, modelValue) {
     const normalized = normalizeSettings(settings);
     const providerId = normalizeProviderId(providerValue);

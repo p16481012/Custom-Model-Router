@@ -260,6 +260,49 @@
     resize: vertical;
 }
 
+#cmr_settings .cmr-input-validation {
+    display: grid;
+    gap: 0.35rem;
+    min-width: 0;
+}
+
+#cmr_settings .cmr-input-validation[hidden],
+#cmr_settings .cmr-input-issues[hidden] {
+    display: none;
+}
+
+#cmr_settings .cmr-input-issues {
+    display: grid;
+    gap: 0.2rem;
+    list-style: none;
+    margin: 0;
+    max-block-size: min(25dvh, 9rem);
+    overflow-y: auto;
+    padding: 0.15rem;
+}
+
+#cmr_settings .cmr-input-issue-button {
+    background: transparent;
+    border: 1px solid var(--SmartThemeBorderColor, currentColor);
+    border-radius: 0.3rem;
+    box-sizing: border-box;
+    color: inherit;
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.82rem;
+    inline-size: 100%;
+    line-height: 1.5;
+    min-block-size: 2rem;
+    padding: 0.3rem 0.5rem;
+    text-align: start;
+    white-space: normal;
+}
+
+#cmr_settings .cmr-input-issue-button:focus-visible {
+    outline: 2px solid var(--SmartThemeQuoteColor, currentColor);
+    outline-offset: -2px;
+}
+
 #cmr_settings .cmr-provider-field select,
 #cmr_settings .cmr-input-row textarea {
     box-sizing: border-box;

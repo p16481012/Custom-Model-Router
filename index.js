@@ -74,7 +74,9 @@ import {
     applyBulkModelRegistrationPlan,
     createBulkModelRegistrationPlan,
     createModelDeletionUndo,
+    createModelInputFeedback,
     filterRegisteredModels,
+    getModelInputLineRange,
     restoreModelDeletion,
     shouldShowModelSearch,
 } from './src/model-management.js';
@@ -85,7 +87,7 @@ import {
     removeNativeRegistrations,
 } from './src/settings-operations.js';
 
-const EXTENSION_VERSION = '0.6.20';
+const EXTENSION_VERSION = '0.6.21';
 const SETTINGS_KEY = 'customModelRouter';
 const ROUTES_SETTINGS_KEY = 'customModelRouterRouting';
 const EXTERNAL_SETTINGS_KEY = 'customModelRouterExternalIntegrations';
@@ -176,6 +178,9 @@ let lastDiagnosticReport = null;
 let lastRepairReport = null;
 let modelSearchQuery = '';
 let pendingModelDeletionUndo = null;
+let modelInputValidationTimer = null;
+let modelInputComposing = false;
+let modelInputValidationSnapshot = null;
 let pendingImportPreview = null;
 let lastSettingsUndo = null;
 let unsubscribeProviderIntegrations = null;
@@ -660,6 +665,131 @@ function renderCompatibilityStatus() {
     }
 }
 
+function cancelModelInputValidation() {
+    clearTimeout(modelInputValidationTimer);
+    modelInputValidationTimer = null;
+}
+
+function resetModelInputValidation() {
+    cancelModelInputValidation();
+    modelInputComposing = false;
+    modelInputValidationSnapshot = null;
+}
+
+function renderModelInputValidation() {
+    const input = settingsRoot?.querySelector('#cmr_model_id');
+    const region = settingsRoot?.querySelector('#cmr_input_validation');
+    const summary = settingsRoot?.querySelector('#cmr_input_validation_summary');
+    const list = settingsRoot?.querySelector('#cmr_input_validation_issues');
+    if (!input || !region || !summary || !list || modelInputComposing) return;
+    cancelModelInputValidation();
+    const feedback = createModelInputFeedback(settings, activeProviderId, input.value);
+    const signature = JSON.stringify([activeProviderId, input.value, feedback]);
+    input.setAttribute('aria-invalid', String(feedback.state === 'error'));
+    if (modelInputValidationSnapshot?.root === settingsRoot && modelInputValidationSnapshot.signature === signature) return;
+    modelInputValidationSnapshot = { root: settingsRoot, providerId: activeProviderId, value: input.value, signature };
+    region.hidden = feedback.state === 'empty';
+    summary.dataset.state = feedback.state;
+    // Avoid announcing unchanged counts on every keystroke or unrelated catalog update.
+    if (summary.textContent !== feedback.summary) summary.textContent = feedback.summary;
+    list.hidden = feedback.issues.length === 0;
+    list.replaceChildren(...feedback.issues.map(issue => {
+        const row = document.createElement('li');
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'cmr-input-issue-button';
+        button.dataset.cmrInputLine = String(issue.line);
+        button.dataset.kind = issue.kind;
+        button.textContent = `${issue.line}행: ${issue.message}`;
+        button.setAttribute('aria-label', `${issue.line}행으로 이동: ${issue.message}`);
+        row.append(button);
+        return row;
+    }));
+}
+
+function onModelInput(event) {
+    if (event.currentTarget !== settingsRoot?.querySelector('#cmr_model_id')) return;
+    cancelModelInputValidation();
+    announce('');
+    if (event.isComposing || modelInputComposing) return;
+    const root = settingsRoot;
+    modelInputValidationTimer = setTimeout(() => {
+        modelInputValidationTimer = null;
+        if (settingsRoot === root) renderModelInputValidation();
+    }, 250);
+}
+
+function onModelInputCompositionStart(event) {
+    if (event.currentTarget !== settingsRoot?.querySelector('#cmr_model_id')) return;
+    cancelModelInputValidation();
+    modelInputComposing = true;
+    modelInputValidationSnapshot = null;
+    const region = settingsRoot.querySelector('#cmr_input_validation');
+    if (region) region.hidden = true;
+    event.currentTarget.setAttribute('aria-invalid', 'false');
+}
+
+function onModelInputCompositionEnd(event) {
+    if (event.currentTarget !== settingsRoot?.querySelector('#cmr_model_id')) return;
+    modelInputComposing = false;
+    onModelInput(event);
+}
+
+function scrollModelInputLineIntoView(input, range) {
+    if (typeof getComputedStyle !== 'function' || input.scrollHeight <= input.clientHeight) return;
+    // setSelectionRange does not scroll a textarea in every browser. Measure the
+    // wrapped text without changing its value, selection, or native undo stack.
+    const computed = getComputedStyle(input);
+    const mirror = document.createElement('div');
+    mirror.setAttribute('aria-hidden', 'true');
+    Object.assign(mirror.style, {
+        all: 'initial', position: 'fixed', top: '0', left: '0', visibility: 'hidden',
+        pointerEvents: 'none', boxSizing: 'border-box', width: `${input.clientWidth}px`,
+        whiteSpace: input.wrap === 'off' ? 'pre' : 'pre-wrap',
+    });
+    for (const property of [
+        'font', 'fontFeatureSettings', 'fontVariationSettings', 'lineHeight',
+        'letterSpacing', 'wordSpacing', 'textIndent', 'textTransform', 'textAlign',
+        'direction', 'tabSize', 'wordBreak', 'overflowWrap',
+        'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
+    ]) mirror.style[property] = computed[property];
+    const marker = document.createElement('span');
+    marker.style.all = 'unset';
+    marker.textContent = input.value.slice(range.start, range.end) || '\u200b';
+    mirror.append(document.createTextNode(input.value.slice(0, range.start)), marker);
+    document.body.append(mirror);
+    try {
+        const bounds = marker.getBoundingClientRect();
+        const top = bounds.top - mirror.getBoundingClientRect().top;
+        input.scrollTop = Math.max(0, top - (input.clientHeight - Math.min(bounds.height, input.clientHeight)) / 2);
+    } finally {
+        mirror.remove();
+    }
+}
+
+function focusModelInputLine(line) {
+    const input = settingsRoot?.querySelector('#cmr_model_id');
+    const range = getModelInputLineRange(input?.value, line);
+    if (!input || !range) return;
+    input.setSelectionRange?.(range.start, range.end);
+    input.focus?.();
+    scrollModelInputLineIntoView(input, range);
+    input.scrollIntoView?.({ block: 'nearest' });
+}
+
+function onModelInputIssueClick(event) {
+    const button = event.target?.closest?.('[data-cmr-input-line]');
+    const input = settingsRoot?.querySelector('#cmr_model_id');
+    if (!button || !settingsRoot?.contains(button) || !input || modelInputComposing) return;
+    const snapshot = modelInputValidationSnapshot;
+    renderModelInputValidation();
+    if (snapshot?.value !== input.value || snapshot?.providerId !== activeProviderId) {
+        input.focus?.();
+        return;
+    }
+    focusModelInputLine(Number(button.dataset.cmrInputLine));
+}
+
 function renderModelList() {
     const list = settingsRoot?.querySelector('#cmr_model_list');
     if (!list || !settings) {
@@ -1029,6 +1159,7 @@ function renderExternalIntegrations() {
 }
 
 function renderUi() {
+    renderModelInputValidation();
     renderLauncher();
     renderProviderFields();
     renderCompatibilityStatus();
@@ -2286,10 +2417,15 @@ function createSettingsPanel() {
         throw new Error('설정 UI가 비어 있습니다.');
     }
     settingsRoot = root;
+    resetModelInputValidation();
     const modelInput = settingsRoot.querySelector('#cmr_model_id');
     if (modelInput) {
         modelInput.maxLength = BULK_MODEL_INPUT_MAX_LENGTH;
+        modelInput.addEventListener('input', onModelInput);
+        modelInput.addEventListener('compositionstart', onModelInputCompositionStart);
+        modelInput.addEventListener('compositionend', onModelInputCompositionEnd);
     }
+    settingsRoot.querySelector('#cmr_input_validation_issues')?.addEventListener('click', onModelInputIssueClick);
     populateProviderSelect();
     settingsRoot.querySelector('#cmr_provider')?.addEventListener('change', onProviderChange);
     settingsRoot.querySelector('#cmr_add_form')?.addEventListener('submit', onAddModel);
@@ -2323,6 +2459,7 @@ function onPanelKeyDown(event) {
 }
 
 function handlePopupClosed(popup, root) {
+    if (settingsRoot === root) resetModelInputValidation();
     if (activePopup === popup) {
         activePopup = null;
     }
@@ -2414,6 +2551,8 @@ function openSettingsPanel() {
 
 function onAddModel(event) {
     event.preventDefault();
+    if (modelInputComposing) return;
+    renderModelInputValidation();
     const input = settingsRoot?.querySelector('#cmr_model_id');
     const provider = getProvider(activeProviderId);
     try {
@@ -2426,6 +2565,7 @@ function onAddModel(event) {
             input?.value,
         );
         if (!plan.ok) {
+            focusModelInputLine(plan.invalid[0]?.line);
             const examples = plan.invalid.slice(0, 3)
                 .map(issue => `${issue.line}행: ${issue.message}`)
                 .join(' ');
@@ -2547,6 +2687,7 @@ function onModelListClick(event) {
 }
 
 async function teardownRuntime({ applyNativeFallback = false } = {}) {
+    resetModelInputValidation();
     unsubscribeProviderIntegrations?.();
     unsubscribeProviderIntegrations = null;
     lastSettingsUndo = null;

@@ -23,6 +23,112 @@ async function upload(page, content) {
 async function backup(page, models) { return page.evaluate(models => cmrRuntime.backup(models), models); }
 const record = (id, enabled = true, provider = 'openai') => ({ id, provider, enabled });
 
+test('붙여넣기 직후 오류·중복을 알리고 문제 행으로 이동하며 수정 전에는 저장하지 않는다', async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 320, height: 568 });
+    await page.evaluate(() => CustomModelRouter.registerModel('openai', 'already-there'));
+    await openPanel(page);
+    const input = page.locator('#cmr_model_id');
+    const summary = page.locator('#cmr_input_validation_summary');
+    const issues = page.locator('#cmr_input_validation_issues');
+    const before = await page.evaluate(() => JSON.stringify(cmrRuntime.context.extensionSettings));
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+    await page.evaluate(() => navigator.clipboard.writeText('new-one\nbad id\nalready-there\nnew-one'));
+    await input.focus();
+    await page.keyboard.press('Control+V');
+    await expect(summary).toHaveText('신규 1개 · 중복 2개 · 오류 1개');
+    await expect(input).toHaveAttribute('aria-invalid', 'true');
+    await expect(issues.locator('button')).toHaveCount(3);
+    expect(await page.evaluate(() => JSON.stringify(cmrRuntime.context.extensionSettings))).toBe(before);
+    await issues.locator('[data-cmr-input-line="2"]').focus();
+    await page.keyboard.press('Enter');
+    await expect(input).toBeFocused();
+    expect(await input.evaluate(el => el.value.slice(el.selectionStart, el.selectionEnd))).toBe('bad id');
+    await page.locator('#cmr_add_form button[type="submit"]').click();
+    expect(await page.evaluate(() => CustomModelRouter.listModels().map(model => model.id))).toEqual(['already-there']);
+    await expect(input).toBeFocused();
+    await page.keyboard.insertText('fixed-two');
+    await expect(summary).toHaveText('신규 2개 · 중복 2개 · 오류 0개');
+    await expect(input).toHaveAttribute('aria-invalid', 'false');
+    await expect(page.locator('#cmr_feedback')).toBeEmpty();
+    await page.keyboard.press('Control+Z');
+    await expect(input).toHaveValue('new-one\nbad id\nalready-there\nnew-one');
+    await expect(summary).toHaveText('신규 1개 · 중복 2개 · 오류 1개');
+    await page.keyboard.press('Control+Y');
+    await expect(summary).toHaveText('신규 2개 · 중복 2개 · 오류 0개');
+    expect(await page.locator('#cmr_settings').evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath('input-validation.png') });
+    await page.locator('#cmr_add_form button[type="submit"]').click();
+    expect(await page.evaluate(() => CustomModelRouter.listModels().map(model => model.id))).toEqual(['already-there', 'new-one', 'fixed-two']);
+    await expect(page.locator('#cmr_input_validation')).toBeHidden();
+    await expect(page.locator('#model_openai_select')).toHaveValue('native-model');
+});
+
+test('사전 검사는 공급자·등록 변경을 따라가고 IME 조합·오래된 행 링크·닫힌 팝업을 안전하게 처리한다', async ({ page }) => {
+    await openPanel(page);
+    const input = page.locator('#cmr_model_id');
+    const summary = page.locator('#cmr_input_validation_summary');
+    await input.fill('vendor/model');
+    await expect(input).toHaveAttribute('aria-invalid', 'true');
+    await page.locator('#cmr_provider').selectOption('openrouter');
+    await expect(summary).toHaveText('신규 1개 · 중복 0개 · 오류 0개');
+    await page.evaluate(() => CustomModelRouter.registerModel('openrouter', 'vendor/model'));
+    await expect(summary).toHaveText('신규 0개 · 중복 1개 · 오류 0개');
+    await expect(input).toHaveValue('vendor/model');
+    await input.evaluate(el => {
+        el.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
+        el.value = 'bad id';
+        el.dispatchEvent(new InputEvent('input', { bubbles: true, isComposing: true }));
+    });
+    await page.waitForTimeout(300);
+    await expect(page.locator('#cmr_input_validation')).toBeHidden();
+    await expect(input).toHaveAttribute('aria-invalid', 'false');
+    await input.evaluate(el => el.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true })));
+    await expect(summary).toHaveText('신규 0개 · 중복 0개 · 오류 1개');
+    await input.evaluate(el => { el.value = 'now-fixed'; });
+    await page.locator('[data-cmr-input-line="1"]').click();
+    await expect(summary).toHaveText('신규 1개 · 중복 0개 · 오류 0개');
+    expect(await input.evaluate(el => el.selectionStart === el.selectionEnd)).toBe(true);
+    await input.fill('another bad id');
+    await page.locator('.popup-button-close').click();
+    await openPanel(page);
+    await page.waitForTimeout(300);
+    await expect(input).toHaveValue('');
+    await expect(page.locator('#cmr_input_validation')).toBeHidden();
+    expect(await page.evaluate(() => CustomModelRouter.listModels().map(model => model.id))).toEqual(['vendor/model']);
+});
+
+test('입력 행 수 상한을 미리 알리고 긴 입력의 오류 행도 좁은 화면에서 선택·스크롤한다', async ({ page }, testInfo) => {
+    await openPanel(page);
+    const input = page.locator('#cmr_model_id');
+    const summary = page.locator('#cmr_input_validation_summary');
+    await input.fill(Array.from({ length: 201 }, (_, i) => `model-${i}`).join('\n'));
+    await expect(summary).toHaveText('한 번에 200개 모델까지 등록할 수 있습니다.');
+    await expect(page.locator('#cmr_input_validation_issues')).toBeHidden();
+    const text = Array.from({ length: 150 }, (_, i) => (
+        i === 74 || i === 149 ? 'bad id' : `model-${i}-${'x'.repeat(45)}`
+    )).join('\n');
+    for (const width of [320, 360, 420, 720]) {
+        await page.setViewportSize({ width, height: width === 320 ? 568 : 800 });
+        await input.fill(text);
+        await expect(summary).toHaveText('신규 148개 · 중복 0개 · 오류 2개');
+        await input.evaluate(el => { el.scrollTop = 0; el.setSelectionRange(0, 0); });
+        await page.locator('[data-cmr-input-line="150"]').click();
+        await expect(input).toBeFocused();
+        expect(await input.evaluate(el => el.value.slice(el.selectionStart, el.selectionEnd))).toBe('bad id');
+        await expect.poll(() => input.evaluate(el => el.scrollTop)).toBeGreaterThan(0);
+        expect(await page.locator('#cmr_settings').evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+        await page.screenshot({ path: testInfo.outputPath(`input-line-jump-${width}.png`) });
+        const lastLineScroll = await input.evaluate(el => el.scrollTop);
+        await page.locator('[data-cmr-input-line="75"]').click();
+        expect(await input.evaluate(el => el.value.slice(el.selectionStart, el.selectionEnd))).toBe('bad id');
+        expect(await input.evaluate(el => el.scrollTop)).toBeGreaterThan(0);
+        expect(await input.evaluate(el => el.scrollTop)).toBeLessThan(lastLineScroll * 0.75);
+        await expect(input).toHaveValue(text);
+        await page.screenshot({ path: testInfo.outputPath(`input-middle-line-jump-${width}.png`) });
+    }
+    expect(await page.evaluate(() => CustomModelRouter.listModels())).toEqual([]);
+});
+
 test('제품 UI의 여러 줄 등록·활성 토글·삭제 실행 취소가 좁은 화면에서 동작한다', async ({ page }, testInfo) => {
     await openPanel(page);
     await page.locator('#cmr_model_id').fill('runtime-one\nruntime-two');
