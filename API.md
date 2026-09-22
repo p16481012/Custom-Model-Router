@@ -1,6 +1,6 @@
 # 공개 Registry 및 Provider Integration API
 
-Custom Model Router v0.6.21은 다른 SillyTavern 확장이 내부 파일 경로에 의존하지 않고 등록 모델, 공용 provider 연동과 용도별 라우팅을 사용할 수 있도록 `globalThis.CustomModelRouter`를 제공합니다. Registry API 계약 버전은 `1.2.0`, `CustomModelRouter.integrations`의 Provider Integration API 계약 버전은 `1.1.0`, Routing API 계약 버전은 `1.0.0`입니다. Registry `1.2.0`은 Integration API를 추가한 하위 호환 minor 갱신이며 Routing API는 v0.5.0의 `1.0.0` 계약을 유지합니다.
+Custom Model Router v0.6.22은 다른 SillyTavern 확장이 내부 파일 경로에 의존하지 않고 등록 모델, 공용 provider 연동과 용도별 라우팅을 사용할 수 있도록 `globalThis.CustomModelRouter`를 제공합니다. Registry API 계약 버전은 `1.2.0`, `CustomModelRouter.integrations`의 Provider Integration API 계약 버전은 `1.1.0`, Routing API 계약 버전은 `1.0.0`입니다. Registry `1.2.0`은 Integration API를 추가한 하위 호환 minor 갱신이며 Routing API는 v0.5.0의 `1.0.0` 계약을 유지합니다.
 
 v0.6.0의 범용 DOM 모델 브리지, v0.6.15의 hookless native provider option 재사용, 호환성 진단과 설정 백업·복구, v0.6.7의 Playwright UI 회귀 검사 인프라는 Registry/Routing 호출 계약에 포함되지 않습니다. v0.6.14의 Provider Integration API는 공개 hook을 명시적으로 등록한 소비 확장에만 적용되며 hookless native 재사용과 별도 경로입니다. 대상별 제외·복구와 기존 UI 선택지 주입 상태는 진단 섹션의 고급 외부 연결 관리에 있고, 실제 요청 반영은 별도로 확인해야 합니다. 외부 저장 schema v2 역시 공개 API 호출 계약과 별개입니다. Routing API는 개발자 또는 연동 확장이 명시적으로 사용하는 opt-in 계약이며 일반 라우팅 UI는 없습니다. 용도별 경로에는 Connection Profile ID만 저장되고 프로필 본문·API 키·endpoint는 복제되지 않습니다.
 
@@ -211,11 +211,19 @@ stream factory를 아직 호출하지 않았거나 반복 중이더라도 소비
 | 정확한 Custom/OpenAI-compatible 선택 | provider가 `custom`인 가용 기본·등록 모델만 | provider option·선택값, endpoint·API 키, 외부 handler |
 | 정확한 SillyTavern/current-connection 후보 | 현재 활성 SillyTavern provider와 같은 가용 기본·등록 모델만 | provider option·선택값, 메인 source·모델·Connection Profile |
 
-`main`, `current`, `inherit`, `openai`, `st` 같은 단독 토큰과 서로 충돌하는 값·표시명은 native 재사용으로 분류하지 않습니다. 이처럼 모호한 provider option은 일반 DOM 브리지의 안전 판정이 별도로 성립하면 종전의 best-effort 선택지 주입을 유지할 수 있지만, native 재사용 특화라고 보고하지 않습니다.
+`main`, `current`, `inherit`, `openai`, `st` 같은 단독 토큰과 서로 충돌하는 값·표시명은 native 재사용으로 분류하지 않습니다. `openai`는 아래 일반 제공업체 필터로 OpenAI 모델만 제공합니다. 나머지 모호한 선택은 전체 모델로 fallback하지 않습니다.
 
 반대로 provider option 자체는 정확한 SillyTavern/current-connection 후보인데 현재 활성 SillyTavern provider가 없거나 CMR 지원 provider로 확정되지 않으면 `sillytavern-current` 분류를 유지한 채 `current-connection-unavailable` 실패로 표시합니다. 이 경우 모델을 투영하지 않으며 전체 provider, `custom` 또는 임의 provider 모델로 fallback하지 않습니다. 사용자가 현재 ST Chat Completion 연결을 확인해야 합니다.
 
 분류 결과는 모델 projection에만 사용합니다. CMR은 provider option을 추가·삭제하거나 해당 control 값을 바꾸지 않고, endpoint·API 키를 읽거나 복제하지 않으며, 전역 `fetch`·`XMLHttpRequest`, 외부 확장의 요청 함수 또는 SillyTavern main settings를 patch하지 않습니다. DOM option은 외부 확장의 실제 handler 구현을 증명하지 않으므로 소비 기능을 실행한 뒤 요청 payload의 `model`과 성공 결과를 직접 확인해야 합니다.
+
+### 일반 외부 제공업체 필터 (v0.6.22)
+
+일반 DOM 브리지도 연결된 provider/source 선택기의 현재 기계 값·명시 metadata가 알려진 제공업체와 일치할 때 해당 업체의 기본·등록 모델만 투영합니다. `anthropic→claude`, `google→makersuite`, `mistral→mistralai` 등 외부 별칭을 정규화하며 오래된 model option의 metadata가 현재 제공업체 선택을 덮지 않습니다. 제공업체 선택기가 없는 칸은 명시적 `data-model-provider`·`data-api-provider`·`data-provider`·`data-source` 범위를 따릅니다.
+
+빈 값·미지원·상충 표식·비활성 선택, provider/source 후보가 여러 개인 모호한 연결, 사라진 명시 참조는 CMR 옵션을 정리하고 `provider-selection-unresolved` 대기로 표시합니다. 전체 목록 또는 다른 업체의 저장 모델로 대체하지 않습니다. 제공업체 제한 자체가 없는 독립 모델 칸만 기존 전체 목록을 유지합니다. 필터는 select와 input/datalist에 같이 적용되며, 업체 전환 시 CMR 옵션만 교체하고 native 옵션·provider 설정·입력값·메인 연결은 보존합니다. 사라진 CMR select 선택은 기존 native fallback 알림 계약을 따릅니다.
+
+이 동작은 DOM 모델 투영 수정이며 공개 Registry·Integration·Routing API 버전과 handler 지원은 변경하지 않습니다.
 
 ## 용도별 Routing API
 

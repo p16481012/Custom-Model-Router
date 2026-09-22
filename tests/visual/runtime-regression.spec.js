@@ -129,6 +129,90 @@ test('입력 행 수 상한을 미리 알리고 긴 입력의 오류 행도 좁�
     expect(await page.evaluate(() => CustomModelRouter.listModels())).toEqual([]);
 });
 
+test('외부 제공업체 선택은 기본·수동 모델과 입력 제안을 함께 필터링하고 미지원 업체에는 주입하지 않는다', async ({ page }) => {
+    await page.evaluate(() => {
+        for (const provider of ['openai', 'claude', 'vertexai']) {
+            CustomModelRouter.registerModel(provider, `${provider}-manual`);
+            if (provider === 'openai') continue;
+            const core = document.querySelector(`#model_${provider}_select`);
+            core.replaceChildren(new Option(`${provider} native`, `${provider}-native`));
+        }
+        const panel = document.createElement('section');
+        panel.id = 'provider_filter_settings';
+        const provider = document.createElement('select');
+        provider.id = 'external_filter_provider';
+        for (const [value, label] of [['', 'Choose provider'], ['openai', 'OpenAI'], ['anthropic', 'Claude'], ['vertexai', 'Google Vertex AI'], ['unknown', 'Unsupported']]) {
+            provider.append(new Option(label, value));
+        }
+        provider.value = 'openai';
+        const model = document.createElement('select');
+        model.id = 'external_filter_chat_model';
+        model.dataset.providerSelect = provider.id;
+        const native = new Option('External native', 'external-native');
+        model.append(native);
+        const input = document.createElement('input');
+        input.id = 'external_filter_input_model';
+        input.dataset.providerSelect = provider.id;
+        input.value = 'external-input-unchanged';
+        panel.append(provider, model, input);
+        document.body.append(panel);
+        cmrRuntime.filterTest = { native, provider, model, input };
+    });
+    const provider = page.locator('#external_filter_provider');
+    const model = page.locator('#external_filter_chat_model');
+    const input = page.locator('#external_filter_input_model');
+    const snapshot = () => page.evaluate(() => {
+        const { provider, model, input, native } = cmrRuntime.filterTest;
+        const read = host => [...(host?.querySelectorAll('[data-cmr-external-model="true"]') ?? [])]
+            .map(option => [option.dataset.cmrProvider, option.value]).sort((a, b) => a[1].localeCompare(b[1]));
+        return {
+            models: read(model), suggestions: read(document.getElementById(input.getAttribute('list'))),
+            provider: provider.value, providerValues: [...provider.options].map(option => option.value),
+            nativePreserved: native.parentElement === model,
+        };
+    });
+    for (const [value, id, nativeId] of [
+        ['openai', 'openai', 'native-model'], ['anthropic', 'claude', 'claude-native'],
+        ['vertexai', 'vertexai', 'vertexai-native'], ['openai', 'openai', 'native-model'],
+    ]) {
+        await provider.selectOption(value);
+        const expected = [[id, `${id}-manual`], [id, nativeId]].sort((a, b) => a[1].localeCompare(b[1]));
+        await expect.poll(async () => (await snapshot()).models).toEqual(expected);
+        await expect.poll(async () => (await snapshot()).suggestions).toEqual(expected);
+        expect((await snapshot()).nativePreserved).toBe(true);
+        expect((await snapshot()).providerValues).toEqual(['', 'openai', 'anthropic', 'vertexai', 'unknown']);
+        await expect(model).toHaveValue('external-native');
+        await expect(input).toHaveValue('external-input-unchanged');
+    }
+    await model.selectOption('openai-manual');
+    await provider.selectOption('unknown');
+    await expect.poll(async () => (await snapshot()).models).toEqual([]);
+    await expect.poll(async () => (await snapshot()).suggestions).toEqual([]);
+    await expect(model).toHaveValue('external-native');
+    await provider.selectOption('');
+    await expect.poll(async () => (await snapshot()).models).toEqual([]);
+    await provider.selectOption('anthropic');
+    await expect.poll(async () => (await snapshot()).models).toEqual([
+        ['claude', 'claude-manual'], ['claude', 'claude-native'],
+    ]);
+    // Replacing the actual provider control must not retain its previous binding/scope.
+    await provider.evaluate(el => {
+        const replacement = el.cloneNode(true);
+        replacement.value = 'vertexai';
+        el.replaceWith(replacement);
+        cmrRuntime.filterTest.provider = replacement;
+    });
+    await expect.poll(async () => (await snapshot()).models).toEqual([
+        ['vertexai', 'vertexai-manual'], ['vertexai', 'vertexai-native'],
+    ]);
+    await provider.selectOption('openai');
+    await expect.poll(async () => (await snapshot()).models).toEqual([
+        ['openai', 'native-model'], ['openai', 'openai-manual'],
+    ]);
+    await expect(page.locator('#model_openai_select')).toHaveValue('native-model');
+    expect(await page.evaluate(() => cmrRuntime.context.chatCompletionSettings.chat_completion_source)).toBe('openai');
+});
+
 test('제품 UI의 여러 줄 등록·활성 토글·삭제 실행 취소가 좁은 화면에서 동작한다', async ({ page }, testInfo) => {
     await openPanel(page);
     await page.locator('#cmr_model_id').fill('runtime-one\nruntime-two');

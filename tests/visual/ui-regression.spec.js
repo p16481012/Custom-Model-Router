@@ -827,6 +827,14 @@ test.describe('외부 bridge provider 선택기 경계', () => {
             expect(snapshot.captionProviderManagedCount).toBe(0);
             expect(snapshot.captionProviderValue).toBe(value);
             expect(snapshot.captionProviderValues).toEqual(nativeProviderValues);
+            const expectedModels = {
+                openai: { value: 'gpt-5.9-preview', type: 'openai', provider: 'openai' },
+                anthropic: { value: 'claude-opus-9-preview', type: 'anthropic', provider: 'claude' },
+                google: { value: 'gemini-9.0-preview', type: 'google', provider: 'makersuite' },
+                vertexai: { value: 'gemini-vertex-9.0-preview', type: 'vertexai', provider: 'vertexai' },
+                custom: { value: 'custom-openai-9.0-preview', type: 'custom', provider: 'custom' },
+            };
+            expect(snapshot.captionOptions).toEqual([expectedModels[value]]);
         };
 
         await page.goto(fixtureServer.browserSandboxUrl, { waitUntil: 'networkidle' });
@@ -859,6 +867,9 @@ test.describe('외부 bridge provider 선택기 경계', () => {
         expect(anthropic.captionModelManagedCount).toBe(managedModelCount);
         expect(anthropic.captionModelSource).toBe('direct');
         expect(anthropic.captionModelRisk).toBeNull();
+
+        const google = await setProvider('google');
+        expectProviderPreserved(google, 'google');
 
         const custom = await setProvider('custom');
         expectProviderPreserved(custom, 'custom');
@@ -945,9 +956,7 @@ test.describe('외부 bridge provider 선택기 경계', () => {
         });
         expect(initial.ambiguousNative.kind).toBeNull();
         expect(initial.ambiguousNative.providerValue).toBe('main');
-        expect([...new Set(initial.ambiguousNative.options.map(option => option.provider))].sort()).toEqual([
-            'claude', 'custom', 'makersuite', 'openai', 'vertexai', 'zai',
-        ]);
+        expect(initial.ambiguousNative.options).toEqual([]);
         expect(initial.scope).toContain('synthetic native-handler request only');
 
         await page.locator('#native_custom_model').selectOption('custom-openai-9.0-preview');

@@ -87,7 +87,7 @@ import {
     removeNativeRegistrations,
 } from './src/settings-operations.js';
 
-const EXTENSION_VERSION = '0.6.21';
+const EXTENSION_VERSION = '0.6.22';
 const SETTINGS_KEY = 'customModelRouter';
 const ROUTES_SETTINGS_KEY = 'customModelRouterRouting';
 const EXTERNAL_SETTINGS_KEY = 'customModelRouterExternalIntegrations';
@@ -1004,8 +1004,9 @@ function createExternalTargetRow(target) {
         }
     } else if (bridgeStatus === 'idle') {
         state.dataset.state = 'idle';
-        state.textContent = '등록 모델 없음';
-        verification.textContent = '등록 후 자동 표시';
+        const unresolvedProvider = target.bridge?.issueCode === 'provider-selection-unresolved';
+        state.textContent = unresolvedProvider ? '제공업체 확인 필요' : '표시할 모델 없음';
+        verification.textContent = unresolvedProvider ? '다른 제공업체 모델은 추가하지 않음' : '해당 제공업체 목록을 확인하세요';
     } else {
         state.dataset.state = 'connected';
         state.textContent = nativeReuseKind === EXTERNAL_NATIVE_REUSE_KINDS.CUSTOM_OPENAI_COMPATIBLE
