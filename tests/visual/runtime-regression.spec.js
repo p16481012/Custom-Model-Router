@@ -213,6 +213,106 @@ test('외부 제공업체 선택은 기본·수동 모델과 입력 제안을 �
     expect(await page.evaluate(() => cmrRuntime.context.chatCompletionSettings.chat_completion_source)).toBe('openai');
 });
 
+test('별도 번역 API·모델 영역에서도 Google Vertex AI 선택에 Z.AI 등 다른 업체 모델을 섞지 않는다', async ({ page }, testInfo) => {
+    await page.evaluate(() => {
+        for (const [provider, ids] of [
+            ['vertexai', ['gemini-3.6-flash', 'gemini-3.7-flash']],
+            ['zai', ['glm-5.2', 'glm-5-turbo']], ['openai', ['gpt-translator']],
+        ]) {
+            const core = document.getElementById(`model_${provider}_select`);
+            core.replaceChildren(new Option(`${provider} native`, `${provider}-native`));
+            for (const id of ids) CustomModelRouter.registerModel(provider, id);
+        }
+        const panel = document.createElement('div');
+        panel.id = 'translation_settings';
+        panel.innerHTML = '<h3>API 연결</h3><section><label for="translation_api">번역 API</label><select id="translation_api"><option value="vertexai">Google Vertex AI</option><option value="zai">Z.AI (GLM)</option><option value="openai">OpenAI</option></select></section><section id="translation_model_field"><label for="translation_model">모델</label></section>';
+        let wrapper = panel.querySelector('#translation_model_field');
+        for (let index = 0; index < 8; index += 1) {
+            const nested = document.createElement('div');
+            wrapper.append(nested);
+            wrapper = nested;
+        }
+        const model = document.createElement('select');
+        model.id = 'translation_model';
+        model.append(new Option('Extension native', 'extension-native'));
+        // v0.6.22의 전체 주입 흔적이 이미 남아 있는 화면도 복구해야 한다.
+        const stale = document.createElement('optgroup');
+        stale.label = 'Z.AI (GLM) · CMR 모델';
+        stale.dataset.cmrExternalGroup = 'true';
+        stale.dataset.cmrProvider = 'zai';
+        const staleModel = new Option('glm-5.2', 'glm-5.2');
+        staleModel.dataset.cmrExternalModel = 'true';
+        staleModel.dataset.cmrProvider = 'zai';
+        stale.append(staleModel);
+        model.append(stale);
+        const input = document.createElement('input');
+        input.id = 'translation_input_model';
+        input.value = 'keep-input';
+        wrapper.append(model, input);
+        document.body.append(panel);
+    });
+    const provider = page.locator('#translation_api');
+    const model = page.locator('#translation_model');
+    const readModels = () => model.locator('[data-cmr-external-model="true"]').evaluateAll(options => (
+        options.map(option => [option.dataset.cmrProvider, option.value]).sort((a, b) => a[1].localeCompare(b[1]))
+    ));
+    const readSuggestions = () => page.locator('#translation_input_model').evaluate(input => (
+        [...(input.list?.options ?? [])].filter(option => option.dataset.cmrExternalModel === 'true')
+            .map(option => [option.dataset.cmrProvider, option.value]).sort((a, b) => a[1].localeCompare(b[1]))
+    ));
+    for (const [id, models] of [
+        ['vertexai', ['gemini-3.6-flash', 'gemini-3.7-flash', 'vertexai-native']],
+        ['zai', ['glm-5.2', 'glm-5-turbo', 'zai-native']],
+        ['openai', ['gpt-translator', 'openai-native']],
+        ['vertexai', ['gemini-3.6-flash', 'gemini-3.7-flash', 'vertexai-native']],
+    ]) {
+        await provider.selectOption(id);
+        const expected = models.map(model => [id, model]).sort((a, b) => a[1].localeCompare(b[1]));
+        await expect.poll(readModels).toEqual(expected);
+        await expect.poll(readSuggestions).toEqual(expected);
+        await expect(model.locator('optgroup')).toHaveCount(1);
+        await expect(model).toHaveValue('extension-native');
+        await expect(provider.locator('option')).toHaveCount(3);
+    }
+    await model.selectOption('gemini-3.6-flash');
+    // 연결이 사라져도 다른 업체의 전체 모델로 대체하지 않는다.
+    await provider.evaluate(element => element.remove());
+    await expect.poll(readModels).toEqual([]);
+    await expect.poll(readSuggestions).toEqual([]);
+    await expect(model).toHaveValue('extension-native');
+    await expect(page.locator('#translation_input_model')).toHaveValue('keep-input');
+    await page.locator('#translation_settings section').first().evaluate(section => {
+        const replacement = document.createElement('select');
+        replacement.id = 'translation_api';
+        replacement.append(new Option('Google Vertex AI', 'vertexai'), new Option('Z.AI (GLM)', 'zai'));
+        section.append(replacement);
+    });
+    await expect.poll(readModels).toEqual([
+        ['vertexai', 'gemini-3.6-flash'], ['vertexai', 'gemini-3.7-flash'], ['vertexai', 'vertexai-native'],
+    ]);
+    expect(await page.evaluate(() => cmrRuntime.context.chatCompletionSettings.chat_completion_source)).toBe('openai');
+    await testInfo.attach('provider-filter-models', { body: JSON.stringify(await readModels()), contentType: 'application/json' });
+});
+
+test('제공업체가 연결되지 않은 칸은 기본 24개 목록이나 다른 확장의 업체를 대신 사용하지 않는다', async ({ page }) => {
+    await page.evaluate(() => {
+        CustomModelRouter.registerModel('zai', 'glm-5.2');
+        const root = document.createElement('div');
+        root.id = 'extensions_settings2';
+        root.innerHTML = '<section data-extension-id="neighbor"><select id="neighbor_provider"><option value="zai">Z.AI (GLM)</option></select></section><div><label for="unassociated_model">Model</label><select id="unassociated_model"><option value="native">Native</option><optgroup data-cmr-external-group="true" data-cmr-provider="zai" label="Z.AI (GLM) · CMR 모델"><option data-cmr-external-model="true" data-cmr-provider="zai" value="glm-5.2">glm-5.2</option></optgroup></select></div>';
+        document.body.append(root);
+    });
+    const model = page.locator('#unassociated_model');
+    await expect(model.locator('option')).toHaveCount(1);
+    await expect(model).toHaveValue('native');
+    await page.evaluate(() => CustomModelRouter.registerModel('openai', 'another-gpt'));
+    await openPanel(page);
+    const row = page.locator('#cmr_external_picker_list .cmr-external-row').filter({ hasText: 'Model' });
+    await expect(row.filter({ hasText: '제공업체 확인 필요' })).toHaveCount(1);
+    await expect(model.locator('option')).toHaveCount(1);
+    await expect(page.locator('#neighbor_provider')).toHaveValue('zai');
+});
+
 test('제품 UI의 여러 줄 등록·활성 토글·삭제 실행 취소가 좁은 화면에서 동작한다', async ({ page }, testInfo) => {
     await openPanel(page);
     await page.locator('#cmr_model_id').fill('runtime-one\nruntime-two');
@@ -241,9 +341,11 @@ test('기본 모델의 단일·여러 줄 등록은 외부의 부족한 목록�
         core.append(alternative, new Option('Native second alternative', 'native-second-alternative'));
         const subset = document.createElement('select');
         subset.id = 'subset_chat_model';
+        subset.dataset.provider = 'openai';
         subset.append(new Option('Current native model only', 'native-model'));
         const existing = document.createElement('select');
         existing.id = 'existing_chat_model';
+        existing.dataset.provider = 'openai';
         const externalAlternative = new Option('Already available', 'native-alternative');
         existing.append(new Option('Current native model', 'native-model'), externalAlternative);
         document.body.append(subset, existing);
@@ -312,6 +414,7 @@ test('기본 카탈로그 변경은 저장 없이 반영되고 수동 비활성�
     await page.evaluate(() => {
         const select = document.createElement('select');
         select.id = 'catalog_chat_model';
+        select.dataset.provider = 'openai';
         select.append(new Option('Current', 'native-model'));
         document.body.append(select);
         const core = document.querySelector('#model_openai_select');
@@ -574,7 +677,11 @@ test('실제 select의 중복 value도 저장한 provider 옵션과 change 이�
         const { createExternalIntegrationController } = await import('/cmr/src/external-integrations.js');
         const select = document.createElement('select');
         select.id = 'review_chat_model';
+        select.dataset.provider = 'claude';
         select.append(new Option('Choose', ''));
+        const native = new Option('Native shared model', 'shared');
+        native.dataset.type = 'openai';
+        select.append(native);
         document.body.append(select);
         let changed;
         select.addEventListener('change', () => { changed = select.selectedOptions[0]?.dataset.cmrProvider; });
@@ -584,11 +691,12 @@ test('실제 select의 중복 value도 저장한 provider 옵션과 change 이�
         });
         function recordFor(provider) { return { id: 'shared', provider, enabled: true }; }
         controller.start();
-        const result = { changed, selected: select.selectedOptions[0]?.dataset.cmrProvider, value: select.value };
+        const result = { changed, selected: select.selectedOptions[0]?.dataset.cmrProvider, value: select.value,
+            sharedOptions: [...select.options].filter(option => option.value === 'shared').length };
         controller.destroy();
         return result;
     });
-    expect(result).toEqual({ changed: 'claude', selected: 'claude', value: 'shared' });
+    expect(result).toEqual({ changed: 'claude', selected: 'claude', value: 'shared', sharedOptions: 2 });
 });
 
 test('공유 datalist는 입력별로 격리되고 제외 순서·원본 갱신·종료를 보존한다', async ({ page }) => {
@@ -599,6 +707,8 @@ test('공유 datalist는 입력별로 격리되고 제외 순서·원본 갱신�
         host.innerHTML = '<input id="first_chat_model" list="shared-list"><input id="second_chat_model" list="shared-list"><datalist id="shared-list"><option value="native"></datalist>';
         document.body.append(host);
         const [first, second] = host.querySelectorAll('input');
+        first.dataset.provider = 'openai';
+        second.dataset.provider = 'openai';
         const list = host.querySelector('datalist');
         const ids = [first, second].map(control => createExternalTargetId(control, { documentRef: document }));
         const values = control => [...control.list.options].map(option => option.value);
