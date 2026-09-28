@@ -87,7 +87,7 @@ import {
     removeNativeRegistrations,
 } from './src/settings-operations.js';
 
-const EXTENSION_VERSION = '0.6.22';
+const EXTENSION_VERSION = '0.6.23';
 const SETTINGS_KEY = 'customModelRouter';
 const ROUTES_SETTINGS_KEY = 'customModelRouterRouting';
 const EXTERNAL_SETTINGS_KEY = 'customModelRouterExternalIntegrations';

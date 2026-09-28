@@ -554,29 +554,28 @@ function getExplicitProviderEvidence(control, store) {
     }
 }
 
-function getExternalControlBoundary(control) {
-    const fallback = control?.parentElement ?? null;
-    let ancestor = fallback;
-    for (let depth = 0; ancestor && depth < 5; depth += 1, ancestor = ancestor.parentElement) {
-        const id = normalizeText(ancestor.id ?? getAttribute(ancestor, 'id'));
-        const hasExtensionMarker = Boolean(
-            getAttribute(ancestor, 'data-extension-id')
-            || getAttribute(ancestor, 'data-extension-name')
-            || getAttribute(ancestor, 'data-name'),
-        );
-        const isKnownExtensionBoundary = normalizeText(
-            ancestor.className ?? getAttribute(ancestor, 'class'),
-        ).split(/\s+/).includes('caption_settings');
-        const isSemanticContainer = /(?:^|[_-])(container|settings|panel|drawer|extension|form)(?:$|[_-])/i.test(id);
-        const isBoundaryElement = ['SECTION', 'FIELDSET', 'FORM', 'DIALOG'].includes(tagName(ancestor));
-        if (hasExtensionMarker || isKnownExtensionBoundary || isSemanticContainer || isBoundaryElement) {
-            return ancestor;
-        }
-        if (['BODY', 'HTML'].includes(tagName(ancestor)) || ancestor.nodeType === 9) {
-            break;
-        }
+function isSharedExternalRoot(element) {
+    const id = normalizeText(element?.id ?? getAttribute(element, 'id'));
+    return element?.nodeType === 9
+        || ['BODY', 'HTML', 'MAIN'].includes(tagName(element))
+        || /^(?:extensions?(?:[_-]?settings\d*)?|rm_extensions_block)$/i.test(id);
+}
+
+function isExternalPanelBoundary(element) {
+    const id = normalizeText(element?.id ?? getAttribute(element, 'id'));
+    return Boolean(getAttribute(element, 'data-extension-id')
+        || getAttribute(element, 'data-extension-name')
+        || getAttribute(element, 'data-name'))
+        || normalizeText(element?.className ?? getAttribute(element, 'class')).split(/\s+/).includes('caption_settings')
+        || /(?:^|[_-])(container|settings|panel|drawer|extension|form)(?:$|[_-])/i.test(id)
+        || ['FORM', 'DIALOG'].includes(tagName(element));
+}
+
+function isProviderWithinPanel(provider, panel) {
+    for (let ancestor = provider?.parentElement; ancestor && ancestor !== panel; ancestor = ancestor.parentElement) {
+        if (isExternalPanelBoundary(ancestor) || isSharedExternalRoot(ancestor)) return false;
     }
-    return fallback;
+    return true;
 }
 
 function getConnectedProviderContext(control, documentRef) {
@@ -590,16 +589,21 @@ function getConnectedProviderContext(control, documentRef) {
         return { control: providerControl, candidates: providerControl ? [providerControl] : [], required: true };
     }
 
-    // 공통 Extensions root까지 올라가면 이웃 확장의 provider를 잘못 연결할 수 있다.
-    // 가장 가까운 확장/패널 경계 안에서만 암시적 provider control을 찾는다.
-    const boundary = getExternalControlBoundary(control);
-    const candidates = getAll(boundary, 'select')
-        .filter(candidate => candidate !== control)
-        .filter(candidate => isLikelyProviderControl(candidate, {
-            root: boundary,
-            documentRef,
-        }));
-    return { control: candidates.length === 1 ? candidates[0] : null, candidates, required: candidates.length > 0 };
+    // 개별 field의 section/fieldset 또는 깊은 wrapper에서 탐색을 끝내지 않는다.
+    // 가장 가까운 provider를 포함한 영역까지 찾되 독립 확장/패널과 공통 root는 넘지 않는다.
+    let panel = control?.parentElement;
+    for (let depth = 0; panel && depth < 32; depth += 1, panel = panel.parentElement) {
+        if (isSharedExternalRoot(panel)) break;
+        const candidates = getAll(panel, 'select')
+            .filter(candidate => candidate !== control && !isExcludedControl(candidate))
+            .filter(candidate => isProviderWithinPanel(candidate, panel))
+            .filter(candidate => isLikelyProviderControl(candidate, { root: panel, documentRef }));
+        if (candidates.length) {
+            return { control: candidates.length === 1 ? candidates[0] : null, candidates, required: true };
+        }
+        if (isExternalPanelBoundary(panel)) break;
+    }
+    return { control: null, candidates: [], required: false };
 }
 
 function getConnectedProviderSelect(control, documentRef) {
@@ -831,7 +835,8 @@ function getSelectedExternalProviderScope(target) {
     if (!target.providerSelectionRequired && !target.providerControl) {
         const values = ['data-model-provider', 'data-api-provider', 'data-provider', 'data-source']
             .map(attribute => getAttribute(target.control, attribute)).filter(Boolean);
-        if (!values.length) return null;
+        // 발견 실패는 제공업체 제한이 없다는 뜻이 아니다. 전체 업체 주입은 금지한다.
+        if (!values.length) return unresolved;
         const ids = values.map(exactExternalProviderId);
         if (ids.some(id => !id) || new Set(ids).size !== 1) return unresolved;
         return { providerId: ids[0], externalProviderValue: normalizeText(values[0]), issueCode: null };
@@ -1569,7 +1574,8 @@ export function syncExternalTarget(target, providerId, models, options = {}) {
 }
 
 /**
- * 제공업체 제한 없는 직접 연결 대상에는 기본·등록 모델을 제공업체별로 함께 표시한다.
+ * 호출자가 명시적으로 넘긴 여러 제공업체 목록을 표시하는 기존 모듈 호환용 helper다.
+ * 자동 DOM controller에서는 사용하지 않는다. 업체 연결 실패의 fallback으로 쓰면 안 된다.
  * select는 제공업체별 optgroup을 사용하고, input/datalist는 실제 입력값을 바꾸지 않도록
  * 모델 ID를 value로 유지하면서 provider가 드러나는 label을 붙인다.
  */
@@ -2218,14 +2224,10 @@ export function createExternalIntegrationController(options = {}) {
                 if (resolution.source === 'direct') {
                     const nativeReuse = classifyExternalNativeProviderReuse(target, options);
                     const providerScope = nativeReuse ?? getSelectedExternalProviderScope(target);
-                    const providerEntries = providerScope
-                        ? currentProviderEntries.filter(entry => entry.providerId === providerScope.providerId)
-                        : currentProviderEntries;
-                    const registryModelCount = providerScope
-                        ? countActiveRegistryModels(providerEntries)
-                        : nextActiveRegistryModelCount;
+                    const providerEntries = currentProviderEntries.filter(entry => entry.providerId === providerScope.providerId);
+                    const registryModelCount = countActiveRegistryModels(providerEntries);
                     let syncResult;
-                    if (providerScope?.issueCode) {
+                    if (providerScope.issueCode) {
                         syncResult = syncManagedTarget(target, () => {
                             removeExternalTargetModels(target, null, { removeOwnedHost: true });
                             return {
@@ -2236,7 +2238,7 @@ export function createExternalIntegrationController(options = {}) {
                                 reason: providerScope.issueCode,
                             };
                         });
-                    } else if (providerScope) {
+                    } else {
                         syncResult = syncManagedTarget(target, () => syncExternalTarget(
                             target,
                             providerScope.providerId,
@@ -2246,15 +2248,9 @@ export function createExternalIntegrationController(options = {}) {
                                 externalProviderValue: providerScope.externalProviderValue,
                             },
                         ));
-                    } else {
-                        syncResult = syncManagedTarget(target, () => (
-                            syncExternalTargetProviders(target, providerEntries, options)
-                        ));
                     }
-                    const expectedModels = providerScope
-                        ? (Array.isArray(syncResult?.injectedIds) ? syncResult.injectedIds : [])
-                            .map(modelId => ({ providerId: providerScope.providerId, modelId }))
-                        : (Array.isArray(syncResult?.injectedModels) ? syncResult.injectedModels : []);
+                    const expectedModels = (Array.isArray(syncResult?.injectedIds) ? syncResult.injectedIds : [])
+                        .map(modelId => ({ providerId: providerScope.providerId, modelId }));
                     const expectedModelKeys = new Set(
                         expectedModels.map(model => `${model.providerId}\u001f${model.modelId}`),
                     );

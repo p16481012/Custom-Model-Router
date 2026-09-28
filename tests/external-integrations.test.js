@@ -648,6 +648,8 @@ test('동일 구조 target 충돌은 첫 ID를 유지하고 후속 input의 선�
         const second = documentRef.createElement('input');
         first.name = 'model';
         second.name = 'model';
+        first.setAttribute('data-provider', 'openai');
+        second.setAttribute('data-provider', 'openai');
         panel.append(first, second);
         documentRef.append(panel);
         return { documentRef, first, second };
@@ -751,6 +753,7 @@ test('동일 구조 target 충돌은 첫 ID를 유지하고 후속 input의 선�
     firstRuntime.second.value = '';
     const inserted = firstRuntime.documentRef.createElement('input');
     inserted.name = 'model';
+    inserted.setAttribute('data-provider', 'openai');
     firstRuntime.first.parentElement.prepend(inserted);
     const liveRecreatedController = createExternalIntegrationController({
         root: firstRuntime.documentRef,
@@ -937,6 +940,7 @@ test('직접 연결 input 제안은 실제 모델 ID와 제공업체가 보이�
     removeExternalTargetModels(target, null, { removeOwnedHost: true });
     assert.equal(input.getAttribute('list'), null);
 
+    input.setAttribute('data-provider', 'claude');
     const selections = [];
     const controller = createExternalIntegrationController({
         root: documentRef,
@@ -952,8 +956,7 @@ test('직접 연결 input 제안은 실제 모델 ID와 제공업체가 보이�
     input.dispatchEvent({ type: 'input', isTrusted: true });
     assert.deepEqual(selections.at(-1), {
         targetId: target.targetId,
-        providerId: null,
-        providerIds: ['openai', 'claude'],
+        providerId: 'claude',
         modelId: 'shared-model',
         mode: 'direct',
         userInitiated: true,
@@ -1423,6 +1426,7 @@ test('controller observer는 관련 mutation을 한 frame으로 묶고 추론 �
 test('provider hook이 DOM 소유권을 획득·반납하면 legacy 주입을 즉시 정리·복원한다', () => {
     const documentRef = new FakeDocument();
     const model = labeledModelSelect(documentRef, 'hook_lifecycle_chat_model', 'Chat model');
+    model.setAttribute('data-provider', 'openai');
     const panel = model.parentElement;
     const scheduled = [];
     let observerCallback;
@@ -1762,6 +1766,114 @@ test('controller는 모든 안전 target을 직접 연결하고 재렌더·선�
     assert.equal(nativeProvider.value, 'ollama');
 });
 
+test('번역 API와 모델이 별도 section·깊은 wrapper에 있어도 선택 업체 모델만 표시한다', () => {
+    const documentRef = new FakeDocument();
+    const panel = documentRef.createElement('div');
+    panel.id = 'translation_settings';
+    const apiSection = documentRef.createElement('section');
+    const modelSection = documentRef.createElement('section');
+    const provider = documentRef.createElement('select');
+    provider.id = 'translation_api';
+    provider.setAttribute('aria-label', '번역 API');
+    for (const [id, label] of [['vertexai', 'Google Vertex AI'], ['zai', 'Z.AI (GLM)'], ['openai', 'OpenAI']]) {
+        const choice = option(documentRef, id);
+        choice.textContent = label;
+        provider.append(choice);
+    }
+    provider.value = 'vertexai';
+    apiSection.append(provider);
+    let wrapper = modelSection;
+    for (let index = 0; index < 8; index += 1) {
+        const nested = documentRef.createElement('div');
+        wrapper.append(nested);
+        wrapper = nested;
+    }
+    const model = documentRef.createElement('select');
+    model.id = 'translation_model';
+    const native = option(documentRef, 'native-model');
+    model.append(native);
+    model.value = native.value;
+    const input = documentRef.createElement('input');
+    input.id = 'translation_custom_model';
+    input.value = 'keep-typed-value';
+    wrapper.append(model, input);
+    panel.append(apiSection, modelSection);
+    documentRef.append(panel);
+    const controller = createExternalIntegrationController({
+        root: documentRef, documentRef,
+        getModels: providerId => [{ provider: providerId, id: `${providerId}-only` }],
+        observerFactory: () => ({ observe() {}, disconnect() {} }),
+        schedule: callback => callback(),
+    });
+    try {
+        controller.start();
+        for (const providerId of ['vertexai', 'zai', 'openai', 'vertexai']) {
+            provider.value = providerId;
+            provider.dispatchEvent({ type: 'change', isTrusted: true });
+            const targets = controller.getTargets();
+            assert.equal(targets.length, 2);
+            for (const target of targets) {
+                assert.equal(target.providerControl?.id, provider.id);
+                assert.deepEqual(target.optionHost.options.filter(item => item.dataset.cmrExternalModel === 'true')
+                    .map(item => [item.dataset.cmrProvider, item.value]), [[providerId, `${providerId}-only`]]);
+            }
+            assert.equal(model.value, 'native-model');
+            assert.ok(model.options.includes(native));
+            assert.equal(input.value, 'keep-typed-value');
+            assert.equal(provider.options.length, 3);
+        }
+    } finally { controller.destroy(); }
+});
+
+test('제공업체 연결을 놓친 모델 칸은 모든 업체로 fallback하지 않고 과거 CMR 옵션도 정리한다', () => {
+    const documentRef = new FakeDocument();
+    const model = labeledModelSelect(documentRef, 'unassociated_model');
+    const native = option(documentRef, 'native-model');
+    model.append(native);
+    model.value = native.value;
+    const [target] = discoverExternalModelTargets(documentRef, { documentRef });
+    syncExternalTargetProviders(target, getProviders().map(({ id }) => ({
+        providerId: id, models: [{ provider: id, id: `${id}-stale` }],
+    })), { documentRef });
+    assert.ok(model.options.some(item => item.dataset.cmrProvider === 'zai'));
+    const controller = createExternalIntegrationController({
+        root: documentRef, documentRef,
+        getModels: providerId => [{ provider: providerId, id: `${providerId}-only` }],
+        getPreferredModels: () => ({ zai: 'zai-only' }),
+        observerFactory: () => ({ observe() {}, disconnect() {} }),
+    });
+    try {
+        const [current] = controller.start();
+        assert.equal(current.bridge.issueCode, 'provider-selection-unresolved');
+        assert.deepEqual(model.options, [native]);
+        assert.equal(model.value, 'native-model');
+        assert.equal(controller.getMetrics().actualManagedOptionCount, 0);
+        assert.equal(controller.getMetrics().expectedManagedOptionCount, 0);
+    } finally { controller.destroy(); }
+});
+
+test('공통 확장 root와 이웃 확장 패널의 provider는 관계없는 모델 칸에 연결하지 않는다', () => {
+    const documentRef = new FakeDocument();
+    const commonRoot = documentRef.createElement('div');
+    commonRoot.id = 'extensions_settings2';
+    const neighbor = documentRef.createElement('section');
+    neighbor.setAttribute('data-extension-id', 'neighbor');
+    const provider = documentRef.createElement('select');
+    provider.id = 'neighbor_provider';
+    provider.append(option(documentRef, 'openai'));
+    provider.value = 'openai';
+    neighbor.append(provider);
+    const model = documentRef.createElement('select');
+    model.id = 'unassociated_model';
+    const row = documentRef.createElement('div');
+    row.append(model);
+    commonRoot.append(neighbor, row);
+    documentRef.append(commonRoot);
+    assert.equal(discoverExternalModelTargets(documentRef, { documentRef })[0].providerControl, null);
+    commonRoot.id = 'generic-wrapper';
+    assert.equal(discoverExternalModelTargets(documentRef, { documentRef })[0].providerControl, null);
+});
+
 test('선택된 24개 제공업체와 외부 별칭은 자기 모델만 표시하고 오래된 모델 metadata는 무시한다', () => {
     const documentRef = new FakeDocument();
     const panel = documentRef.createElement('section');
@@ -1922,8 +2034,10 @@ test('제공업체 연결이 모호하거나 명시 참조가 사라지면 주�
 test('managed option 계측은 direct와 활성 Registry 모델만 예상하고 risk target과 native 중복을 제외한다', () => {
     const documentRef = new FakeDocument();
     const first = labeledModelSelect(documentRef, 'first_chat_model', 'First chat model');
+    first.setAttribute('data-provider', 'openai');
     first.append(option(documentRef, 'gpt-a'));
     const second = labeledModelSelect(documentRef, 'second_chat_model', 'Second chat model');
+    second.setAttribute('data-provider', 'openai');
     const vectorControls = [];
     for (let index = 0; index < 13; index += 1) {
         const vector = labeledModelSelect(
@@ -2020,11 +2134,12 @@ test('활성 Registry 모델 수는 risk-only와 user-excluded-only 화면에서
     excludedController.destroy();
 });
 
-test('여러 provider의 표시 후보가 cap을 넘어도 bridge는 512개를 유지하고 용량 제한을 계측한다', () => {
+test('선택 업체가 cap을 넘으면 그 업체만 512개를 표시하고 다른 업체 재고는 주입하지 않는다', () => {
     const documentRef = new FakeDocument();
-    labeledModelSelect(documentRef, 'large_registry_chat_model', 'Large registry chat model');
+    const select = labeledModelSelect(documentRef, 'large_registry_chat_model', 'Large registry chat model');
+    select.setAttribute('data-provider', 'openai');
     const modelsByProvider = {
-        openai: Array.from({ length: 300 }, (_, index) => ({
+        openai: Array.from({ length: 600 }, (_, index) => ({
             provider: 'openai', id: `gpt-budget-${index}`,
         })),
         claude: Array.from({ length: 300 }, (_, index) => ({
@@ -2040,12 +2155,13 @@ test('여러 provider의 표시 후보가 cap을 넘어도 bridge는 512개를 �
 
     controller.start();
     const metrics = controller.getMetrics();
-    assert.equal(metrics.activeRegistryModelCount, 600);
+    assert.equal(metrics.activeRegistryModelCount, 900);
     assert.equal(metrics.eligibleManagedOptionCount, 600);
     assert.equal(metrics.expectedManagedOptionCount, EXTERNAL_INJECTED_OPTION_LIMIT);
     assert.equal(metrics.actualManagedOptionCount, EXTERNAL_INJECTED_OPTION_LIMIT);
     assert.equal(metrics.capacityLimitedTargetCount, 1);
     assert.equal(controller.getTargets()[0].bridge.status, 'connected');
+    assert.ok(select.options.every(item => item.dataset.cmrProvider === 'openai'));
     controller.destroy();
 });
 
@@ -2082,10 +2198,12 @@ test('DOM에 남은 비활성 target은 native fallback을 알리고 분리된 t
     panel.setAttribute('data-extension-id', 'lifecycle-targets');
     const disabledSelect = documentRef.createElement('select');
     disabledSelect.id = 'disabled_later_model';
+    disabledSelect.setAttribute('data-provider', 'openai');
     disabledSelect.append(option(documentRef, 'native-disabled'));
     disabledSelect.value = 'native-disabled';
     const detachedSelect = documentRef.createElement('select');
     detachedSelect.id = 'detached_later_model';
+    detachedSelect.setAttribute('data-provider', 'openai');
     detachedSelect.append(option(documentRef, 'native-detached'));
     detachedSelect.value = 'native-detached';
     panel.append(disabledSelect, detachedSelect);
@@ -2139,9 +2257,10 @@ test('DOM에 남은 비활성 target은 native fallback을 알리고 분리된 t
     controller.destroy();
 });
 
-test('제공업체 제한 없는 controller는 중복 모델 ID도 실제 selected option metadata로 구분한다', () => {
+test('다른 업체에 같은 모델 ID가 있어도 선택 업체의 option metadata만 선택 기록에 쓴다', () => {
     const documentRef = new FakeDocument();
     const select = labeledModelSelect(documentRef, 'unknown_chat_model', 'Chat model');
+    select.setAttribute('data-provider', 'claude');
     select.append(option(documentRef, 'native-model'));
     select.value = 'native-model';
     documentRef.append(select);
@@ -2169,9 +2288,8 @@ test('제공업체 제한 없는 controller는 중복 모델 ID도 실제 select
 
     controller.start();
     const managed = select.options.filter(item => item.dataset.cmrExternalModel === 'true');
-    assert.deepEqual(managed.map(item => item.dataset.cmrProvider), ['openai', 'claude']);
-    managed[0].selected = false;
-    managed[1].selected = true;
+    assert.deepEqual(managed.map(item => item.dataset.cmrProvider), ['claude']);
+    managed[0].selected = true;
     select.value = 'shared-model';
     select.dispatchEvent({ type: 'change', isTrusted: true });
 
@@ -2221,6 +2339,7 @@ test('제공업체 제한 없는 controller는 중복 모델 ID도 실제 select
     assert.equal(select.options.some(item => item.dataset.cmrExternalModel === 'true'), false);
 
     const collisionSelect = labeledModelSelect(documentRef, 'collision_chat_model', 'Chat model');
+    collisionSelect.setAttribute('data-provider', 'claude');
     collisionSelect.append(option(documentRef, 'shared-model', { 'data-type': 'openai' }));
     collisionSelect.value = 'shared-model';
     documentRef.append(collisionSelect);
@@ -2257,6 +2376,7 @@ test('명시적 제외는 target을 남기고 native fallback하며 선호 모�
     const panel = documentRef.createElement('section');
     panel.setAttribute('data-extension-name', 'Example Bridge');
     const select = labeledModelSelect(documentRef, 'example_chat_model', 'Chat model');
+    select.setAttribute('data-provider', 'openai');
     panel.append(select.parentElement);
     documentRef.append(panel);
     select.append(option(documentRef, 'native-model'));
@@ -2341,6 +2461,7 @@ test('제외 대상 API는 ID를 정규화하고 512개 한도와 prototype poll
 test('초기 제외 목록을 비우면 생성 옵션의 오래된 값이 대상을 다시 막지 않는다', () => {
     const documentRef = new FakeDocument();
     const select = labeledModelSelect(documentRef, 'restored_chat_model', 'Restored model');
+    select.setAttribute('data-provider', 'openai');
     documentRef.append(select.parentElement);
     const targetId = createExternalTargetId(select, { documentRef });
     const controller = createExternalIntegrationController({
@@ -2379,6 +2500,7 @@ test('확장 label은 공통 root를 건너뛰고 가까운 확장 경계를 hum
 test('bridge 상태는 registry 빈 값·native 중복·target별 동기화 실패를 구분한다', () => {
     const emptyDocument = new FakeDocument();
     const emptySelect = labeledModelSelect(emptyDocument, 'empty_chat_model', 'Chat model');
+    emptySelect.setAttribute('data-provider', 'openai');
     emptySelect.append(option(emptyDocument, 'native'));
     emptySelect.value = 'native';
     const emptyController = createExternalIntegrationController({
@@ -2395,13 +2517,16 @@ test('bridge 상태는 registry 빈 값·native 중복·target별 동기화 실�
 
     const documentRef = new FakeDocument();
     const bad = labeledModelSelect(documentRef, 'broken_chat_model', 'Broken chat model');
+    bad.setAttribute('data-provider', 'openai');
     bad.append(option(documentRef, 'native'));
     bad.value = 'native';
     const good = labeledModelSelect(documentRef, 'good_chat_model', 'Good chat model');
+    good.setAttribute('data-provider', 'openai');
     // Registry model이 native에 이미 있어 주입 0개여도 bridge는 정상 연결이다.
     good.append(option(documentRef, 'gpt-next'));
     good.value = 'gpt-next';
     const silent = labeledModelSelect(documentRef, 'silent_chat_model', 'Silent chat model');
+    silent.setAttribute('data-provider', 'openai');
     silent.append(option(documentRef, 'native'));
     silent.value = 'native';
     const originalBadAppend = bad.append.bind(bad);

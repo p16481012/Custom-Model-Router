@@ -98,8 +98,8 @@ test('브라우저 샌드박스는 안전 대상 자동 연결·native provider 
     assert.match(html, /verificationRequired/);
     assert.match(html, /endpointUnchanged/);
     assert.match(html, /apiKeyUnchanged/);
-    assert.match(html, /browser-sandbox=0\.6\.16/);
-    assert.match(html, /제공업체 선택기가 없어도 안전하게 자동 연결/);
+    assert.match(html, /browser-sandbox=0\.6\.23/);
+    assert.match(html, /제공업체 연결 미확인: 전체 모델을 주입하지 않을 대상/);
 });
 
 test('수동 UI 샌드박스도 모델 등록·복구 미리보기·외부 목록 분리를 반영한다', async () => {
