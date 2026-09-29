@@ -19,10 +19,6 @@ function externalGroup(select, providerId) {
         .find(group => group.dataset.cmrProvider === providerId);
 }
 
-function nativeFixtureId(providerId) {
-    return getProvider(providerId).fallbackModelIds[0] ?? `${providerId}-native`;
-}
-
 class FakeEvent {
     constructor(type, options = {}) {
         this.type = type;
@@ -1156,7 +1152,7 @@ test('init은 24개 제공업체를 연결하고 API Connections Popup을 한 �
         assert.ok(harness.observers.some(observer => observer.target === harness.observerRoot));
         assert.ok(harness.observers.some(observer => observer.target === harness.documentRef.body));
         assert.equal(globalThis.CustomModelRouter.apiVersion, '1.2.0');
-        assert.equal(globalThis.CustomModelRouter.extensionVersion, '0.6.23');
+        assert.equal(globalThis.CustomModelRouter.extensionVersion, '0.6.24');
         assert.equal(globalThis.CustomModelRouter.routing.apiVersion, '1.0.0');
         assert.equal(globalThis.CustomModelRouter.getSnapshot().models.length, 1);
 
@@ -1839,7 +1835,10 @@ test('모델 삭제 직후 실행 취소는 원래 레코드를 복구하고 버
 });
 
 test('진단은 서로 다른 모델 선택기의 동일 제공업체 그룹을 중복 자원으로 판정하지 않는다', async () => {
-    const harness = createHarness();
+    const harness = createHarness({ models: [
+        createModelRecord('vertexai', VERTEX_MODEL_ID),
+        createModelRecord('openai', 'gpt-diagnostic-helper'),
+    ] });
     const firstExternal = appendExternalModelSelect(harness, {
         containerId: 'first_vertex_extension',
         selectId: 'first_vertex_model',
@@ -2725,7 +2724,7 @@ test('SETTINGS_UPDATED는 미래 외부 연결 스키마와 함께 온 변경을
         assert.equal(globalThis.CustomModelRouter.routing.getRoute('summary'), null);
         assert.deepEqual(
             externalGroup(external.select, 'vertexai').children.map(option => option.value),
-            [VERTEX_MODEL_ID, nativeFixtureId('vertexai')],
+            [VERTEX_MODEL_ID],
         );
         assert.equal(harness.saveCallCount, initialSaveCallCount);
         assert.match(panel.querySelector('#cmr_feedback').textContent, /future_schema/);
@@ -2752,7 +2751,7 @@ test('SETTINGS_UPDATED는 미래 외부 연결 스키마와 함께 온 변경을
         });
         assert.deepEqual(
             externalGroup(external.select, 'vertexai').children.map(option => option.value),
-            [VERTEX_MODEL_ID, nextModelId, nativeFixtureId('vertexai')],
+            [VERTEX_MODEL_ID, nextModelId],
         );
         assert.ok(harness.saveCallCount > initialSaveCallCount);
     } finally {
@@ -3159,7 +3158,7 @@ test('백업 schema v2는 routing·외부 선택을 보존하고 legacy mapping�
         assert.equal(external.select.value, importedModelId);
         const managedGroup = externalGroup(external.select, 'zai');
         assert.equal(managedGroup.dataset.cmrProvider, 'zai');
-        assert.deepEqual(managedGroup.children.map(option => option.value), [importedModelId, nativeFixtureId('zai')]);
+        assert.deepEqual(managedGroup.children.map(option => option.value), [importedModelId]);
         assert.deepEqual(globalThis.CustomModelRouter.routing.getRoute('summary'), {
             provider: 'zai',
             modelId: importedModelId,
@@ -3284,11 +3283,11 @@ test('공용 provider integration API는 최종 초기화 뒤 공개되고 동�
         );
         const ready = await registration.ready;
         assert.deepEqual(phases, ['handler', 'models']);
-        assert.deepEqual(publishedModels, [VERTEX_MODEL_ID, nativeFixtureId('vertexai')]);
+        assert.deepEqual(publishedModels, [VERTEX_MODEL_ID]);
         assert.equal(ready.bindings.length, 1);
         assert.equal(ready.bindings[0].status, 'ready');
         assert.equal(ready.bindings[0].providerId, 'cmr.sillytavern.vertexai');
-        assert.equal(ready.bindings[0].modelCount, 2);
+        assert.equal(ready.bindings[0].modelCount, 1);
 
         const result = await boundExecute({
             modelId: VERTEX_MODEL_ID,
@@ -3305,7 +3304,7 @@ test('공용 provider integration API는 최종 초기화 뒤 공개되고 동�
         await flushMicrotasks(8);
         await integrations.refresh();
         assert.ok(modelUpdates.length >= 1);
-        assert.deepEqual(modelUpdates.at(-1), [VERTEX_MODEL_ID, additionalModelId, nativeFixtureId('vertexai')]);
+        assert.deepEqual(modelUpdates.at(-1), [VERTEX_MODEL_ID, additionalModelId]);
 
         const panel = openPanel(harness);
         panel.querySelector('#cmr_copy_diagnostics').dispatchEvent(new FakeEvent('click'));
@@ -3319,7 +3318,7 @@ test('공용 provider integration API는 최종 초기화 뒤 공개되고 동�
             pendingCount: 0,
             readyCount: 1,
             failedCount: 0,
-            publishedModelCount: 3,
+            publishedModelCount: 2,
         });
         assert.deepEqual(integrationCheck.details, report.providerIntegrations);
         assert.equal(integrationCheck.status, 'passed');
@@ -3645,7 +3644,7 @@ test('범용 연결은 안전한 외부 모델 select에 등록 모델을 직접
         assert.deepEqual(
             wiredCurrent.model.querySelectorAll('[data-cmr-external-model="true"]')
                 .map(option => [option.value, option.dataset.cmrProvider, option.dataset.type]),
-            [['gemini-wired-current', 'vertexai', 'current_st'], [nativeFixtureId('vertexai'), 'vertexai', 'current_st']],
+            [['gemini-wired-current', 'vertexai', 'current_st']],
         );
         assert.deepEqual(wiredCustom.provider.options.map(option => option.value), customProviderValues);
         assert.deepEqual(wiredCurrent.provider.options.map(option => option.value), currentProviderValues);
@@ -3706,7 +3705,7 @@ test('범용 연결은 안전한 외부 모델 select에 등록 모델을 직접
         assert.deepEqual(
             wiredCurrent.model.querySelectorAll('[data-cmr-external-model="true"]')
                 .map(option => [option.value, option.dataset.cmrProvider, option.dataset.type]),
-            [['gpt-wired-current', 'openai', 'current_st'], [nativeFixtureId('openai'), 'openai', 'current_st']],
+            [['gpt-wired-current', 'openai', 'current_st']],
         );
         assert.deepEqual(
             wiredCustom.model.querySelectorAll('[data-cmr-external-model="true"]')
@@ -3865,7 +3864,7 @@ test('init 범용 직접 연결은 기본 예외 목록에서 숨기고 명시�
         );
         assert.deepEqual(
             externalGroup(external.select, 'openrouter').children.map(option => option.value),
-            [modelId, nativeFixtureId('openrouter')],
+            [modelId],
         );
         assert.equal(external.select.value, 'native-external-model');
 
@@ -4024,7 +4023,7 @@ test('명시된 제공업체만 직접 연결하고 해당 업체 선택을 재�
         );
         const groups = external.select.querySelectorAll('[data-cmr-external-group="true"]');
         assert.deepEqual(groups.map(group => [group.dataset.cmrProvider, group.label]),
-            [['zai', 'CMR 모델']]);
+            [['zai', '사용자 모델']]);
 
         const zaiOption = external.select.querySelector(
             `[data-cmr-external-model="true"][data-cmr-provider="zai"]`,
@@ -4282,7 +4281,7 @@ test('SETTINGS_UPDATED는 외부 대상 제외와 복원을 controller·DOM에 �
 
         const restoredGroup = externalGroup(external.select, 'zai');
         assert.ok(restoredGroup);
-        assert.deepEqual(restoredGroup.children.map(option => option.value), [modelId, nativeFixtureId('zai')]);
+        assert.deepEqual(restoredGroup.children.map(option => option.value), [modelId]);
         assert.deepEqual(
             harness.context.extensionSettings.customModelRouterExternalIntegrations.excludedTargets,
             {},
@@ -4359,7 +4358,7 @@ test('portable backup 가져오기는 외부 대상 제외와 복원을 controll
 
         const restoredGroup = externalGroup(external.select, 'zai');
         assert.ok(restoredGroup);
-        assert.deepEqual(restoredGroup.children.map(option => option.value), [modelId, nativeFixtureId('zai')]);
+        assert.deepEqual(restoredGroup.children.map(option => option.value), [modelId]);
         assert.deepEqual(
             harness.context.extensionSettings.customModelRouterExternalIntegrations.excludedTargets,
             {},
@@ -4473,7 +4472,10 @@ test('고급 외부 연결 관리는 대상 제외를 schema v2에 보존하고 
 });
 
 test('외부 bridge 실패만 경고 카드를 노출하고 버튼으로 진단의 고급 관리를 연다', async () => {
-    const harness = createHarness();
+    const harness = createHarness({ models: [
+        createModelRecord('vertexai', VERTEX_MODEL_ID),
+        createModelRecord('openai', 'gpt-bridge-failure'),
+    ] });
     const external = appendExternalModelSelect(harness, {
         containerId: 'broken_bridge_extension',
         selectId: 'broken_bridge_model',

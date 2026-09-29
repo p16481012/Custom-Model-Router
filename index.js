@@ -87,7 +87,7 @@ import {
     removeNativeRegistrations,
 } from './src/settings-operations.js';
 
-const EXTENSION_VERSION = '0.6.23';
+const EXTENSION_VERSION = '0.6.24';
 const SETTINGS_KEY = 'customModelRouter';
 const ROUTES_SETTINGS_KEY = 'customModelRouterRouting';
 const EXTERNAL_SETTINGS_KEY = 'customModelRouterExternalIntegrations';
@@ -640,7 +640,7 @@ function renderProviderFields() {
     const help = settingsRoot.querySelector('#cmr_model_help');
     if (help) {
         help.textContent = formatUiSentences(
-            `${getProviderHelp(provider)} 기본 모델은 외부에 자동 제공됩니다. 빈 줄·중복은 건너뛰며, 잘못된 행이 있으면 전체 취소합니다.`,
+            `${getProviderHelp(provider)} 기본 모델과 같은 ID도 등록할 수 있습니다. 빈 줄·중복은 건너뛰며, 잘못된 행이 있으면 전체 취소합니다.`,
         );
     }
 }
@@ -1456,7 +1456,7 @@ function synchronize() {
     for (const provider of getProviders()) {
         synchronizeProvider(provider);
     }
-    modelCatalog = readModelCatalog(settings, document);
+    modelCatalog = readModelCatalog(settings);
     synchronizeProviderIntegrations();
     synchronizeExternalIntegrations();
     renderUi();
@@ -1769,9 +1769,9 @@ function onExternalSelectionInvalidated({ targetId, providerId, modelId, reason 
         return;
     }
     // 일시적인 외부 컨트롤 정리에는 마지막 선택을 보존한다.
-    // 등록 목록과 현재 로드된 기본 목록 양쪽에서 사라진 선택만 정리한다.
+    // 활성 등록 목록에서 사라진 선택만 정리한다.
     if (reason !== 'models-updated' || !providerId
-        || readProviderModelCatalog(settings, providerId, document).some(model => model.id === modelId)) {
+        || readProviderModelCatalog(settings, providerId).some(model => model.id === modelId)) {
         return;
     }
     const next = removeExternalSelectedModel(externalSettings, targetId, providerId);
@@ -2816,7 +2816,7 @@ async function initialize(generation) {
     );
     providerIntegrationController = createProviderIntegrationController({
         readRegistrySettings: () => settings,
-        getModels: providerId => readProviderModelCatalog(settings, providerId, document),
+        getModels: providerId => readProviderModelCatalog(settings, providerId),
         getContext: () => getLiveContext(),
         onError: error => {
             console.warn('[Custom Model Router] 공용 provider integration 처리 실패', error);
@@ -2836,7 +2836,7 @@ async function initialize(generation) {
             console.error('[Custom Model Router] Registry API 구독자 처리 실패', error);
         },
     });
-    modelCatalog = readModelCatalog(settings, document);
+    modelCatalog = readModelCatalog(settings);
     externalIntegrationController = createExternalIntegrationController({
         root: document,
         documentRef: document,

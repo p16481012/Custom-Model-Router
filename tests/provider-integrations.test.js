@@ -376,7 +376,7 @@ test('custom selected profile enables only the OpenAI-compatible strategy', asyn
     assert.equal(installs[0].strategy, 'openai-compatible');
     assert.deepEqual(installs[0].provider, {
         id: 'cmr.openai-compatible',
-        label: 'OpenAI-compatible · CMR 모델',
+        label: 'OpenAI-compatible · 사용자 모델',
         source: 'custom',
         protocol: 'openai-compatible',
     });

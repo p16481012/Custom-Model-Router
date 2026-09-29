@@ -8,7 +8,7 @@ import {
 // v0.6.5 이하 모듈 import 호환용 상수다. controller는 mode mapping을 사용하지 않는다.
 export const EXTERNAL_MAPPING_MANUAL = 'manual';
 export const EXTERNAL_MAPPING_DISABLED = 'disabled';
-export const EXTERNAL_GROUP_LABEL = 'CMR 모델';
+export const EXTERNAL_GROUP_LABEL = '사용자 모델';
 export const EXTERNAL_MODEL_SELECTOR = '[data-cmr-external-model="true"]';
 export const EXTERNAL_GROUP_SELECTOR = '[data-cmr-external-group="true"]';
 export const EXTERNAL_PROVIDER_HOOK_OWNED_ATTRIBUTE = 'data-cmr-provider-hook-owned';
