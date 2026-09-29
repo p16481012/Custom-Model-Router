@@ -129,7 +129,7 @@ test('입력 행 수 상한을 미리 알리고 긴 입력의 오류 행도 좁�
     expect(await page.evaluate(() => CustomModelRouter.listModels())).toEqual([]);
 });
 
-test('외부 제공업체 선택은 기본·수동 모델과 입력 제안을 함께 필터링하고 미지원 업체에는 주입하지 않는다', async ({ page }) => {
+test('외부 제공업체 선택은 등록 모델과 입력 제안만 필터링하고 기본·미지원 업체 모델은 주입하지 않는다', async ({ page }) => {
     await page.evaluate(() => {
         for (const provider of ['openai', 'claude', 'vertexai']) {
             CustomModelRouter.registerModel(provider, `${provider}-manual`);
@@ -171,12 +171,12 @@ test('외부 제공업체 선택은 기본·수동 모델과 입력 제안을 �
             nativePreserved: native.parentElement === model,
         };
     });
-    for (const [value, id, nativeId] of [
-        ['openai', 'openai', 'native-model'], ['anthropic', 'claude', 'claude-native'],
-        ['vertexai', 'vertexai', 'vertexai-native'], ['openai', 'openai', 'native-model'],
+    for (const [value, id] of [
+        ['openai', 'openai'], ['anthropic', 'claude'],
+        ['vertexai', 'vertexai'], ['openai', 'openai'],
     ]) {
         await provider.selectOption(value);
-        const expected = [[id, `${id}-manual`], [id, nativeId]].sort((a, b) => a[1].localeCompare(b[1]));
+        const expected = [[id, `${id}-manual`]];
         await expect.poll(async () => (await snapshot()).models).toEqual(expected);
         await expect.poll(async () => (await snapshot()).suggestions).toEqual(expected);
         expect((await snapshot()).nativePreserved).toBe(true);
@@ -193,7 +193,7 @@ test('외부 제공업체 선택은 기본·수동 모델과 입력 제안을 �
     await expect.poll(async () => (await snapshot()).models).toEqual([]);
     await provider.selectOption('anthropic');
     await expect.poll(async () => (await snapshot()).models).toEqual([
-        ['claude', 'claude-manual'], ['claude', 'claude-native'],
+        ['claude', 'claude-manual'],
     ]);
     // Replacing the actual provider control must not retain its previous binding/scope.
     await provider.evaluate(el => {
@@ -203,11 +203,11 @@ test('외부 제공업체 선택은 기본·수동 모델과 입력 제안을 �
         cmrRuntime.filterTest.provider = replacement;
     });
     await expect.poll(async () => (await snapshot()).models).toEqual([
-        ['vertexai', 'vertexai-manual'], ['vertexai', 'vertexai-native'],
+        ['vertexai', 'vertexai-manual'],
     ]);
     await provider.selectOption('openai');
     await expect.poll(async () => (await snapshot()).models).toEqual([
-        ['openai', 'native-model'], ['openai', 'openai-manual'],
+        ['openai', 'openai-manual'],
     ]);
     await expect(page.locator('#model_openai_select')).toHaveValue('native-model');
     expect(await page.evaluate(() => cmrRuntime.context.chatCompletionSettings.chat_completion_source)).toBe('openai');
@@ -261,10 +261,10 @@ test('별도 번역 API·모델 영역에서도 Google Vertex AI 선택에 Z.AI 
             .map(option => [option.dataset.cmrProvider, option.value]).sort((a, b) => a[1].localeCompare(b[1]))
     ));
     for (const [id, models] of [
-        ['vertexai', ['gemini-3.6-flash', 'gemini-3.7-flash', 'vertexai-native']],
-        ['zai', ['glm-5.2', 'glm-5-turbo', 'zai-native']],
-        ['openai', ['gpt-translator', 'openai-native']],
-        ['vertexai', ['gemini-3.6-flash', 'gemini-3.7-flash', 'vertexai-native']],
+        ['vertexai', ['gemini-3.6-flash', 'gemini-3.7-flash']],
+        ['zai', ['glm-5.2', 'glm-5-turbo']],
+        ['openai', ['gpt-translator']],
+        ['vertexai', ['gemini-3.6-flash', 'gemini-3.7-flash']],
     ]) {
         await provider.selectOption(id);
         const expected = models.map(model => [id, model]).sort((a, b) => a[1].localeCompare(b[1]));
@@ -288,7 +288,7 @@ test('별도 번역 API·모델 영역에서도 Google Vertex AI 선택에 Z.AI 
         section.append(replacement);
     });
     await expect.poll(readModels).toEqual([
-        ['vertexai', 'gemini-3.6-flash'], ['vertexai', 'gemini-3.7-flash'], ['vertexai', 'vertexai-native'],
+        ['vertexai', 'gemini-3.6-flash'], ['vertexai', 'gemini-3.7-flash'],
     ]);
     expect(await page.evaluate(() => cmrRuntime.context.chatCompletionSettings.chat_completion_source)).toBe('openai');
     await testInfo.attach('provider-filter-models', { body: JSON.stringify(await readModels()), contentType: 'application/json' });
@@ -355,14 +355,14 @@ test('기본 모델의 단일·여러 줄 등록은 외부의 부족한 목록�
         }
         cmrRuntime.nativeRegistration = { core, subset, existing, alternative, externalAlternative, events };
     });
-    await expect(page.locator('#subset_chat_model option[value="native-alternative"]')).toHaveCount(1);
+    await expect(page.locator('#subset_chat_model option[value="native-alternative"]')).toHaveCount(0);
     await expect(page.locator('#existing_chat_model option[value="native-alternative"]')).toHaveCount(1);
     expect(await page.evaluate(() => CustomModelRouter.listModels())).toEqual([]);
     await openPanel(page);
     await page.locator('#cmr_model_help_trigger').click();
     const help = page.locator('#cmr_model_help');
     await expect(help).toBeVisible();
-    await expect(help).toContainText('기본 모델은 외부에 자동 제공됩니다.');
+    await expect(help).toContainText('기본 모델과 같은 ID도 등록할 수 있습니다.');
     const helpBox = await help.boundingBox();
     expect(helpBox.y).toBeGreaterThanOrEqual(0);
     expect(helpBox.y + helpBox.height).toBeLessThanOrEqual(569);
@@ -410,7 +410,7 @@ test('기본 모델의 단일·여러 줄 등록은 외부의 부족한 목록�
     await expect(page.locator('#model_openai_select option[value="native-alternative"]')).toHaveCount(1);
 });
 
-test('기본 카탈로그 변경은 저장 없이 반영되고 수동 비활성화·삭제·재초기화가 중복 없이 동작한다', async ({ page }) => {
+test('기본 카탈로그 변경은 모델을 자동 제공하지 않고 등록 비활성화·삭제·재초기화를 따른다', async ({ page }) => {
     await page.evaluate(() => {
         const select = document.createElement('select');
         select.id = 'catalog_chat_model';
@@ -426,15 +426,15 @@ test('기본 카탈로그 변경은 저장 없이 반영되고 수동 비활성�
         cmrRuntime.catalogTest = { option, events };
     });
     const extra = page.locator('#catalog_chat_model option[value="native-extra"]');
-    await expect(extra).toHaveCount(1);
+    await expect(extra).toHaveCount(0);
     await page.evaluate(() => { cmrRuntime.catalogTest.option.disabled = true; });
     await expect(extra).toHaveCount(0);
     await page.evaluate(() => { cmrRuntime.catalogTest.option.disabled = false; });
-    await expect(extra).toHaveCount(1);
+    await expect(extra).toHaveCount(0);
     await page.evaluate(() => { cmrRuntime.catalogTest.option.value = 'native-renamed'; });
     await expect(extra).toHaveCount(0);
     const renamed = page.locator('#catalog_chat_model option[value="native-renamed"]');
-    await expect(renamed).toHaveCount(1);
+    await expect(renamed).toHaveCount(0);
     expect(await page.evaluate(async () => {
         const { stringifyPortableSettings } = await import('/cmr/src/portable-settings.js');
         return JSON.parse(stringifyPortableSettings({ registrySettings: cmrRuntime.context.extensionSettings.customModelRouter })).registry.models;
@@ -445,11 +445,13 @@ test('기본 카탈로그 변경은 저장 없이 반영되고 수동 비활성�
     await page.locator('[data-cmr-action="toggle-enabled"][data-model-id="native-renamed"]').click();
     await expect(renamed).toHaveCount(0);
     await expect(page.locator('#model_openai_select option[value="native-renamed"]')).toHaveCount(1);
-    await page.locator('[data-cmr-action="delete"][data-model-id="native-renamed"]').click();
+    await page.locator('[data-cmr-action="toggle-enabled"][data-model-id="native-renamed"]').click();
     await expect(renamed).toHaveCount(1);
+    await page.locator('[data-cmr-action="delete"][data-model-id="native-renamed"]').click();
+    await expect(renamed).toHaveCount(0);
     await page.locator('.popup-button-close').click();
     await page.evaluate(async () => { await cmrRuntime.destroy(); await cmrRuntime.init(); });
-    await expect(renamed).toHaveCount(1);
+    await expect(renamed).toHaveCount(0);
     await expect(page.locator('#catalog_chat_model')).toHaveValue('native-model');
     await expect(page.locator('#model_openai_select')).toHaveValue('native-model');
     expect(await page.evaluate(() => CustomModelRouter.listModels())).toEqual([]);
@@ -458,7 +460,7 @@ test('기본 카탈로그 변경은 저장 없이 반영되고 수동 비활성�
     await expect(renamed).toHaveCount(0);
 });
 
-test('Custom의 실제 로드 목록도 native 연결과 공개 hook에 제공하며 요청 직전 가용성을 다시 검사한다', async ({ page }) => {
+test('Custom 기본 모델은 직접 등록한 뒤 연결·공개 hook에 제공하고 등록 삭제 시 요청을 차단한다', async ({ page }) => {
     await page.evaluate(async () => {
         const { PROVIDER_INTEGRATION_REQUIRED_CAPABILITIES } = await import('/cmr/src/provider-integrations.js');
         const list = document.createElement('datalist');
@@ -484,27 +486,37 @@ test('Custom의 실제 로드 목록도 native 연결과 공개 hook에 제공�
             installHandler(binding) { state.execute = binding.execute; return { requestHandlerBound: true, handlerToken: {}, dispose() {} }; },
             publishModels(binding) {
                 state.models = binding.models.map(model => model.id);
-                return { modelsPublished: true, publicationToken: {}, updateModels(models) { state.models = models.map(model => model.id); return true; }, dispose() {} };
+                return { modelsPublished: true, publicationToken: {}, updateModels(models) { state.models = models.map(model => model.id); return true; }, dispose() { state.models = []; } };
             },
         });
         await registration.ready;
     });
-    await expect(page.locator('#catalog_custom_model option[value="vendor/native"]')).toHaveCount(1);
+    await expect(page.locator('#catalog_custom_model option[value="vendor/native"]')).toHaveCount(0);
     await expect(page.locator('#catalog_custom_provider option')).toHaveCount(1);
     await expect(page.locator('#catalog_custom_provider')).toHaveValue('custom');
-    expect(await page.evaluate(() => cmrRuntime.nativeHook.models)).toEqual(['vendor/native']);
+    expect(await page.evaluate(() => cmrRuntime.nativeHook.models)).toEqual([]);
     expect(await page.evaluate(() => CustomModelRouter.listModels())).toEqual([]);
+    await page.evaluate(async () => {
+        CustomModelRouter.registerModel('custom', 'vendor/native');
+        await CustomModelRouter.integrations.refresh();
+    });
+    await expect(page.locator('#catalog_custom_model option[value="vendor/native"]')).toHaveCount(1);
+    expect(await page.evaluate(() => cmrRuntime.nativeHook.models)).toEqual(['vendor/native']);
     const result = await page.evaluate(async () => {
         const state = cmrRuntime.nativeHook;
         await state.execute({ modelId: 'vendor/native', prompt: 'test', maxTokens: 8 });
         document.querySelector('#model_custom_select_fill').replaceChildren();
         document.querySelector('#model_custom_select').replaceChildren();
+        await state.execute({ modelId: 'vendor/native', prompt: 'test', maxTokens: 8 });
+        CustomModelRouter.unregisterModel('custom', 'vendor/native');
+        await CustomModelRouter.integrations.refresh();
         let code;
         try { await state.execute({ modelId: 'vendor/native', prompt: 'test', maxTokens: 8 }); } catch (error) { code = error.code; }
         return { calls: state.calls, code };
     });
-    expect(result).toEqual({ calls: ['vendor/native'], code: 'model_not_ready' });
+    expect(result).toEqual({ calls: ['vendor/native', 'vendor/native'], code: 'binding_not_ready' });
     await expect(page.locator('#catalog_custom_model option[value="vendor/native"]')).toHaveCount(0);
+    expect(await page.evaluate(() => cmrRuntime.nativeHook.models)).toEqual([]);
 });
 
 test('제품 가져오기 경로가 falsy 백업을 거부하고 현재 설정을 보존한다', async ({ page }) => {
@@ -570,7 +582,7 @@ test('기본 모델 중복 정리는 native 선택을 유지하고 적용 직전
     await expect(page.locator('#cmr_import_preview')).toBeVisible();
     await expect(page.locator('#cmr_import_preview_cancel')).toBeFocused();
     await expect(page.locator('#cmr_cleanup_warning')).toBeVisible();
-    await expect(page.locator('#cmr_cleanup_warning')).toContainText('정리한 기본 모델은 현재 목록에서 자동 제공됩니다.');
+    await expect(page.locator('#cmr_cleanup_warning')).toContainText('정리한 모델은 외부 확장의 사용자 모델 목록에서도 제거됩니다.');
     expect(await page.locator('#cmr_import_preview_apply').evaluate(button => {
         const range = document.createRange();
         range.selectNodeContents(button);

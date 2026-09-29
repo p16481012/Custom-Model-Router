@@ -899,8 +899,8 @@ test('직접 연결 select는 제공업체별 optgroup과 multiplex alias를 유
 
     const groups = select.children.filter(child => child.tagName === 'OPTGROUP');
     assert.deepEqual(groups.map(group => group.label), [
-        'OpenAI · CMR 모델',
-        'Anthropic · CMR 모델',
+        'OpenAI · 사용자 모델',
+        'Anthropic · 사용자 모델',
     ]);
     const managed = select.options.filter(item => item.dataset.cmrExternalModel === 'true');
     assert.deepEqual(managed.map(item => [item.value, item.dataset.cmrProvider]), [

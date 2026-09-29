@@ -1,6 +1,6 @@
-# v0.6.23 통합 사용자 검증 체크리스트
+# v0.6.24 통합 사용자 검증 체크리스트
 
-대상 버전: **v0.6.23**
+대상 버전: **v0.6.24**
 
 이 문서는 v0.1~v0.6 기능을 한 번에 확인하는 최종 수동 검증 순서입니다. 위에서 아래로 진행하고, 사용하지 않는 제공업체·외부 확장·개발자 API 항목은 `해당 없음`으로 표시하세요.
 
@@ -17,9 +17,17 @@
 
 ## 자동 검사 완료 범위
 
-v0.6.23 저장소에서는 Node 자동 검사 279개와 Playwright Chromium UI 회귀 검사 33개를 별도로 실행합니다. Node 검사는 기존 UI·Registry·Routing·DOM 브리지·진단 schema v2·백업·Provider Integration API 계약에 더해 hookless native Custom·현재 연결 exact 분류, provider별 모델 projection, 모호한 토큰 미분류, provider option·연결 설정·전역 요청·메인 설정 불변과 단일 공식 Popup 닫기의 소유권을 포함합니다. UI 검사는 실제 `settings.html`과 SillyTavern 1.18.0 고정 commit의 core·Popup CSS를 결합해 320·360·420·720px에서 공식 닫기의 패널 내부 배치·최소 24px 조작 영역·제목 및 정보 아이콘 비중첩을 확인하고, 브라우저 브리지 native 재사용과 공개 hook fixture를 서로 분리해 실행합니다. 이 검사는 전체 SillyTavern 런타임, 실제 외부 확장의 handler나 원격 요청 성공을 대신하지 않습니다. GitHub Actions의 `ui-regression-evidence-*` artifact에는 성공·실패 PNG와 HTML report가 14일 보관됩니다.
+v0.6.24 저장소에서는 Node 자동 검사 279개와 Playwright Chromium UI 회귀 검사 33개를 별도로 실행합니다. Node 검사는 기존 UI·Registry·Routing·DOM 브리지·진단 schema v2·백업·Provider Integration API 계약에 더해 hookless native Custom·현재 연결 exact 분류, provider별 활성 등록 모델 projection, 미등록 기본 모델 미주입, 모호한 토큰 미분류, provider option·연결 설정·전역 요청·메인 설정 불변과 단일 공식 Popup 닫기의 소유권을 포함합니다. UI 검사는 실제 `settings.html`과 SillyTavern 1.18.0 고정 commit의 core·Popup CSS를 결합해 320·360·420·720px에서 공식 닫기의 패널 내부 배치·최소 24px 조작 영역·제목 및 정보 아이콘 비중첩을 확인하고, 브라우저 브리지 native 재사용과 공개 hook fixture를 서로 분리해 실행합니다. 이 검사는 전체 SillyTavern 런타임, 실제 외부 확장의 handler나 원격 요청 성공을 대신하지 않습니다. GitHub Actions의 `ui-regression-evidence-*` artifact에는 성공·실패 PNG와 HTML report가 14일 보관됩니다.
 
 provider integration 브라우저 fixture는 실제 제품 모듈과 공개 wiring을 실행하지만 Connection Manager와 네트워크는 더미입니다. 자동 검사는 전체 SillyTavern JavaScript 런타임, 실제 외부 확장 코드, 실제 제공업체 API 요청을 실행하지 않습니다. 아래 체크리스트에서 실제 설치 화면, 외부 확장의 provider/model 게시, Network payload와 제공업체 요청 성공을 계속 확인해야 합니다. API 키나 Service Account를 자동 검사에 제공할 필요는 없습니다.
+
+## v0.6.24 추가 검증
+
+- [ ] **[필수][REG-21] 기본 목록에 있지만 CMR에는 없는 모델 ID를 단일·여러 줄로 직접 등록할 수 있다. 등록 중복 검사는 CMR의 동일 제공업체·ID와 입력 내 반복만 건너뛰며 기본 목록에 있다는 이유로 거부하지 않는다.**
+- [ ] **[조건부][EXT-34] 외부의 사용자 모델 그룹과 입력 제안에는 선택된 제공업체에 직접 등록한 활성 모델만 표시된다. 등록하지 않은 기본 모델은 CMR이 추가하지 않고 외부 확장 원래 옵션은 유지된다.**
+- [ ] **[조건부][EXT-35] 필요한 기본 모델 ID를 CMR에 등록하면 없는 외부 선택기에 추가되고, 이미 그 ID가 있는 선택기에는 native 옵션이 하나만 남는다. 등록 삭제·비활성화 뒤 CMR 옵션은 빠지고 native 옵션은 유지된다.**
+- [ ] **[조건부][INT-11] 공개 provider hook에는 선택된 Connection Profile provider에 직접 등록한 활성 모델만 게시된다. 등록하지 않은 기본 모델은 게시되지 않으며 그 ID의 공용 handler 요청은 model_not_ready로 거부된다.**
+- [ ] **[조건부][TOOLS-13] 기본 모델 중복 정리 미리보기에는 정리한 등록이 외부 사용자 모델 목록에서도 제거된다는 안내가 표시된다. 외부에서 계속 쓸 기본 모델 등록은 정리 대상에서 제외할 수 있다.**
 
 ## v0.6.23 추가 검증
 
@@ -28,7 +36,7 @@ provider integration 브라우저 fixture는 실제 제품 모듈과 공개 wiri
 
 ## v0.6.22 추가 검증
 
-- [ ] **[조건부][EXT-29] 외부의 제공업체를 OpenAI·Claude·Google·Vertex로 바꾸면 CMR이 추가한 기본·등록 모델과 입력 제안은 선택한 업체의 항목만 보인다. 이전 업체 모델은 남지 않는다.**
+- [ ] **[조건부][EXT-29] 외부의 제공업체를 OpenAI·Claude·Google·Vertex로 바꾸면 CMR이 추가한 활성 등록 모델과 입력 제안은 선택한 업체의 항목만 보인다. 이전 업체 모델은 남지 않는다.**
 - [ ] **[조건부][EXT-30] 제공업체가 비어 있거나 미지원·모호한 값이면 CMR 옵션이 정리되고 다른 업체 모델이 대신 나타나지 않는다. 유효한 업체를 다시 선택하면 해당 업체 모델만 복원된다.**
 - [ ] **[조건부][EXT-31] 제공업체 선택기 재생성 뒤에도 필터가 동작하며 native 옵션·업체 설정·메인 연결은 유지된다. CMR 관리 팝업의 전체 등록 목록은 이전과 같다.**
 
@@ -43,17 +51,19 @@ provider integration 브라우저 fixture는 실제 제품 모듈과 공개 wiri
 
 ## v0.6.20 추가 검증
 
-- [ ] **[조건부][EXT-25] CMR에 모델을 등록하지 않아도 SillyTavern에 현재 로드된 기본 모델이 안전한 외부 모델 칸에 표시된다. 기존 옵션과 같은 제공업체·ID는 중복되지 않고 현재 선택·provider 설정이 바뀌지 않는다.**
-- [ ] **[조건부][EXT-26] core 목록을 갱신하면 외부 목록도 갱신된다. Custom은 실제 로드된 목록이 있을 때만 자동 제공하며 입력값만으로 목록을 만들지 않는다. 사라진 선택은 기존 fallback 정책을 따른다.**
-- [ ] **[조건부][EXT-27] 기본 모델을 수동 등록해 비활성화하면 외부 자동 제공에서도 빠진다. 등록을 삭제하면 현재 기본 목록에 남아 있는 모델은 다시 제공된다. core의 원래 옵션은 유지된다.**
-- [ ] **[조건부][EXT-28] 표시 한도를 넘는 기본 목록에서도 직접 등록한 다른 제공업체 모델이 우선 표시되며 기존 용량 경고가 나타난다. 새 provider나 요청 handler를 지원하지 않는 외부 확장까지 요청 가능해지는 것은 아니다.**
-- [ ] **[권장][TOOLS-12] 기본 목록을 읽어도 관리 화면·Registry API·백업의 등록 모델 수는 늘어나지 않는다. 기존 수동 등록은 자동 삭제되지 않는다.**
+v0.6.20의 기본 목록 자동 제공은 **v0.6.24에서 철회했습니다.** 아래 항목은 기존 ID를 유지하며 현재 정책으로 검증합니다.
+
+- [ ] **[조건부][EXT-25] CMR에 모델을 등록하지 않은 상태에서는 로드된 기본 모델을 CMR이 외부에 추가하지 않는다. 외부 확장의 기존 옵션·현재 선택·provider 설정은 유지된다.**
+- [ ] **[조건부][EXT-26] core 기본 목록을 갱신해도 미등록 모델이 외부의 사용자 모델 그룹이나 공개 hook 게시 목록에 자동으로 추가되지 않는다. Custom 입력값도 등록으로 간주하지 않는다.**
+- [ ] **[조건부][EXT-27] 기본 모델을 직접 등록해 비활성화하거나 삭제하면 외부의 CMR 선택지에서 빠진다. 현재 기본 목록에 있다는 이유로 다시 추가되지 않으며 core·외부의 원래 native 옵션은 유지된다.**
+- [ ] **[조건부][EXT-28] target의 선택 업체에서 native 중복 제외 활성 등록 후보가 512개를 넘으면 기존 용량 경고가 나타난다. 큰 기본 목록만으로 미등록 후보를 추가하거나 경고하지 않는다. 새 provider·요청 handler 지원 범위는 그대로다.**
+- [ ] **[권장][TOOLS-12] core 목록을 갱신해도 관리 화면·Registry API·백업의 등록 모델 수는 늘어나지 않는다. 기존 직접 등록도 자동 삭제되지 않는다.**
 
 ## v0.6.19 추가 검증
 
 - [ ] **[필수][REG-16] SillyTavern 기본 목록에 있지만 CMR에는 없는 모델을 한 개 또는 여러 줄로 등록할 수 있다. 현재 선택 중인 기본 모델도 등록할 수 있으며 CMR의 동일 제공업체·ID만 중복으로 건너뛴다.**
 - [ ] **[조건부][EXT-24] 현재 모델만 가진 외부 Chat Completion 모델 칸에 다른 기본 모델을 CMR로 등록하면 해당 모델이 추가된다. 이미 그 모델이 있는 다른 선택기에는 중복 표시되지 않고 현재 선택도 바뀌지 않는다.**
-- [ ] **[조건부][TOOLS-11] 중복 정리 미리보기에 정리한 기본 모델이 현재 목록에서 자동 제공된다는 안내가 표시된다. 수동 등록을 유지할 모델은 정리 대상에서 뺀다.**
+- [ ] **[조건부][TOOLS-11] 중복 정리 미리보기는 등록 삭제 뒤 외부 사용자 모델 선택지에서도 빠질 수 있음을 안내한다. 외부에서 사용할 기본 모델 등록은 정리 대상에서 뺀다.**
 
 ## v0.6.18 추가 검증
 
@@ -78,7 +88,7 @@ provider integration 브라우저 fixture는 실제 제품 모듈과 공개 wiri
 ```text
 검증 날짜:
 SillyTavern 버전:
-Custom Model Router 버전: v0.6.23
+Custom Model Router 버전: v0.6.24
 브라우저·OS:
 설치 방식: 신규 / 업데이트
 이전 확장 버전:
@@ -165,7 +175,7 @@ Connection Profile 사용 여부:
 
 ## 4. 다른 확장 모델 UI 주입과 실제 요청 확인
 
-먼저 등록 없이 현재 로드된 기본 모델이 외부에 표시되는지 확인한 뒤, 서로 다른 제공업체와 Custom에 목록에 없는 모델을 하나씩 등록해 합쳐지는지 검사합니다. 안전한 외부 Chat Completion 모델 칸에는 native 중복을 제외한 기본·등록 모델이 target별 최대 512개까지 표시됩니다. provider/source 선택기는 이름에 `model`이 포함되어도 모델 target이 아니며 native option·현재 값을 유지합니다. 정확한 Custom/OpenAI-compatible 또는 SillyTavern 현재 연결 provider option에는 새 handler 없이 각각 Custom 또는 현재 활성 ST provider의 가용 모델만 투영합니다. 기본 팝업은 정상 대상 목록을 노출하지 않습니다. 고급 관리 기본 목록에는 실패·사용자 제외만, **문제가 생긴 모델 칸 제외**에는 정상 target을 표시하며, 안전상 제외는 진단 집계로만 확인합니다.
+먼저 등록하지 않은 기본 모델을 CMR이 외부에 추가하지 않는지 확인한 뒤, 필요한 기본 모델 ID와 목록에 없는 모델 ID를 직접 등록해 검사합니다. 안전한 외부 Chat Completion 모델 칸에는 선택된 업체의 native 중복을 제외한 활성 등록 모델만 target별 최대 512개까지 표시됩니다. provider/source 선택기는 이름에 `model`이 포함되어도 모델 target이 아니며 native option·현재 값을 유지합니다. 정확한 Custom/OpenAI-compatible 또는 SillyTavern 현재 연결 provider option에는 새 handler 없이 각각 Custom 또는 현재 활성 ST provider에 직접 등록한 활성 모델만 투영합니다. 기본 팝업은 정상 대상 목록을 노출하지 않습니다. 고급 관리 기본 목록에는 실패·사용자 제외만, **문제가 생긴 모델 칸 제외**에는 정상 target을 표시하며, 안전상 제외는 진단 집계로만 확인합니다.
 
 - [ ] **[필수][EXT-01] 정상 상태의 기본 팝업에는 외부 target 목록이 없고 `자동 연결`, `직접 연결`, `연결 안 함` 선택기와 수동 모델 새로고침 버튼도 없다. 안전 target에는 CMR 선택지가 자동 표시된다.**
 - [ ] **[필수][EXT-01A] `호환성 진단 및 CMR 설정 백업 → 고급: 외부 연결 관리`의 기본 목록에는 bridge 실패와 사용자가 제외한 target만 보이며, 각 행에 외부 확장 이름과 실제 모델 control 이름이 함께 표시된다.**
@@ -173,8 +183,8 @@ Connection Profile 사용 여부:
 - [ ] **[조건부][EXT-01C] 안전 target의 제외 아이콘을 누르면 그 대상에서만 CMR 선택지가 정리되고 native option·현재 값·다른 target은 유지된다. 다시 연결 아이콘을 누르면 CMR 선택지가 복원된다.**
 - [ ] **[필수][EXT-01D] Vectors·embedding·TTS·Stable Diffusion 등 안전상 제외 target은 고급 기본 목록과 정상 대상 선택기 모두에 행을 만들지 않으며, 진단 복사 JSON에서 사용자 제외와 다른 사유·개수로만 집계된다. 강제 연결·복구 컨트롤은 없다.**
 - [ ] **[필수][EXT-01E] 외부 provider/source 선택기는 이름·label에 `model`이 포함되어도 CMR 모델 target, 고급 관리 행 또는 진단 `targetCount`에 포함되지 않는다. CMR option이 추가되지 않고 native provider option·현재 값은 유지되며, 실제 모델 control만 등록 모델을 받는다.**
-- [ ] **[조건부][EXT-02] 표준 Chat Completion `select`에는 선택된 제공업체의 native 중복 제외 기본·등록 후보만 최대 512개 표시된다. native option은 유지하고 사라진 CMR 선택은 기존 native fallback으로 복구된다.**
-- [ ] **[조건부][EXT-03] 텍스트 `input` 또는 `datalist`에도 선택된 제공업체의 기본·등록 후보만 최대 512개 나타나며 기존 입력값과 기존 datalist option은 유지된다.**
+- [ ] **[조건부][EXT-02] 표준 Chat Completion `select`에는 선택된 제공업체의 native 중복 제외 활성 등록 후보만 최대 512개 표시된다. 그룹 이름은 사용자 모델이며 native option은 유지하고 사라진 CMR 선택은 기존 native fallback으로 복구된다.**
+- [ ] **[조건부][EXT-03] 텍스트 `input` 또는 `datalist`에도 선택된 제공업체의 활성 등록 후보만 최대 512개 나타나며 기존 입력값과 기존 datalist option은 유지된다.**
 - [ ] **[필수][EXT-04] 제공업체 선택기 연결이나 명시적 제공업체 범위를 확인하지 못한 칸에는 CMR 옵션을 넣지 않는다. 전체 업체 목록·이웃 확장 업체·과거 선호로 대체하지 않고 native 옵션과 입력값을 보존한다.**
 - [ ] **[조건부][EXT-05] 외부 schema v1과 v0.6.0~v0.6.5의 provider·`manual`·`disabled` mapping은 제거되고, 과거 `disabled`는 schema v2 사용자 제외로 되살아나지 않는다. 이전에 연결 안 함이었던 대상도 안전성과 현재 제공업체 범위를 확인한 경우에만 CMR 선택지가 자동 표시된다.**
 - [ ] **[조건부][EXT-06] mapping 제거 뒤에도 같은 target과 provider의 마지막 CMR 모델 선택 기록은 보존된다.**
@@ -202,8 +212,8 @@ Connection Profile 사용 여부:
 - [ ] **[조건부][EXT-16B] 모든 direct target의 예상 CMR DOM option 합계 또는 실제 CMR DOM option 합계가 2,048개를 넘으면 성능 주의 카드와 진단 경고가 나타나고, Vectors·Stable Diffusion 같은 위험 대상과 native option은 이 CMR option 합계에 포함되지 않는다.**
 - [ ] **[필수][EXT-17] 외부 브리지 동작 전후 메인 Chat Completion source·모델·API 키·endpoint가 바뀌지 않는다.**
 - [ ] **[선택][EXT-18] React 자체 위젯, iframe, 닫힌 Shadow DOM과 모델 control 없는 확장은 대상 목록에도 나타나지 않으며 전용 opt-in API 연동이 필요하다는 안내를 확인한다.**
-- [ ] **[조건부][EXT-19] 외부 확장의 기존 provider option이 정확한 Custom/OpenAI-compatible 선택일 때 실제 model control에는 가용 `custom` 기본·등록 모델만 나타나고 OpenAI·Anthropic·Vertex 등 다른 provider 모델은 나타나지 않는다.**
-- [ ] **[조건부][EXT-20] 외부 확장의 기존 provider option이 정확한 SillyTavern/current-connection 선택일 때 실제 model control에는 현재 활성 SillyTavern provider와 같은 가용 기본·등록 모델만 나타난다. ST source를 바꾸면 새 provider 모델로 다시 투영된다.**
+- [ ] **[조건부][EXT-19] 외부 확장의 기존 provider option이 정확한 Custom/OpenAI-compatible 선택일 때 CMR은 실제 model control에 직접 등록한 활성 `custom` 모델만 추가하고 OpenAI·Anthropic·Vertex 등 다른 provider 모델은 추가하지 않는다.**
+- [ ] **[조건부][EXT-20] 외부 확장의 기존 provider option이 정확한 SillyTavern/current-connection 선택일 때 CMR은 실제 model control에 현재 활성 SillyTavern provider에 직접 등록한 활성 모델만 추가한다. ST source를 바꾸면 새 provider의 등록 모델로 다시 투영된다.**
 - [ ] **[조건부][EXT-20A] exact SillyTavern/current-connection option인데 활성 ST provider가 없거나 CMR 지원 provider로 확정되지 않으면 `current-connection-unavailable` 확인 필요 실패가 나타나고 CMR 모델은 하나도 표시되지 않는다. 전체 provider·`custom` 모델로 fallback하지 않으며 유효한 ST provider를 다시 선택하면 그 provider 모델만 복원된다.**
 - [ ] **[필수][EXT-21] `main`, `current`, `inherit`, `openai`, `st` 단독 option과 값·라벨이 충돌하는 option은 native 재사용으로 분류되지 않으며 임의의 Custom 또는 현재 ST provider로 고정되지 않는다.**
 - [ ] **[필수][EXT-22] native 재사용 분류와 모델 투영 전후 외부 provider option 목록·option value·현재 provider 값·endpoint·API 키·기존 모델 값과 SillyTavern 메인 source·모델이 동일하다. 전역 `fetch`·`XMLHttpRequest` 교체도 없다.**
@@ -265,8 +275,8 @@ CMR 외부 브리지는 best-effort UI 선택지 주입 기능이며 전역 `fet
 - [ ] **[선택][INT-01] `CustomModelRouter.integrations.apiVersion`이 `1.1.0`이고 공개 capability에 선택된 Connection Profile 전용, Connection Manager 소유 자격 증명, 메인 채팅 무변경과 handler-before-models 계약이 표시된다.**
 - [ ] **[필수][INT-02] Provider Integration hook을 등록하지 않은 외부 확장의 provider UI에는 CMR provider·model이 강제로 추가되지 않는다. 같은 확장의 안전한 표준 모델 컨트롤은 기존 DOM 브리지 대상이면 종전처럼 모델 선택지만 받을 수 있다.**
 - [ ] **[조건부][INT-03] 공개 hook 소비 확장이 `installHandler`와 `publishModels`를 등록하면 handler 설치 영수증을 반환하기 전에는 모델 게시가 호출되지 않고, 두 영수증이 모두 유효한 뒤에만 binding과 provider UI가 준비 상태가 된다.**
-- [ ] **[조건부][INT-04] 비-Custom Chat Completion Connection Profile을 선택하면 `sillytavern-inherited` slot에는 그 profile source와 같은 provider의 가용 기본·등록 모델만 게시되고 실제 요청은 선택된 profile을 사용한다.**
-- [ ] **[조건부][INT-05] `Custom` Connection Profile을 선택하면 `openai-compatible` slot에 `custom`의 가용 기본·등록 모델만 게시되고 그 프로필의 endpoint·API 키를 CMR에 다시 입력하거나 복제하지 않는다.**
+- [ ] **[조건부][INT-04] 비-Custom Chat Completion Connection Profile을 선택하면 `sillytavern-inherited` slot에는 그 profile source와 같은 provider에 직접 등록한 활성 모델만 게시되고 실제 요청은 선택된 profile을 사용한다.**
+- [ ] **[조건부][INT-05] `Custom` Connection Profile을 선택하면 `openai-compatible` slot에 `custom`에 직접 등록한 활성 모델만 게시되고 그 프로필의 endpoint·API 키를 CMR에 다시 입력하거나 복제하지 않는다.**
 - [ ] **[조건부][INT-06] 선택된 Connection Profile을 다른 source로 바꾸거나 선택 해제하면 이전 handler·모델 게시·진행 중 요청이 정리되고 새 조건이 충족될 때만 새 binding이 준비된다.**
 - [ ] **[조건부][INT-07] handler 설치 또는 모델 게시가 거부·예외·취소되면 provider UI가 준비 상태로 노출되지 않고 다른 provider·등록 모델·메인 모델로 자동 대체되지 않는다.**
 - [ ] **[조건부][INT-08] 공용 handler 요청 전후 메인 Chat Completion source·모델이 같고, CMR 설정·이벤트·진단에는 Connection Profile ID·API 키·전체 endpoint가 나타나지 않는다.**
@@ -298,7 +308,7 @@ CMR 외부 브리지는 best-effort UI 선택지 주입 기능이며 전역 `fet
 - [ ] **[필수][DIAG-02] SillyTavern 1.18.0이면 버전 계약이 통과로 표시된다.**
 - [ ] **[필수][DIAG-03] 현재 화면의 공개 context·event·provider control 결과에 설명 없는 실패가 없다.**
 - [ ] **[필수][DIAG-04] 런처·observer·listener·사용자 모델 그룹 중복이 없다고 표시된다. 서로 다른 모델 선택기에 같은 제공업체 그룹이 하나씩 있는 것은 중복으로 오인하지 않는다.**
-- [ ] **[필수][DIAG-04A] 복사 JSON에서 외부 브리지 observer·listener·target 수, 가용 기본·등록 모델 수, 예상·실제 CMR option 수와 연결 정책·사용자 제외·비채팅·비호환 제외 수를 확인하고 설명 없는 증가가 없다. 기존 필드명 activeRegistryModelCount는 합친 카탈로그 수다. provider/source 선택기는 모델 `targetCount`에 포함되지 않는다.**
+- [ ] **[필수][DIAG-04A] 복사 JSON에서 외부 브리지 observer·listener·target 수, 활성 등록 모델 수, 예상·실제 CMR option 수와 연결 정책·사용자 제외·비채팅·비호환 제외 수를 확인하고 설명 없는 증가가 없다. activeRegistryModelCount는 활성 등록 모델 수이며 기본 목록은 포함하지 않는다. provider/source 선택기는 모델 `targetCount`에 포함되지 않는다.**
 - [ ] **[필수][DIAG-04B] provider/source 선택기를 제외한 외부 모델 칸 집계가 `후보 = 연결 정책 + 사용자 제외 + 비채팅·비호환 제외` 및 `연결 정책 = 연결됨 + 등록 모델 없음 + 연결 실패`로 일치하며 observer·listener·binding 불일치가 통과로 표시되지 않는다.**
 - [ ] **[조건부][DIAG-04C] 공개 provider hook 소비 확장이 있으면 `providerIntegrations`의 consumer·pending·ready·failed·published model 개수가 실제 binding 상태와 일치하고 profile ID·endpoint·API 키는 포함하지 않는다.**
 - [ ] **[조건부][DIAG-04D] native 재사용 대상이 있으면 `nativeCustomTargetCount`·`nativeCurrentTargetCount`·`nativeReuseProjectedTargetCount`·`nativeReuseUnavailableTargetCount`가 실제 target 상태와 일치하고, provider option 원문·endpoint·API 키는 포함하지 않는다.**
@@ -324,7 +334,7 @@ CMR 외부 브리지는 best-effort UI 선택지 주입 기능이며 전역 `fet
 
 ## 10. 확장 전용 백업·복구
 
-- [ ] **[필수][BKP-01] `백업 내보내기`로 `custom-model-router-backup-v0.6.23.json`을 저장한다. 최대 허용 범위인 UTF-8 8,000,000바이트·모델 5,000개·route 256개 안에서 성공한 백업은 다시 가져올 수 있다.**
+- [ ] **[필수][BKP-01] `백업 내보내기`로 `custom-model-router-backup-v0.6.24.json`을 저장한다. 최대 허용 범위인 UTF-8 8,000,000바이트·모델 5,000개·route 256개 안에서 성공한 백업은 다시 가져올 수 있다.**
 - [ ] **[필수][BKP-02] JSON 최상위에 `format`, `schemaVersion`, `createdAt`, `registry`, `purposeRoutes`, `externalIntegrations`만 있고 portable schemaVersion이 `2`인지 확인한다.**
 - [ ] **[필수][BKP-03] Registry에는 provider·model ID·protocol·enabled·선택 상태만 있는지 확인한다.**
 - [ ] **[필수][BKP-04] route에는 provider·model ID·adapter ID·Connection Profile ID만 있는지 확인한다.**
@@ -363,10 +373,10 @@ CMR 외부 브리지는 best-effort UI 선택지 주입 기능이며 전역 `fet
 ## 결과 보고 양식
 
 ```text
-제목: [v0.6.23][제공업체 또는 기능][항목 ID] 짧은 증상
+제목: [v0.6.24][제공업체 또는 기능][항목 ID] 짧은 증상
 
 SillyTavern 버전:
-Custom Model Router 버전: v0.6.23
+Custom Model Router 버전: v0.6.24
 OS / 브라우저:
 신규 설치 또는 업데이트:
 이전 CMR 버전:

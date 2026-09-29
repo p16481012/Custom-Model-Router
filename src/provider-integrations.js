@@ -491,7 +491,7 @@ function createBackendCandidate(strategy, options, connectionAdapter) {
         ? 'cmr.openai-compatible'
         : `cmr.sillytavern.${selected.providerId}`;
     const label = strategy === PROVIDER_INTEGRATION_STRATEGIES.OPENAI_COMPATIBLE
-        ? 'OpenAI-compatible · CMR 모델'
+        ? 'OpenAI-compatible · 사용자 모델'
         : `${selected.provider.label} · SillyTavern 연결`;
     const modelsFingerprint = JSON.stringify(models.map(model => `${model.provider}\u0000${model.id}`));
     const fingerprint = `${strategy}\u0000${selected.profileId}\u0000${selected.providerId}`;
